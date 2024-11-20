@@ -49,18 +49,11 @@ package body Ghdljson is
       Append (Json, C);
    end Put;
 
-   procedure Disp_Iir (N : Iir; Requires_Brace : Boolean);
-
-   Is_First : Boolean;
+   procedure Disp_Iir (N : Iir);
 
    procedure Put_Quoted_Attribute (Attr : String; Value : String) is
    begin
-      if Is_First then
-         Put ('"');
-         Is_First := False;
-      else
-         Put (",""");
-      end if;
+      Put (",""");
       Put (Attr);
       Put (""":""");
       Put (Value);
@@ -69,12 +62,7 @@ package body Ghdljson is
 
    procedure Put_Attribute (Attr : String; Value : String) is
    begin
-      if Is_First then
-         Put ('"');
-         Is_First := False;
-      else
-         Put (",""");
-      end if;
+      Put (",""");
       Put (Attr);
       Put (""":");
       Put (Value);
@@ -178,20 +166,24 @@ package body Ghdljson is
    procedure Disp_Iir_Chain_Elements (Chain : Iir)
    is
       El : Iir;
-      Is_First : Boolean := True;
+      Is_First_Item : Boolean := True;
    begin
+      Put ('[');
+
       El := Chain;
       while Is_Valid (El) loop
          if El /= Null_Iir then
-            if Is_First then
-               Is_First := False;
+            if Is_First_Item then
+               Is_First_Item := False;
             else
                Put (',');
             end if;
-            Disp_Iir (El, True);
+            Disp_Iir (El);
          end if;
          El := Get_Chain (El);
       end loop;
+
+      Put (']');
    end Disp_Iir_Chain_Elements;
 
    procedure Disp_Iir_Chain (Id : String; N : Iir) is
@@ -203,10 +195,7 @@ package body Ghdljson is
       Put ('"');
       Put (Id);
       Put (""":");
-      Put ('[');
-      Is_First := True;
       Disp_Iir_Chain_Elements (N);
-      Put ("]");
    end Disp_Iir_Chain;
 
    procedure Disp_Iir_List (Id : String; L : Iir_List; Ref : Boolean)
@@ -241,7 +230,7 @@ package body Ghdljson is
                   if Ref then
                      Put (Iir'Image (El));
                   else
-                     Disp_Iir (El, True);
+                     Disp_Iir (El);
                   end if;
                end if;
                Next (It);
@@ -280,27 +269,22 @@ package body Ghdljson is
                   else
                      Put (',');
                   end if;
-                  Disp_Iir (El, True);
+                  Disp_Iir (El);
                end if;
             end loop;
             Put (']');
       end case;
    end Disp_Iir_Flist;
 
-   procedure Disp_Iir (N : Iir; Requires_Brace : Boolean) is
+   procedure Disp_Iir (N : Iir) is
    begin
       if N = Null_Iir then
          return;
       end if;
 
-      if Requires_Brace then
-         Put ("{""");
-      else
-         Put ('"');
-      end if;
+      Put ("{""@"":""");
       Put (Get_Iir_Image (Get_Kind (N)));
-      Put (""":{");
-      Is_First := True;
+      Put ('"');
 
       Put_Attribute ("id", Iir'Image (N));
 
@@ -419,10 +403,8 @@ package body Ghdljson is
                            when Attr_None =>
                               Put (",""");
                               Put (Img);
-                              Put (""":{");
-                              Is_First := True;
-                              Disp_Iir (V, False);
-                              Put ('}');
+                              Put (""":");
+                              Disp_Iir (V);
                            when Attr_Ref
                            | Attr_Forward_Ref
                            | Attr_Maybe_Forward_Ref =>
@@ -435,10 +417,8 @@ package body Ghdljson is
                               else
                                  Put (",""");
                                  Put (Img);
-                                 Put (""":{");
-                                 Is_First := True;
-                                 Disp_Iir (V, False);
-                                 Put ('}');
+                                 Put (""":");
+                                 Disp_Iir (V);
                               end if;
                            when Attr_Chain =>
                               Put (',');
@@ -510,11 +490,7 @@ package body Ghdljson is
          end loop;
       end;
 
-      if Requires_Brace then
-         Put ("}}");
-      else
-         Put ("}");
-      end if;
+      Put ('}');
    end Disp_Iir;
 
    --  Command --file-to-json
@@ -597,10 +573,7 @@ package body Ghdljson is
          Analyze_Design_File_Units (Files (I).Design_File);
       end loop;
 
-      Put("[");
-      Is_First := True;
       Disp_Iir_Chain_Elements (Libraries.Get_Libraries_Chain);
-      Put("]");
       Ada.Strings.Unbounded.Text_IO.Put (Json);
 
       Success := True;
