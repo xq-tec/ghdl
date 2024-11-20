@@ -14,7 +14,8 @@
 --  You should have received a copy of the GNU General Public License
 --  along with this program.  If not, see <gnu.org/licenses>.
 
-with Simple_IO; use Simple_IO;
+with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
+with Ada.Strings.Unbounded.Text_IO;
 
 with Types; use Types;
 with Flags;
@@ -31,6 +32,33 @@ with Ghdlmain; use Ghdlmain;
 with Ghdllocal; use Ghdllocal;
 
 package body Ghdlxml is
+
+   Xml : Unbounded_String;
+
+   procedure Put (S : String) is
+   begin
+      Append (Xml, S);
+      if Length (Xml) >= 32000 then
+         Ada.Strings.Unbounded.Text_IO.Put (Xml);
+         Set_Unbounded_String (Xml, "");
+      end if;
+   end Put;
+
+   procedure Put (C : Character) is
+   begin
+      Append (Xml, C);
+   end Put;
+
+   procedure New_Line is
+   begin
+      Append (Xml, Character'Val (10));
+   end New_Line;
+
+   procedure Put_Line (S : String) is
+   begin
+      Put (S);
+      New_Line;
+   end Put_Line;
 
    procedure Disp_Iir (Id : String; N : Iir);
 
