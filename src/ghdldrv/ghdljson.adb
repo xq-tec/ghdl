@@ -101,11 +101,6 @@ package body Ghdljson is
       Put_Attribute (Get_Field_Image (F), Int64'Image (Value));
    end Put_Field;
 
-   procedure Put_Field (F : Fields_Enum; Value : Fp64) is
-   begin
-      Put_Attribute (Get_Field_Image (F), Fp64'Image (Value));
-   end Put_Field;
-
    procedure Put_Field (F : Fields_Enum; Value : Boolean) is
    begin
       Put_Attribute (Get_Field_Image (F), Image_Boolean (Value));
@@ -376,7 +371,7 @@ package body Ghdljson is
                when Type_Int32 =>
                   Put_Field (F, Int64(Get_Int32 (N, F)));
                when Type_Fp64 =>
-                  Put_Field (F, Get_Fp64 (N, F));
+                  Put_Field (F, Fp64'Image (Get_Fp64 (N, F)));
                when Type_Time_Stamp_Id =>
                   null;
                when Type_File_Checksum_Id =>
