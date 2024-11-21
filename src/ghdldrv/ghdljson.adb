@@ -291,9 +291,13 @@ package body Ghdljson is
       begin
          if Loc /= No_Location then
             Files_Map.Location_To_Position (Loc, File, Line, Col);
-            Put_Attribute ("file", Name_Id'Image (File));
-            Put_Attribute ("line", Natural'Image (Line));
-            Put_Attribute ("col", Natural'Image (Col));
+            Put (",""loc"":[""");
+            Put (Image (File));
+            Put (""",");
+            Put (Natural'Image (Line));
+            Put (',');
+            Put (Natural'Image (Col));
+            Put (']');
          end if;
       end;
 
