@@ -154,7 +154,7 @@ package body Ghdljson is
 
       Put ('"');
       Put (Id);
-      Put (".ref"":");
+      Put ("_ref"":");
       Put (Iir'Image (N));
    end Disp_Iir_Ref;
 
