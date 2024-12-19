@@ -23,7 +23,6 @@ with Name_Table; use Name_Table;
 with Vhdl.Nodes_Meta; use Vhdl.Nodes_Meta;
 with Files_Map;
 with Vhdl.Disp_Tree; use Vhdl.Disp_Tree;
-with Ghdlprint; use Ghdlprint;
 with Libraries;
 with Errorout; use Errorout;
 with Vhdl.Nodes; use Vhdl.Nodes;
@@ -492,53 +491,41 @@ package body Ghdljson is
       Put ('}');
    end Disp_Iir;
 
-   --  Command --file-to-json
-   type Command_File_To_Json is new Command_Lib with null record;
+   --  Command --ast-to-json
+   type Command_Ast_To_Json is new Command_Lib with null record;
 
-   function Decode_Command (Cmd : Command_File_To_Json; Name : String)
+   function Decode_Command (Cmd : Command_Ast_To_Json; Name : String)
                            return Boolean;
-   function Get_Short_Help (Cmd : Command_File_To_Json) return String;
+   function Get_Short_Help (Cmd : Command_Ast_To_Json) return String;
 
-   procedure Perform_Action (Cmd : in out Command_File_To_Json;
+   procedure Perform_Action (Cmd : in out Command_Ast_To_Json;
                              Files_Name : String_Acc_Array;
                              Success : out Boolean);
 
-   function Decode_Command (Cmd : Command_File_To_Json; Name : String)
+   function Decode_Command (Cmd : Command_Ast_To_Json; Name : String)
                            return Boolean
    is
       pragma Unreferenced (Cmd);
    begin
-      return Name = "file-to-json"
-        or else Name = "--file-to-json";
+      return Name = "ast-to-json"
+        or else Name = "--ast-to-json";
    end Decode_Command;
 
-   function Get_Short_Help (Cmd : Command_File_To_Json) return String
+   function Get_Short_Help (Cmd : Command_Ast_To_Json) return String
    is
       pragma Unreferenced (Cmd);
    begin
-      return "file-to-json FILEs"
+      return "ast-to-json"
         & ASCII.LF & "  Dump AST in JSON"
-        & ASCII.LF & "  alias: --file-to-json";
+        & ASCII.LF & "  alias: --ast-to-json";
    end Get_Short_Help;
 
-   procedure Perform_Action (Cmd : in out Command_File_To_Json;
+   procedure Perform_Action (Cmd : in out Command_Ast_To_Json;
                              Files_Name : String_Acc_Array;
                              Success : out Boolean)
    is
       pragma Unreferenced (Cmd);
-
-      use Files_Map;
-
-      Id : Name_Id;
-      File : Source_File_Entry;
-
-      type File_Data is record
-         Fe : Source_File_Entry;
-         Design_File : Iir;
-      end record;
-      type File_Data_Array is array (Files_Name'Range) of File_Data;
-
-      Files : File_Data_Array;
+      Library, Design_File, Design_Unit : Iir;
    begin
       Success := False;
 
@@ -549,27 +536,20 @@ package body Ghdljson is
 
       Flags.Flag_Elaborate_With_Outdated := True;
 
-      --  Parse all files.
-      for I in Files'Range loop
-         Id := Get_Identifier (Files_Name (I).all);
-         File := Read_Source_File (Libraries.Local_Directory, Id);
-         if File = No_Source_File_Entry then
-            Error ("cannot open " & Image (Id));
-            return;
-         end if;
-         Files (I).Fe := File;
-         Files (I).Design_File := Load_File (File);
-         if Files (I).Design_File = Null_Iir then
-            return;
-         end if;
-         --  Put units in library.
-         --  Note: design_units stay while design_file get empty.
-         Libraries.Add_Design_File_Into_Library (Files (I).Design_File);
-      end loop;
-
-      --  Analyze all files.
-      for I in Files'Range loop
-         Analyze_Design_File_Units (Files (I).Design_File);
+      -- Load and parse all design units,
+      -- including secondary units and transitive dependencies.
+      Library := Libraries.Get_Libraries_Chain;
+      while Is_Valid (Library) loop
+         Design_File := Get_Design_File_Chain (Library);
+         while Is_Valid (Design_File) loop
+            Design_Unit := Get_First_Design_Unit (Design_File);
+            while Is_Valid (Design_Unit) loop
+               Load_Design_Unit (Design_Unit, No_Location);
+               Design_Unit := Get_Chain (Design_Unit);
+            end loop;
+            Design_File := Get_Chain (Design_File);
+         end loop;
+         Library := Get_Chain (Library);
       end loop;
 
       Disp_Iir_Chain_Elements (Libraries.Get_Libraries_Chain);
@@ -583,6 +563,6 @@ package body Ghdljson is
 
    procedure Register_Commands is
    begin
-      Register_Command (new Command_File_To_Json);
+      Register_Command (new Command_Ast_To_Json);
    end Register_Commands;
 end Ghdljson;
