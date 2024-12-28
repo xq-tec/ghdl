@@ -43,12 +43,36 @@ package body Ghdljson is
       end if;
    end Put;
 
+   procedure Put (N : Int64) is
+      Buffer : String (1 .. 20);
+      Pos : Natural := Buffer'Last;
+      Val : Int64 := N;
+   begin
+      -- Treat negative numbers as positive, add minus sign later
+      if Val < 0 then
+         Val := -Val;
+      end if;
+
+      -- Convert digits from right to left
+      loop
+         Buffer (Pos) :=
+            Character'Val (Character'Pos ('0') + Integer (Val mod 10));
+         Val := Val / 10;
+         exit when Val = 0;
+         Pos := Pos - 1;
+      end loop;
+
+      if N < 0 then
+         Pos := Pos - 1;
+         Buffer (Pos) := '-';
+      end if;
+      Append (Json, Buffer (Pos .. Buffer'Last));
+   end Put;
+
    procedure Put (C : Character) is
    begin
       Append (Json, C);
    end Put;
-
-   procedure Disp_Iir (N : Iir);
 
    procedure Put_Quoted_Attribute (Attr : String; Value : String) is
    begin
@@ -67,37 +91,36 @@ package body Ghdljson is
       Put (Value);
    end Put_Attribute;
 
+   procedure Put_Attribute (Attr : String; Value : Int64) is
+   begin
+      Put (",""");
+      Put (Attr);
+      Put (""":");
+      Put (Value);
+   end Put_Attribute;
+
    procedure Put_Field (F : Fields_Enum; Value : String) is
-      -- Strip leading blank if any.
-      function Strip (S : String) return String
-      is
-         F : constant Natural := S'First;
+   begin
+      Put_Quoted_Attribute (Get_Field_Image (F), Value);
+   end Put_Field;
+
+   procedure Put_Field (F : Fields_Enum; Value : Int64) is
+   begin
+      Put_Attribute (Get_Field_Image (F), Value);
+   end Put_Field;
+
+   procedure Put_Field (F : Fields_Enum; Value : Fp64) is
+      -- Strip leading blank from Fp64'Image
+      function Strip (S : String) return String is
       begin
-         if F > S'Last then
-            return "";
-         elsif S (F) = ' ' then
-            return S (F + 1 .. S'Last);
+         if S (S'First) = ' ' then
+            return S (S'First + 1 .. S'Last);
          else
             return S;
          end if;
       end Strip;
    begin
-      Put_Quoted_Attribute (Get_Field_Image (F), Strip (Value));
-   end Put_Field;
-
-   procedure Put_Field (F : Fields_Enum; Value : Iir_Index32) is
-   begin
-      Put_Attribute (Get_Field_Image (F), Iir_Index32'Image (Value));
-   end Put_Field;
-
-   procedure Put_Field (F : Fields_Enum; Value : Iir_Int32) is
-   begin
-      Put_Attribute (Get_Field_Image (F), Iir_Int32'Image (Value));
-   end Put_Field;
-
-   procedure Put_Field (F : Fields_Enum; Value : Int64) is
-   begin
-      Put_Attribute (Get_Field_Image (F), Int64'Image (Value));
+      Put_Quoted_Attribute (Get_Field_Image (F), Strip (Fp64'Image (Value)));
    end Put_Field;
 
    procedure Put_Field (F : Fields_Enum; Value : Boolean) is
@@ -145,54 +168,39 @@ package body Ghdljson is
       return Res (1 .. Idx - 1);
    end To_JSON;
 
-   procedure Disp_Iir_Ref (Id : String; N : Iir) is
+   procedure Disp_Iir_Chain (Id : String; N : Iir) is
+      El : Iir;
+      Is_First_Item : Boolean := True;
    begin
       if N = Null_Iir then
          return;
       end if;
 
-      Put ('"');
-      Put (Id);
-      Put ("_ref"":");
-      Put (Iir'Image (N));
-   end Disp_Iir_Ref;
+      Put (",""");
+      if Id'Length > 6 and then Id (Id'First .. Id'First + 5) = "first_" then
+         Put (Id (Id'First + 6 .. Id'Last) & "s");
+      elsif Id'Length > 6 and then Id (Id'Last - 5 .. Id'Last) = "_chain" then
+         Put (Id (Id'First .. Id'Last - 6) & "s");
+      else
+         Put (Id);
+      end if;
+      Put (""":[");
 
-   procedure Disp_Iir_Chain_Elements (Chain : Iir)
-   is
-      El : Iir;
-      Is_First_Item : Boolean := True;
-   begin
-      Put ('[');
-
-      El := Chain;
+      El := N;
       while Is_Valid (El) loop
-         if El /= Null_Iir then
-            if Is_First_Item then
-               Is_First_Item := False;
-            else
-               Put (',');
-            end if;
-            Disp_Iir (El);
+         if Is_First_Item then
+            Is_First_Item := False;
+         else
+            Put (',');
          end if;
+         Put (Int64 (El));
          El := Get_Chain (El);
       end loop;
 
       Put (']');
-   end Disp_Iir_Chain_Elements;
-
-   procedure Disp_Iir_Chain (Id : String; N : Iir) is
-   begin
-      if N = Null_Iir then
-         return;
-      end if;
-
-      Put ('"');
-      Put (Id);
-      Put (""":");
-      Disp_Iir_Chain_Elements (N);
    end Disp_Iir_Chain;
 
-   procedure Disp_Iir_List (Id : String; L : Iir_List; Ref : Boolean)
+   procedure Disp_Iir_List (Id : String; L : Iir_List)
    is
       El : Iir;
       It : List_Iterator;
@@ -202,7 +210,7 @@ package body Ghdljson is
          return;
       end if;
 
-      Put ('"');
+      Put (",""");
       Put (Id);
       Put (""":");
 
@@ -215,18 +223,12 @@ package body Ghdljson is
             It := List_Iterate (L);
             while Is_Valid (It) loop
                El := Get_Element (It);
-               if El /= Null_Iir then
-                  if Is_First_Item then
-                     Is_First_Item := False;
-                  else
-                     Put (',');
-                  end if;
-                  if Ref then
-                     Put (Iir'Image (El));
-                  else
-                     Disp_Iir (El);
-                  end if;
+               if Is_First_Item then
+                  Is_First_Item := False;
+               else
+                  Put (',');
                end if;
+               Put (Int64 (El));
                Next (It);
             end loop;
             Put (']');
@@ -242,7 +244,7 @@ package body Ghdljson is
          return;
       end if;
 
-      Put ('"');
+      Put (",""");
       Put (Id);
       Put (""":");
 
@@ -257,14 +259,12 @@ package body Ghdljson is
             Put ('[');
             for I in Flist_First .. Flist_Last (L) loop
                El := Get_Nth_Element (L, I);
-               if El /= Null_Iir then
-                  if Is_First_Item then
-                     Is_First_Item := False;
-                  else
-                     Put (',');
-                  end if;
-                  Disp_Iir (El);
+               if Is_First_Item then
+                  Is_First_Item := False;
+               else
+                  Put (',');
                end if;
+               Put (Int64 (El));
             end loop;
             Put (']');
       end case;
@@ -272,15 +272,10 @@ package body Ghdljson is
 
    procedure Disp_Iir (N : Iir) is
    begin
-      if N = Null_Iir then
-         return;
-      end if;
-
-      Put ("{""@"":""");
+      Put ("{""");
       Put (Get_Iir_Image (Get_Kind (N)));
-      Put ('"');
-
-      Put_Attribute ("id", Iir'Image (N));
+      Put (""":{""id"":");
+      Put (Int64 (N));
 
       declare
          Loc : constant Location_Type := Get_Location (N);
@@ -293,9 +288,9 @@ package body Ghdljson is
             Put (",""loc"":[""");
             Put (Image (File));
             Put (""",");
-            Put (Natural'Image (Line));
+            Put (Int64 (Line));
             Put (',');
-            Put (Natural'Image (Col));
+            Put (Int64 (Col));
             Put (']');
          end if;
       end;
@@ -309,13 +304,17 @@ package body Ghdljson is
             F := Fields (I);
             case Get_Field_Type (F) is
                when Type_Iir =>
-                  null;
+                  if Get_Field_Attribute (F) = Attr_Chain then
+                     Disp_Iir_Chain (Get_Field_Image (F), Get_Iir (N, F));
+                  else
+                     Put_Field (F, Int64 (Get_Iir (N, F)));
+                  end if;
                when Type_Iir_List =>
-                  null;
+                  Disp_Iir_List (Get_Field_Image (F), Get_Iir_List (N, F));
                when Type_Iir_Flist =>
-                  null;
+                  Disp_Iir_Flist (Get_Field_Image (F), Get_Iir_Flist (N, F));
                when Type_String8_Id =>
-                  null;
+                  Put_Field (F, To_JSON (Image_String8 (N)));
                when Type_PSL_NFA =>
                   Put_Field (F, "PSL-NFA");
                when Type_PSL_Node =>
@@ -336,7 +335,7 @@ package body Ghdljson is
                   Put_Field (F, Image_Iir_Force_Mode
                                (Get_Iir_Force_Mode (N, F)));
                when Type_Iir_Index32 =>
-                  Put_Field (F, Get_Iir_Index32 (N, F));
+                  Put_Field (F, Int64 (Get_Iir_Index32 (N, F)));
                when Type_Int64 =>
                   Put_Field (F, Get_Int64 (N, F));
                when Type_Boolean =>
@@ -345,7 +344,7 @@ package body Ghdljson is
                   Put_Field (F, Image_Iir_Staticness
                                (Get_Iir_Staticness (N, F)));
                when Type_Scalar_Size =>
-                  Put_Field (F, Image_Scalar_Size (Get_Scalar_Size (N, F)));
+                  null;
                when Type_Date_State_Type =>
                   null;
                when Type_Iir_All_Sensitized =>
@@ -370,11 +369,11 @@ package body Ghdljson is
                   Put_Field (F, Image_Direction_Type
                                (Get_Direction_Type (N, F)));
                when Type_Iir_Int32 =>
-                  Put_Field (F, Get_Iir_Int32 (N, F));
+                  Put_Field (F, Int64 (Get_Iir_Int32 (N, F)));
                when Type_Int32 =>
-                  Put_Field (F, Int64(Get_Int32 (N, F)));
+                  Put_Field (F, Int64 (Get_Int32 (N, F)));
                when Type_Fp64 =>
-                  Put_Field (F, Fp64'Image (Get_Fp64 (N, F)));
+                  Put_Field (F, Get_Fp64 (N, F));
                when Type_Time_Stamp_Id =>
                   null;
                when Type_File_Checksum_Id =>
@@ -387,108 +386,9 @@ package body Ghdljson is
                   null;
             end case;
          end loop;
-
-         for I in Fields'Range loop
-            F := Fields (I);
-            case Get_Field_Type (F) is
-               when Type_Iir =>
-                  declare
-                     V : constant Iir := Get_Iir (N, F);
-                     Img : constant String := Get_Field_Image (F);
-                  begin
-                     if V /= Null_Iir then
-                        case Get_Field_Attribute (F) is
-                           when Attr_None =>
-                              Put (",""");
-                              Put (Img);
-                              Put (""":");
-                              Disp_Iir (V);
-                           when Attr_Ref
-                           | Attr_Forward_Ref
-                           | Attr_Maybe_Forward_Ref =>
-                              Put (',');
-                              Disp_Iir_Ref (Img, V);
-                           when Attr_Maybe_Ref =>
-                              if Get_Is_Ref (N) then
-                                 Put (',');
-                                 Disp_Iir_Ref (Img, V);
-                              else
-                                 Put (",""");
-                                 Put (Img);
-                                 Put (""":");
-                                 Disp_Iir (V);
-                              end if;
-                           when Attr_Chain =>
-                              Put (',');
-                              Disp_Iir_Chain (Img, V);
-                           when Attr_Chain_Next =>
-                              null;
-                           when Attr_Of_Ref | Attr_Of_Maybe_Ref =>
-                              raise Internal_Error;
-                        end case;
-                     end if;
-                  end;
-               when Type_Iir_List =>
-                  declare
-                     L : constant Iir_List := Get_Iir_List (N, F);
-                     Img : constant String := Get_Field_Image (F);
-                  begin
-                     if L /= Null_Iir_List then
-                        case Get_Field_Attribute (F) is
-                           when Attr_None =>
-                              Put (',');
-                              Disp_Iir_List (Img, L, False);
-                           when Attr_Of_Ref =>
-                              Put (',');
-                              Disp_Iir_List (Img, L, True);
-                           when Attr_Of_Maybe_Ref =>
-                              Put (',');
-                              Disp_Iir_List (Img, L, Get_Is_Ref (N));
-                           when Attr_Ref =>
-                              null;
-                           when others =>
-                              raise Internal_Error;
-                        end case;
-                     end if;
-                  end;
-               when Type_Iir_Flist =>
-                  declare
-                     L : constant Iir_Flist := Get_Iir_Flist (N, F);
-                     Img : constant String := Get_Field_Image (F);
-                  begin
-                     if L /= Null_Iir_Flist then
-                        case Get_Field_Attribute (F) is
-                           when Attr_None =>
-                              Put (',');
-                              Disp_Iir_Flist (Img, L);
-                           when Attr_Of_Ref =>
-                              null;
-                           when Attr_Of_Maybe_Ref =>
-                              if not Get_Is_Ref (N) then
-                                 Put (',');
-                                 Disp_Iir_Flist (Img, L);
-                              end if;
-                           when Attr_Ref =>
-                              null;
-                           when others =>
-                              raise Internal_Error;
-                        end case;
-                     end if;
-                  end;
-               when Type_String8_Id =>
-                  --  Special handling for strings
-                  Put (",""");
-                  Put (Get_Field_Image (F));
-                  Put (""":""");
-                  Put (To_JSON (Image_String8 (N)));
-                  Put ('"');
-               when others =>
-                  null;
-            end case;
-         end loop;
       end;
 
-      Put ('}');
+      Put ("}}");
    end Disp_Iir;
 
    --  Command --ast-to-json
@@ -552,7 +452,26 @@ package body Ghdljson is
          Library := Get_Chain (Library);
       end loop;
 
-      Disp_Iir_Chain_Elements (Libraries.Get_Libraries_Chain);
+      declare
+         Current : Iir := Get_First_Node;
+         Next : Iir;
+         Last : constant Iir := Get_Last_Node;
+      begin
+         while Int32 (Current) <= Int32 (Last) loop
+            if Is_Valid (Current) then
+               Disp_Iir (Current);
+            else
+               Put ("null");
+            end if;
+            Put (ASCII.LF);
+            Next := Next_Node (Current);
+            for I in Int32 (Current) + 1 .. Int32 (Next) - 1 loop
+               Put ("null" & ASCII.LF);
+            end loop;
+            Current := Next;
+         end loop;
+      end;
+
       Ada.Strings.Unbounded.Text_IO.Put (Json);
 
       Success := True;

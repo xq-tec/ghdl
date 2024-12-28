@@ -311,6 +311,11 @@ package body Vhdl.Nodes is
       Table_Low_Bound => 2,
       Table_Initial => 1024);
 
+   function Get_First_Node return Iir is
+   begin
+      return Nodet.First;
+   end Get_First_Node;
+
    function Get_Last_Node return Iir is
    begin
       return Nodet.Last;

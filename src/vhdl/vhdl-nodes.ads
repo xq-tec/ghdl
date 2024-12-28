@@ -7501,6 +7501,9 @@ package Vhdl.Nodes is
 
    function "=" (L, R : Iir) return Boolean renames Vhdl.Nodes_Priv."=";
 
+   --  Get the first regular node.
+   function Get_First_Node return Iir;
+   pragma Inline (Get_First_Node);
    --  Get the last node allocated.
    function Get_Last_Node return Iir;
    pragma Inline (Get_Last_Node);
