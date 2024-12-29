@@ -172,10 +172,6 @@ package body Ghdljson is
       El : Iir;
       Is_First_Item : Boolean := True;
    begin
-      if N = Null_Iir then
-         return;
-      end if;
-
       Put (",""");
       if Id'Length > 6 and then Id (Id'First .. Id'First + 5) = "first_" then
          Put (Id (Id'First + 6 .. Id'Last) & "s");
@@ -206,10 +202,6 @@ package body Ghdljson is
       It : List_Iterator;
       Is_First_Item : Boolean := True;
    begin
-      if L = Null_Iir_List then
-         return;
-      end if;
-
       Put (",""");
       Put (Id);
       Put (""":");
@@ -240,10 +232,6 @@ package body Ghdljson is
       El : Iir;
       Is_First_Item : Boolean := True;
    begin
-      if L = Null_Iir_Flist then
-         return;
-      end if;
-
       Put (",""");
       Put (Id);
       Put (""":");
@@ -279,18 +267,18 @@ package body Ghdljson is
 
       declare
          Loc : constant Location_Type := Get_Location (N);
-         File : Name_Id;
-         Line : Natural;
-         Col : Natural;
+         File : Source_File_Entry;
+         Line_Pos : Source_Ptr;
+         Line, Offset : Natural;
       begin
          if Loc /= No_Location then
-            Files_Map.Location_To_Position (Loc, File, Line, Col);
-            Put (",""loc"":[""");
-            Put (Image (File));
-            Put (""",");
+            Files_Map.Location_To_Coord (Loc, File, Line_Pos, Line, Offset);
+            Put (",""loc"":[");
+            Put (Int64 (File) - 1);
+            Put (',');
             Put (Int64 (Line));
             Put (',');
-            Put (Int64 (Col));
+            Put (Int64 (Offset) + 1);
             Put (']');
          end if;
       end;
@@ -304,15 +292,36 @@ package body Ghdljson is
             F := Fields (I);
             case Get_Field_Type (F) is
                when Type_Iir =>
-                  if Get_Field_Attribute (F) = Attr_Chain then
-                     Disp_Iir_Chain (Get_Field_Image (F), Get_Iir (N, F));
-                  else
-                     Put_Field (F, Int64 (Get_Iir (N, F)));
-                  end if;
+                  declare
+                     Val : Iir;
+                  begin
+                     Val := Get_Iir (N, F);
+                     if Val /= Null_Iir then
+                        if Get_Field_Attribute (F) = Attr_Chain then
+                           Disp_Iir_Chain (Get_Field_Image (F), Val);
+                        else
+                           Put_Field (F, Int64 (Val));
+                        end if;
+                     end if;
+                  end;
                when Type_Iir_List =>
-                  Disp_Iir_List (Get_Field_Image (F), Get_Iir_List (N, F));
+                  declare
+                     Val : Iir_List;
+                  begin
+                     Val := Get_Iir_List (N, F);
+                     if Val /= Null_Iir_List then
+                        Disp_Iir_List (Get_Field_Image (F), Val);
+                     end if;
+                  end;
                when Type_Iir_Flist =>
-                  Disp_Iir_Flist (Get_Field_Image (F), Get_Iir_Flist (N, F));
+                  declare
+                     Val : Iir_Flist;
+                  begin
+                     Val := Get_Iir_Flist (N, F);
+                     if Val /= Null_Iir_Flist then
+                        Disp_Iir_Flist (Get_Field_Image (F), Val);
+                     end if;
+                  end;
                when Type_String8_Id =>
                   Put_Field (F, To_JSON (Image_String8 (N)));
                when Type_PSL_NFA =>
@@ -391,6 +400,96 @@ package body Ghdljson is
       Put ("}}");
    end Disp_Iir;
 
+   procedure Prepare_Ast is
+      Library, Design_File, Design_Unit : Iir;
+   begin
+      --  Load work library.
+      if not Setup_Libraries (True) then
+         return;
+      end if;
+
+      Flags.Flag_Elaborate_With_Outdated := True;
+
+      -- Load and parse all design units,
+      -- including secondary units and transitive dependencies.
+      Library := Libraries.Get_Libraries_Chain;
+      while Is_Valid (Library) loop
+         Design_File := Get_Design_File_Chain (Library);
+         while Is_Valid (Design_File) loop
+            Design_Unit := Get_First_Design_Unit (Design_File);
+            while Is_Valid (Design_Unit) loop
+               Load_Design_Unit (Design_Unit, No_Location);
+               Design_Unit := Get_Chain (Design_Unit);
+            end loop;
+            Design_File := Get_Chain (Design_File);
+         end loop;
+         Library := Get_Chain (Library);
+      end loop;
+   end Prepare_Ast;
+
+   procedure Output_File_List is
+      Is_First : Boolean := True;
+      File_Name, Dir_Name : Name_Id;
+
+      First_Source : constant Source_File_Entry :=
+         No_Source_File_Entry + 1;
+      Last_Source : constant Source_File_Entry :=
+         Files_Map.Get_Last_Source_File_Entry;
+   begin
+      Put ('[');
+      for File in First_Source .. Last_Source loop
+         if Is_First then
+            Is_First := False;
+         else
+            Put (',');
+         end if;
+         Put ('"');
+         Dir_Name := Files_Map.Get_Directory_Name (File);
+         File_Name := Files_Map.Get_File_Name (File);
+         Put (To_JSON (Files_Map.Get_Pathname (Dir_Name, File_Name)));
+         Put ('"');
+      end loop;
+      Put ("]" & ASCII.LF);
+   end Output_File_List;
+
+   procedure Output_Library_List is
+      Is_First : Boolean := True;
+      Library : Iir;
+   begin
+      Put ('[');
+      Library := Libraries.Get_Libraries_Chain;
+      while Is_Valid (Library) loop
+         if Is_First then
+            Is_First := False;
+         else
+            Put (',');
+         end if;
+         Put (Int64 (Library));
+         Library := Get_Chain (Library);
+      end loop;
+      Put (']' & ASCII.LF);
+   end Output_Library_List;
+
+   procedure Output_Ast is
+      Current : Iir := Get_First_Node;
+      Next : Iir;
+      Last : constant Iir := Get_Last_Node;
+   begin
+      while Int32 (Current) <= Int32 (Last) loop
+         if Current /= Null_Iir then
+            Disp_Iir (Current);
+         else
+            Put ("null");
+         end if;
+         Put (ASCII.LF);
+         Next := Next_Node (Current);
+         for I in Int32 (Current) + 1 .. Int32 (Next) - 1 loop
+            Put ("null" & ASCII.LF);
+         end loop;
+         Current := Next;
+      end loop;
+   end Output_Ast;
+
    --  Command --ast-to-json
    type Command_Ast_To_Json is new Command_Lib with null record;
 
@@ -425,53 +524,13 @@ package body Ghdljson is
                              Success : out Boolean)
    is
       pragma Unreferenced (Cmd);
-      Library, Design_File, Design_Unit : Iir;
    begin
       Success := False;
 
-      --  Load work library.
-      if not Setup_Libraries (True) then
-         return;
-      end if;
-
-      Flags.Flag_Elaborate_With_Outdated := True;
-
-      -- Load and parse all design units,
-      -- including secondary units and transitive dependencies.
-      Library := Libraries.Get_Libraries_Chain;
-      while Is_Valid (Library) loop
-         Design_File := Get_Design_File_Chain (Library);
-         while Is_Valid (Design_File) loop
-            Design_Unit := Get_First_Design_Unit (Design_File);
-            while Is_Valid (Design_Unit) loop
-               Load_Design_Unit (Design_Unit, No_Location);
-               Design_Unit := Get_Chain (Design_Unit);
-            end loop;
-            Design_File := Get_Chain (Design_File);
-         end loop;
-         Library := Get_Chain (Library);
-      end loop;
-
-      declare
-         Current : Iir := Get_First_Node;
-         Next : Iir;
-         Last : constant Iir := Get_Last_Node;
-      begin
-         while Int32 (Current) <= Int32 (Last) loop
-            if Is_Valid (Current) then
-               Disp_Iir (Current);
-            else
-               Put ("null");
-            end if;
-            Put (ASCII.LF);
-            Next := Next_Node (Current);
-            for I in Int32 (Current) + 1 .. Int32 (Next) - 1 loop
-               Put ("null" & ASCII.LF);
-            end loop;
-            Current := Next;
-         end loop;
-      end;
-
+      Prepare_Ast;
+      Output_File_List;
+      Output_Library_List;
+      Output_Ast;
       Ada.Strings.Unbounded.Text_IO.Put (Json);
 
       Success := True;
