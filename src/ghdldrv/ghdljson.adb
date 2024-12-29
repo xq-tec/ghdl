@@ -449,7 +449,7 @@ package body Ghdljson is
          Put (To_JSON (Files_Map.Get_Pathname (Dir_Name, File_Name)));
          Put ('"');
       end loop;
-      Put ("]" & ASCII.LF);
+      Put (']');
    end Output_File_List;
 
    procedure Output_Library_List is
@@ -467,8 +467,19 @@ package body Ghdljson is
          Put (Int64 (Library));
          Library := Get_Chain (Library);
       end loop;
-      Put (']' & ASCII.LF);
+      Put (']');
    end Output_Library_List;
+
+   procedure Output_Metadata is
+   begin
+      Put ("{""first_id"":");
+      Put (Int64 (Get_First_Node));
+      Put (",""files"":");
+      Output_File_List;
+      Put (",""libraries"":");
+      Output_Library_List;
+      Put ('}' & ASCII.LF);
+   end Output_Metadata;
 
    procedure Output_Ast is
       Current : Iir := Get_First_Node;
@@ -528,8 +539,7 @@ package body Ghdljson is
       Success := False;
 
       Prepare_Ast;
-      Output_File_List;
-      Output_Library_List;
+      Output_Metadata;
       Output_Ast;
       Ada.Strings.Unbounded.Text_IO.Put (Json);
 
