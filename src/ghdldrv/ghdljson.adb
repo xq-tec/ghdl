@@ -174,9 +174,15 @@ package body Ghdljson is
    begin
       Put (",""");
       if Id'Length > 6 and then Id (Id'First .. Id'First + 5) = "first_" then
-         Put (Id (Id'First + 6 .. Id'Last) & "s");
+         Put (Id (Id'First + 6 .. Id'Last));
+         if Id (Id'Last) /= 's' then
+            Put ('s');
+         end if;
       elsif Id'Length > 6 and then Id (Id'Last - 5 .. Id'Last) = "_chain" then
-         Put (Id (Id'First .. Id'Last - 6) & "s");
+         Put (Id (Id'First .. Id'Last - 6));
+         if Id (Id'Last - 6) /= 's' then
+            Put ('s');
+         end if;
       else
          Put (Id);
       end if;
