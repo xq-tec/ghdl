@@ -390,6 +390,9 @@ package body Vhdl.Nodes is
       Set_Field1 (N, Free_Chain);
       Free_Chain := N;
       if Nodet.Table (N).Format = Format_Medium then
+         Nodet.Table (N).Format := Format_Short;
+         Set_Nkind (N + 1, 0);
+         Nodet.Table (N + 1).Format := Format_Short;
          Set_Field1 (N + 1, Free_Chain);
          Free_Chain := N + 1;
       end if;

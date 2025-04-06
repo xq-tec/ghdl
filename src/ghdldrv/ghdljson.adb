@@ -268,9 +268,15 @@ package body Ghdljson is
    end Disp_Iir_Flist;
 
    procedure Disp_Iir (N : Iir) is
+      Kind: constant Iir_Kind := Get_Kind (N);
    begin
+      if Kind = Iir_Kind_Unused then
+         Put ("null");
+         return;
+      end if;
+
       Put ("{""");
-      Put (Get_Iir_Image (Get_Kind (N)));
+      Put (Get_Iir_Image (Kind));
       Put (""":{""id"":");
       Put (Int64 (N));
 
@@ -496,11 +502,7 @@ package body Ghdljson is
       Last : constant Iir := Get_Last_Node;
    begin
       while Int32 (Current) <= Int32 (Last) loop
-         if Current /= Null_Iir then
-            Disp_Iir (Current);
-         else
-            Put ("null");
-         end if;
+         Disp_Iir (Current);
          Put (ASCII.LF);
          Next := Next_Node (Current);
          for I in Int32 (Current) + 1 .. Int32 (Next) - 1 loop
