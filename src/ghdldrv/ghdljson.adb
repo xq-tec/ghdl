@@ -83,7 +83,7 @@ package body Ghdljson is
       Put ("""");
    end Put_Quoted_Attribute;
 
-   procedure Put_Attribute (Attr : String; Value : String) is
+   procedure Put_Attribute (Attr : String; Value : Int64) is
    begin
       Put (",""");
       Put (Attr);
@@ -91,12 +91,15 @@ package body Ghdljson is
       Put (Value);
    end Put_Attribute;
 
-   procedure Put_Attribute (Attr : String; Value : Int64) is
+   procedure Put_Attribute (Attr : String; Value : Boolean) is
    begin
       Put (",""");
       Put (Attr);
-      Put (""":");
-      Put (Value);
+      if Value then
+         Put (""":true");
+      else
+         Put (""":false");
+      end if;
    end Put_Attribute;
 
    procedure Put_Field (F : Fields_Enum; Value : String) is
@@ -125,7 +128,7 @@ package body Ghdljson is
 
    procedure Put_Field (F : Fields_Enum; Value : Boolean) is
    begin
-      Put_Attribute (Get_Field_Image (F), Image_Boolean (Value));
+      Put_Attribute (Get_Field_Image (F), Value);
    end Put_Field;
 
    --  Espace special characters for JSON strings.
@@ -536,6 +539,15 @@ package body Ghdljson is
         & ASCII.LF & "  alias: --ast-to-json";
    end Get_Short_Help;
 
+   procedure Dump_Ast is
+   begin
+      Output_Metadata;
+      Output_Ast;
+      Ada.Strings.Unbounded.Text_IO.Put (Json);
+      Set_Unbounded_String (Json, "");
+   end Dump_Ast;
+
+
    procedure Perform_Action (Cmd : in out Command_Ast_To_Json;
                              Files_Name : String_Acc_Array;
                              Success : out Boolean)
@@ -545,9 +557,7 @@ package body Ghdljson is
       Success := False;
 
       Prepare_Ast;
-      Output_Metadata;
-      Output_Ast;
-      Ada.Strings.Unbounded.Text_IO.Put (Json);
+      Dump_Ast;
 
       Success := True;
    exception
