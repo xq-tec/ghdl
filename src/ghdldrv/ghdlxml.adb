@@ -624,6 +624,9 @@ package body Ghdlxml is
       Disp_Iir_Chain_Elements (Libraries.Get_Libraries_Chain);
       Put_Etag ("root");
 
+      Ada.Strings.Unbounded.Text_IO.Put (Xml);
+      Set_Unbounded_String (Xml, "");
+
       Success := True;
    exception
       when Compilation_Error =>
