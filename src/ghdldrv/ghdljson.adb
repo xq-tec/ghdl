@@ -46,12 +46,18 @@ package body Ghdljson is
    procedure Put (N : Int64) is
       Buffer : String (1 .. 20);
       Pos : Natural := Buffer'Last;
-      Val : Int64 := N;
+      Val : Uns64;
    begin
-      -- Treat negative numbers as positive, add minus sign later
-      if Val < 0 then
-         Val := -Val;
-      end if;
+      declare
+         pragma Suppress (Overflow_Check);
+      begin
+         -- Treat negative numbers as positive, add minus sign later
+         if N < 0 then
+            Val := Uns64 (-N);
+         else
+            Val := Uns64 (N);
+         end if;
+      end;
 
       -- Convert digits from right to left
       loop
