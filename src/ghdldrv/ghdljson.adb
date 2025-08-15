@@ -434,6 +434,175 @@ package body Ghdljson is
 
    end Put_Node_Metadata;
 
+   procedure Disp_Field (F : Fields_Enum; N : Iir) is
+   begin
+      case Get_Field_Type (F) is
+         when Type_Iir =>
+            declare
+               Val : Iir;
+            begin
+               Val := Get_Iir (N, F);
+               if Val /= Null_Iir then
+                  if Get_Field_Attribute (F) = Attr_Chain then
+                     Disp_Iir_Chain (Get_Field_Image (F), Val);
+                  else
+                     Put_Attribute (Get_Field_Image (F), Int64 (Val));
+                  end if;
+               end if;
+            end;
+
+         when Type_Iir_List =>
+            declare
+               Val : Iir_List;
+            begin
+               Val := Get_Iir_List (N, F);
+               if Val /= Null_Iir_List then
+                  Disp_Iir_List (Get_Field_Image (F), Val);
+               end if;
+            end;
+
+         when Type_Iir_Flist =>
+            declare
+               Val : Iir_Flist;
+            begin
+               Val := Get_Iir_Flist (N, F);
+               if Val /= Null_Iir_Flist then
+                  Disp_Iir_Flist (Get_Field_Image (F), Val);
+               end if;
+            end;
+
+         when Type_String8_Id =>
+            Put_Quoted_Attribute (
+               Get_Field_Image (F),
+               To_JSON (Image_String8 (N)));
+
+         when Type_PSL_NFA =>
+            Put_Quoted_Attribute (Get_Field_Image (F), "PSL-NFA");
+
+         when Type_PSL_Node =>
+            Put_Quoted_Attribute (Get_Field_Image (F), "PSL-NODE");
+
+         when Type_Source_Ptr =>
+            null;
+
+         when Type_Date_Type =>
+            null;
+
+         when Type_Number_Base_Type =>
+            Put_Quoted_Attribute (
+               Get_Field_Image (F),
+               Number_Base_Type'Image (Get_Number_Base_Type (N, F)));
+
+         when Type_Iir_Constraint =>
+            Put_Quoted_Attribute (
+               Get_Field_Image (F),
+               Image_Iir_Constraint (Get_Iir_Constraint (N, F)));
+
+         when Type_Iir_Mode =>
+            Put_Quoted_Attribute (
+               Get_Field_Image (F),
+               Image_Iir_Mode (Get_Iir_Mode (N, F)));
+
+         when Type_Iir_Force_Mode =>
+            Put_Quoted_Attribute (
+               Get_Field_Image (F),
+               Image_Iir_Force_Mode (Get_Iir_Force_Mode (N, F)));
+
+         when Type_Iir_Index32 =>
+            Put_Attribute (
+               Get_Field_Image (F),
+               Int64 (Get_Iir_Index32 (N, F)));
+
+         when Type_Int64 =>
+            Put_Attribute (Get_Field_Image (F), Get_Int64 (N, F));
+
+         when Type_Boolean =>
+            Put_Attribute (Get_Field_Image (F), Get_Boolean (N, F));
+
+         when Type_Iir_Staticness =>
+            Put_Quoted_Attribute (
+               Get_Field_Image (F),
+               Image_Iir_Staticness (Get_Iir_Staticness (N, F)));
+
+         when Type_Scalar_Size =>
+            null;
+
+         when Type_Date_State_Type =>
+            null;
+
+         when Type_Iir_All_Sensitized =>
+            Put_Quoted_Attribute (
+               Get_Field_Image (F),
+               Image_Iir_All_Sensitized (Get_Iir_All_Sensitized (N, F)));
+
+         when Type_Iir_Signal_Kind =>
+            Put_Quoted_Attribute (
+               Get_Field_Image (F),
+               Image_Iir_Signal_Kind (Get_Iir_Signal_Kind (N, F)));
+
+         when Type_Tri_State_Type =>
+            Put_Quoted_Attribute (
+               Get_Field_Image (F),
+               Image_Tri_State_Type (Get_Tri_State_Type (N, F)));
+
+         when Type_Iir_Pure_State =>
+            Put_Quoted_Attribute (
+               Get_Field_Image (F),
+               Image_Iir_Pure_State (Get_Iir_Pure_State (N, F)));
+
+         when Type_Iir_Delay_Mechanism =>
+            Put_Quoted_Attribute (
+               Get_Field_Image (F),
+               Image_Iir_Delay_Mechanism (
+                  Get_Iir_Delay_Mechanism (N, F)));
+
+         when Type_Iir_Predefined_Functions =>
+            Put_Quoted_Attribute (
+               Get_Field_Image (F),
+               Image_Iir_Predefined_Functions (
+                  Get_Iir_Predefined_Functions (N, F)));
+
+         when Type_Direction_Type =>
+            Put_Quoted_Attribute (
+               Get_Field_Image (F),
+               Image_Direction_Type (Get_Direction_Type (N, F)));
+
+         when Type_Iir_Int32 =>
+            Put_Attribute (
+               Get_Field_Image (F),
+               Int64 (Get_Iir_Int32 (N, F)));
+
+         when Type_Int32 =>
+            Put_Attribute (
+               Get_Field_Image (F),
+               Int64 (Get_Int32 (N, F)));
+
+         when Type_Fp64 =>
+            Put_Attribute (
+               Get_Field_Image (F),
+               Get_Fp64 (N, F));
+
+         when Type_Time_Stamp_Id =>
+            null;
+
+         when Type_File_Checksum_Id =>
+            null;
+
+         when Type_Token_Type =>
+            Put_Quoted_Attribute (
+               Get_Field_Image (F),
+               Image_Token_Type (Get_Token_Type (N, F)));
+
+         when Type_Name_Id =>
+            Put_Quoted_Attribute (
+               Get_Field_Image (F),
+               To_JSON (Image (Get_Name_Id (N, F))));
+
+         when Type_Source_File_Entry =>
+            null;
+      end case;
+   end Disp_Field;
+
    procedure Disp_Iir (N : Iir) is
       Kind : constant Iir_Kind := Get_Kind (N);
    begin
@@ -448,173 +617,13 @@ package body Ghdljson is
          Fields : constant Fields_Array := Get_Fields (Get_Kind (N));
          F : Fields_Enum;
       begin
-         --  First attributes
          for I in Fields'Range loop
             F := Fields (I);
-            case Get_Field_Type (F) is
-               when Type_Iir =>
-                  declare
-                     Val : Iir;
-                  begin
-                     Val := Get_Iir (N, F);
-                     if Val /= Null_Iir then
-                        if Get_Field_Attribute (F) = Attr_Chain then
-                           Disp_Iir_Chain (Get_Field_Image (F), Val);
-                        else
-                           Put_Attribute (Get_Field_Image (F), Int64 (Val));
-                        end if;
-                     end if;
-                  end;
-
-               when Type_Iir_List =>
-                  declare
-                     Val : Iir_List;
-                  begin
-                     Val := Get_Iir_List (N, F);
-                     if Val /= Null_Iir_List then
-                        Disp_Iir_List (Get_Field_Image (F), Val);
-                     end if;
-                  end;
-
-               when Type_Iir_Flist =>
-                  declare
-                     Val : Iir_Flist;
-                  begin
-                     Val := Get_Iir_Flist (N, F);
-                     if Val /= Null_Iir_Flist then
-                        Disp_Iir_Flist (Get_Field_Image (F), Val);
-                     end if;
-                  end;
-
-               when Type_String8_Id =>
-                  Put_Quoted_Attribute (
-                     Get_Field_Image (F),
-                     To_JSON (Image_String8 (N)));
-
-               when Type_PSL_NFA =>
-                  Put_Quoted_Attribute (Get_Field_Image (F), "PSL-NFA");
-
-               when Type_PSL_Node =>
-                  Put_Quoted_Attribute (Get_Field_Image (F), "PSL-NODE");
-
-               when Type_Source_Ptr =>
-                  null;
-
-               when Type_Date_Type =>
-                  null;
-
-               when Type_Number_Base_Type =>
-                  Put_Quoted_Attribute (
-                     Get_Field_Image (F),
-                     Number_Base_Type'Image (Get_Number_Base_Type (N, F)));
-
-               when Type_Iir_Constraint =>
-                  Put_Quoted_Attribute (
-                     Get_Field_Image (F),
-                     Image_Iir_Constraint (Get_Iir_Constraint (N, F)));
-
-               when Type_Iir_Mode =>
-                  Put_Quoted_Attribute (
-                     Get_Field_Image (F),
-                     Image_Iir_Mode (Get_Iir_Mode (N, F)));
-
-               when Type_Iir_Force_Mode =>
-                  Put_Quoted_Attribute (
-                     Get_Field_Image (F),
-                     Image_Iir_Force_Mode (Get_Iir_Force_Mode (N, F)));
-
-               when Type_Iir_Index32 =>
-                  Put_Attribute (
-                     Get_Field_Image (F),
-                     Int64 (Get_Iir_Index32 (N, F)));
-
-               when Type_Int64 =>
-                  Put_Attribute (Get_Field_Image (F), Get_Int64 (N, F));
-
-               when Type_Boolean =>
-                  Put_Attribute (Get_Field_Image (F), Get_Boolean (N, F));
-
-               when Type_Iir_Staticness =>
-                  Put_Quoted_Attribute (
-                     Get_Field_Image (F),
-                     Image_Iir_Staticness (Get_Iir_Staticness (N, F)));
-
-               when Type_Scalar_Size =>
-                  null;
-
-               when Type_Date_State_Type =>
-                  null;
-
-               when Type_Iir_All_Sensitized =>
-                  Put_Quoted_Attribute (
-                     Get_Field_Image (F),
-                     Image_Iir_All_Sensitized (Get_Iir_All_Sensitized (N, F)));
-
-               when Type_Iir_Signal_Kind =>
-                  Put_Quoted_Attribute (
-                     Get_Field_Image (F),
-                     Image_Iir_Signal_Kind (Get_Iir_Signal_Kind (N, F)));
-
-               when Type_Tri_State_Type =>
-                  Put_Quoted_Attribute (
-                     Get_Field_Image (F),
-                     Image_Tri_State_Type (Get_Tri_State_Type (N, F)));
-
-               when Type_Iir_Pure_State =>
-                  Put_Quoted_Attribute (
-                     Get_Field_Image (F),
-                     Image_Iir_Pure_State (Get_Iir_Pure_State (N, F)));
-
-               when Type_Iir_Delay_Mechanism =>
-                  Put_Quoted_Attribute (
-                     Get_Field_Image (F),
-                     Image_Iir_Delay_Mechanism (
-                        Get_Iir_Delay_Mechanism (N, F)));
-
-               when Type_Iir_Predefined_Functions =>
-                  Put_Quoted_Attribute (
-                     Get_Field_Image (F),
-                     Image_Iir_Predefined_Functions (
-                        Get_Iir_Predefined_Functions (N, F)));
-
-               when Type_Direction_Type =>
-                  Put_Quoted_Attribute (
-                     Get_Field_Image (F),
-                     Image_Direction_Type (Get_Direction_Type (N, F)));
-
-               when Type_Iir_Int32 =>
-                  Put_Attribute (
-                     Get_Field_Image (F),
-                     Int64 (Get_Iir_Int32 (N, F)));
-
-               when Type_Int32 =>
-                  Put_Attribute (
-                     Get_Field_Image (F),
-                     Int64 (Get_Int32 (N, F)));
-
-               when Type_Fp64 =>
-                  Put_Attribute (
-                     Get_Field_Image (F),
-                     Get_Fp64 (N, F));
-
-               when Type_Time_Stamp_Id =>
-                  null;
-
-               when Type_File_Checksum_Id =>
-                  null;
-
-               when Type_Token_Type =>
-                  Put_Quoted_Attribute (
-                     Get_Field_Image (F),
-                     Image_Token_Type (Get_Token_Type (N, F)));
-
-               when Type_Name_Id =>
-                  Put_Quoted_Attribute (
-                     Get_Field_Image (F),
-                     To_JSON (Image (Get_Name_Id (N, F))));
-
-               when Type_Source_File_Entry =>
-                  null;
+            case F is
+               when Field_Chain => null;
+               when Field_Hash_Chain => null;
+               when Field_Suspend_State_Chain => null;
+               when others => Disp_Field (F, N);
             end case;
          end loop;
       end;
