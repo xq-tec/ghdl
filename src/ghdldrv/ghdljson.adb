@@ -97,6 +97,25 @@ package body Ghdljson is
       Put (Value);
    end Put_Attribute;
 
+   procedure Put_Attribute (Attr : String; Value : Fp64) is
+      -- Strip leading blank from result of 'Image
+      function Strip (S : String) return String is
+      begin
+         if S (S'First) = ' ' then
+            return S (S'First + 1 .. S'Last);
+         else
+            return S;
+         end if;
+      end Strip;
+      -- Use 17 digits for printing, to avoid rounding errors
+      type Print_Fp64 is digits 17;
+   begin
+      Put (",""");
+      Put (Attr);
+      Put (""":");
+      Put (Strip (Print_Fp64'Image (Print_Fp64 (Value))));
+   end Put_Attribute;
+
    procedure Put_Attribute (Attr : String; Value : Boolean) is
    begin
       Put (",""");
@@ -119,17 +138,8 @@ package body Ghdljson is
    end Put_Field;
 
    procedure Put_Field (F : Fields_Enum; Value : Fp64) is
-      -- Strip leading blank from Fp64'Image
-      function Strip (S : String) return String is
-      begin
-         if S (S'First) = ' ' then
-            return S (S'First + 1 .. S'Last);
-         else
-            return S;
-         end if;
-      end Strip;
    begin
-      Put_Quoted_Attribute (Get_Field_Image (F), Strip (Fp64'Image (Value)));
+      Put_Attribute (Get_Field_Image (F), Value);
    end Put_Field;
 
    procedure Put_Field (F : Fields_Enum; Value : Boolean) is
