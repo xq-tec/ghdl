@@ -138,8 +138,7 @@ package body Ghdljson is
    end Put_Field;
 
    --  Espace special characters for JSON strings.
-   function To_JSON (Str : String) return String
-   is
+   function To_JSON (Str : String) return String is
       To_Hex : constant array (0 .. 15) of Character := "0123456789abcdef";
       --  The escape sequence uses up to 6 characters.
       Res : String (1 ..  6 * Str'Length);
@@ -155,6 +154,7 @@ package body Ghdljson is
                Res (Idx + 0) := '\';
                Res (Idx + 1) := C;
                Idx := Idx + 2;
+
             when Character'Val (0) .. Character'Val (31) =>
                Res (Idx + 0) := '\';
                Res (Idx + 1) := 'u';
@@ -164,11 +164,13 @@ package body Ghdljson is
                Res (Idx + 4) := To_Hex (C_Pos / 16);
                Res (Idx + 5) := To_Hex (C_Pos mod 16);
                Idx := Idx + 6;
+
             when Character'Val (128) .. Character'Val (255) =>
                C_Pos := Character'Pos (C);
-               Res (Idx + 0) := Character'Val(192 + (C_Pos / 64));
-               Res (Idx + 1) := Character'Val(128 + (C_Pos mod 64));
+               Res (Idx + 0) := Character'Val (192 + (C_Pos / 64));
+               Res (Idx + 1) := Character'Val (128 + (C_Pos mod 64));
                Idx := Idx + 2;
+
             when others =>
                Res (Idx) := C;
                Idx := Idx + 1;
@@ -211,8 +213,7 @@ package body Ghdljson is
       Put (']');
    end Disp_Iir_Chain;
 
-   procedure Disp_Iir_List (Id : String; L : Iir_List)
-   is
+   procedure Disp_Iir_List (Id : String; L : Iir_List) is
       El : Iir;
       It : List_Iterator;
       Is_First_Item : Boolean := True;
@@ -242,8 +243,7 @@ package body Ghdljson is
       end case;
    end Disp_Iir_List;
 
-   procedure Disp_Iir_Flist (Id : String; L : Iir_Flist)
-   is
+   procedure Disp_Iir_Flist (Id : String; L : Iir_Flist) is
       El : Iir;
       Is_First_Item : Boolean := True;
    begin
@@ -273,16 +273,25 @@ package body Ghdljson is
       end case;
    end Disp_Iir_Flist;
 
-   procedure Disp_Iir (N : Iir) is
-      Kind: constant Iir_Kind := Get_Kind (N);
+   procedure Put_Node_Metadata (K : Iir_Kind; N : Iir) is
+      Is_Operator : Boolean := False;
    begin
-      if Kind = Iir_Kind_Unused then
-         Put ("null");
-         return;
-      end if;
 
       Put ("{""");
-      Put (Get_Iir_Image (Kind));
+
+      case K is
+         when Iir_Kinds_Monadic_Operator =>
+            Put ("unary_operator");
+            Is_Operator := True;
+
+         when Iir_Kinds_Dyadic_Operator =>
+            Put ("binary_operator");
+            Is_Operator := True;
+
+         when others =>
+            Put (Get_Iir_Image (K));
+      end case;
+
       Put (""":{""id"":");
       Put (Int64 (N));
 
@@ -303,6 +312,159 @@ package body Ghdljson is
             Put (']');
          end if;
       end;
+
+      if Is_Operator then
+         Put (",""operator"":""");
+         case K is
+            when Iir_Kind_Identity_Operator =>
+               Put ("+");
+
+            when Iir_Kind_Negation_Operator =>
+               Put ("-");
+
+            when Iir_Kind_Absolute_Operator =>
+               Put ("abs");
+
+            when Iir_Kind_Not_Operator =>
+               Put ("not");
+
+            when Iir_Kind_Implicit_Condition_Operator =>
+               Put ("??");
+
+            when Iir_Kind_Condition_Operator =>
+               Put ("??");
+
+            when Iir_Kind_Reduction_And_Operator =>
+               Put ("and");
+
+            when Iir_Kind_Reduction_Or_Operator =>
+               Put ("or");
+
+            when Iir_Kind_Reduction_Nand_Operator =>
+               Put ("nand");
+
+            when Iir_Kind_Reduction_Nor_Operator =>
+               Put ("nor");
+
+            when Iir_Kind_Reduction_Xor_Operator =>
+               Put ("xor");
+
+            when Iir_Kind_Reduction_Xnor_Operator =>
+               Put ("xnor");
+
+            when Iir_Kind_And_Operator =>
+               Put ("and");
+
+            when Iir_Kind_Or_Operator =>
+               Put ("or");
+
+            when Iir_Kind_Nand_Operator =>
+               Put ("nand");
+
+            when Iir_Kind_Nor_Operator =>
+               Put ("nor");
+
+            when Iir_Kind_Xor_Operator =>
+               Put ("xor");
+
+            when Iir_Kind_Xnor_Operator =>
+               Put ("xnor");
+
+            when Iir_Kind_Equality_Operator =>
+               Put ("=");
+
+            when Iir_Kind_Inequality_Operator =>
+               Put ("/=");
+
+            when Iir_Kind_Less_Than_Operator =>
+               Put ("<");
+
+            when Iir_Kind_Less_Than_Or_Equal_Operator =>
+               Put ("<=");
+
+            when Iir_Kind_Greater_Than_Operator =>
+               Put (">");
+
+            when Iir_Kind_Greater_Than_Or_Equal_Operator =>
+               Put (">=");
+
+            when Iir_Kind_Match_Equality_Operator =>
+               Put ("==");
+
+            when Iir_Kind_Match_Inequality_Operator =>
+               Put ("/=");
+
+            when Iir_Kind_Match_Less_Than_Operator =>
+               Put ("<");
+
+            when Iir_Kind_Match_Less_Than_Or_Equal_Operator =>
+               Put ("<=");
+
+            when Iir_Kind_Match_Greater_Than_Operator =>
+               Put (">");
+
+            when Iir_Kind_Match_Greater_Than_Or_Equal_Operator =>
+               Put (">=");
+
+            when Iir_Kind_Sll_Operator =>
+               Put ("sll");
+
+            when Iir_Kind_Sla_Operator =>
+               Put ("sla");
+
+            when Iir_Kind_Srl_Operator =>
+               Put ("srl");
+
+            when Iir_Kind_Sra_Operator =>
+               Put ("sra");
+
+            when Iir_Kind_Rol_Operator =>
+               Put ("rol");
+
+            when Iir_Kind_Ror_Operator =>
+               Put ("ror");
+
+            when Iir_Kind_Addition_Operator =>
+               Put ("+");
+
+            when Iir_Kind_Substraction_Operator =>
+               Put ("-");
+
+            when Iir_Kind_Concatenation_Operator =>
+               Put ("&");
+
+            when Iir_Kind_Multiplication_Operator =>
+               Put ("*");
+
+            when Iir_Kind_Division_Operator =>
+               Put ("/");
+
+            when Iir_Kind_Modulus_Operator =>
+               Put ("mod");
+
+            when Iir_Kind_Remainder_Operator =>
+               Put ("rem");
+
+            when Iir_Kind_Exponentiation_Operator =>
+               Put ("**");
+
+            when others =>
+               null;
+         end case;
+         Put ("""");
+      end if;
+
+   end Put_Node_Metadata;
+
+   procedure Disp_Iir (N : Iir) is
+      Kind : constant Iir_Kind := Get_Kind (N);
+   begin
+      if Kind = Iir_Kind_Unused then
+         Put ("null");
+         return;
+      end if;
+
+      Put_Node_Metadata (Kind, N);
 
       declare
          Fields : constant Fields_Array := Get_Fields (Get_Kind (N));
@@ -325,6 +487,7 @@ package body Ghdljson is
                         end if;
                      end if;
                   end;
+
                when Type_Iir_List =>
                   declare
                      Val : Iir_List;
@@ -334,6 +497,7 @@ package body Ghdljson is
                         Disp_Iir_List (Get_Field_Image (F), Val);
                      end if;
                   end;
+
                when Type_Iir_Flist =>
                   declare
                      Val : Iir_Flist;
@@ -343,75 +507,105 @@ package body Ghdljson is
                         Disp_Iir_Flist (Get_Field_Image (F), Val);
                      end if;
                   end;
+
                when Type_String8_Id =>
                   Put_Field (F, To_JSON (Image_String8 (N)));
+
                when Type_PSL_NFA =>
                   Put_Field (F, "PSL-NFA");
+
                when Type_PSL_Node =>
                   Put_Field (F, "PSL-NODE");
+
                when Type_Source_Ptr =>
                   null;
+
                when Type_Date_Type =>
                   null;
+
                when Type_Number_Base_Type =>
                   Put_Field (F, Number_Base_Type'Image
                                (Get_Number_Base_Type (N, F)));
+
                when Type_Iir_Constraint =>
                   Put_Field (F, Image_Iir_Constraint
                                (Get_Iir_Constraint (N, F)));
+
                when Type_Iir_Mode =>
                   Put_Field (F, Image_Iir_Mode (Get_Iir_Mode (N, F)));
+
                when Type_Iir_Force_Mode =>
                   Put_Field (F, Image_Iir_Force_Mode
                                (Get_Iir_Force_Mode (N, F)));
+
                when Type_Iir_Index32 =>
                   Put_Field (F, Int64 (Get_Iir_Index32 (N, F)));
+
                when Type_Int64 =>
                   Put_Field (F, Get_Int64 (N, F));
+
                when Type_Boolean =>
                   Put_Field (F, Get_Boolean (N, F));
+
                when Type_Iir_Staticness =>
                   Put_Field (F, Image_Iir_Staticness
                                (Get_Iir_Staticness (N, F)));
+
                when Type_Scalar_Size =>
                   null;
+
                when Type_Date_State_Type =>
                   null;
+
                when Type_Iir_All_Sensitized =>
                   Put_Field (F, Image_Iir_All_Sensitized
                                (Get_Iir_All_Sensitized (N, F)));
+
                when Type_Iir_Signal_Kind =>
                   Put_Field (F, Image_Iir_Signal_Kind
                                (Get_Iir_Signal_Kind (N, F)));
+
                when Type_Tri_State_Type =>
                   Put_Field (F, Image_Tri_State_Type
                                (Get_Tri_State_Type (N, F)));
+
                when Type_Iir_Pure_State =>
                   Put_Field (F, Image_Iir_Pure_State
                                (Get_Iir_Pure_State (N, F)));
+
                when Type_Iir_Delay_Mechanism =>
                   Put_Field (F, Image_Iir_Delay_Mechanism
                                (Get_Iir_Delay_Mechanism (N, F)));
+
                when Type_Iir_Predefined_Functions =>
                   Put_Field (F, Image_Iir_Predefined_Functions
                                (Get_Iir_Predefined_Functions (N, F)));
+
                when Type_Direction_Type =>
                   Put_Field (F, Image_Direction_Type
                                (Get_Direction_Type (N, F)));
+
                when Type_Iir_Int32 =>
                   Put_Field (F, Int64 (Get_Iir_Int32 (N, F)));
+
                when Type_Int32 =>
                   Put_Field (F, Int64 (Get_Int32 (N, F)));
+
                when Type_Fp64 =>
                   Put_Field (F, Get_Fp64 (N, F));
+
                when Type_Time_Stamp_Id =>
                   null;
+
                when Type_File_Checksum_Id =>
                   null;
+
                when Type_Token_Type =>
                   Put_Field (F, Image_Token_Type (Get_Token_Type (N, F)));
+
                when Type_Name_Id =>
                   Put_Field (F, To_JSON (Image (Get_Name_Id (N, F))));
+
                when Type_Source_File_Entry =>
                   null;
             end case;
