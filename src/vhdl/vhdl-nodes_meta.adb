@@ -421,7 +421,7 @@ package body Vhdl.Nodes_Meta is
    begin
       case F is
          when Field_First_Design_Unit =>
-            return "first_design_unit";
+            return "design_units";
          when Field_Last_Design_Unit =>
             return "last_design_unit";
          when Field_Library_Declaration =>
@@ -441,7 +441,7 @@ package body Vhdl.Nodes_Meta is
          when Field_Design_File =>
             return "design_file";
          when Field_Design_File_Chain =>
-            return "design_file_chain";
+            return "design_files";
          when Field_Library_Directory =>
             return "library_directory";
          when Field_Date =>
@@ -459,7 +459,7 @@ package body Vhdl.Nodes_Meta is
          when Field_Library_Unit =>
             return "library_unit";
          when Field_Hash_Chain =>
-            return "hash_chain";
+            return "hashes";
          when Field_Design_Unit_Source_Pos =>
             return "design_unit_source_pos";
          when Field_Design_Unit_Source_Line =>
@@ -505,7 +505,7 @@ package body Vhdl.Nodes_Meta is
          when Field_Attribute_Designator =>
             return "attribute_designator";
          when Field_Attribute_Specification_Chain =>
-            return "attribute_specification_chain";
+            return "attribute_specifications";
          when Field_Attribute_Specification =>
             return "attribute_specification";
          when Field_Static_Attribute_Flag =>
@@ -545,7 +545,7 @@ package body Vhdl.Nodes_Meta is
          when Field_Associated_Block =>
             return "associated_block";
          when Field_Associated_Chain =>
-            return "associated_chain";
+            return "associateds";
          when Field_Choice_Name =>
             return "choice_name";
          when Field_Choice_Expression =>
@@ -563,15 +563,15 @@ package body Vhdl.Nodes_Meta is
          when Field_Prev_Block_Configuration =>
             return "prev_block_configuration";
          when Field_Configuration_Item_Chain =>
-            return "configuration_item_chain";
+            return "configuration_items";
          when Field_Attribute_Value_Chain =>
-            return "attribute_value_chain";
+            return "attribute_values";
          when Field_Spec_Chain =>
-            return "spec_chain";
+            return "specs";
          when Field_Value_Chain =>
-            return "value_chain";
+            return "values";
          when Field_Attribute_Value_Spec_Chain =>
-            return "attribute_value_spec_chain";
+            return "attribute_value_specs";
          when Field_Entity_Name =>
             return "entity_name";
          when Field_Package =>
@@ -593,21 +593,21 @@ package body Vhdl.Nodes_Meta is
          when Field_Hierarchical_Name =>
             return "hierarchical_name";
          when Field_Vunit_Item_Chain =>
-            return "vunit_item_chain";
+            return "vunit_items";
          when Field_Bound_Vunit_Chain =>
-            return "bound_vunit_chain";
+            return "bound_vunits";
          when Field_Verification_Block_Configuration =>
             return "verification_block_configuration";
          when Field_Block_Configuration =>
             return "block_configuration";
          when Field_Concurrent_Statement_Chain =>
-            return "concurrent_statement_chain";
+            return "concurrent_statements";
          when Field_Chain =>
             return "chain";
          when Field_Port_Chain =>
-            return "port_chain";
+            return "ports";
          when Field_Generic_Chain =>
-            return "generic_chain";
+            return "generics";
          when Field_Type =>
             return "type";
          when Field_Subtype_Indication =>
@@ -641,7 +641,7 @@ package body Vhdl.Nodes_Meta is
          when Field_Base_Name =>
             return "base_name";
          when Field_Interface_Declaration_Chain =>
-            return "interface_declaration_chain";
+            return "interface_declarations";
          when Field_Default_Subprogram =>
             return "default_subprogram";
          when Field_Associated_Subprogram =>
@@ -649,9 +649,9 @@ package body Vhdl.Nodes_Meta is
          when Field_Subprogram_Specification =>
             return "subprogram_specification";
          when Field_Sequential_Statement_Chain =>
-            return "sequential_statement_chain";
+            return "sequential_statements";
          when Field_Simultaneous_Statement_Chain =>
-            return "simultaneous_statement_chain";
+            return "simultaneous_statements";
          when Field_Subprogram_Body =>
             return "subprogram_body";
          when Field_Overload_Number =>
@@ -685,7 +685,7 @@ package body Vhdl.Nodes_Meta is
          when Field_Signal_Driver =>
             return "signal_driver";
          when Field_Declaration_Chain =>
-            return "declaration_chain";
+            return "declarations";
          when Field_File_Logical_Name =>
             return "file_logical_name";
          when Field_File_Open_Kind =>
@@ -693,11 +693,11 @@ package body Vhdl.Nodes_Meta is
          when Field_Element_Position =>
             return "element_position";
          when Field_Use_Clause_Chain =>
-            return "use_clause_chain";
+            return "use_clauses";
          when Field_Context_Reference_Chain =>
-            return "context_reference_chain";
+            return "context_references";
          when Field_Inherit_Spec_Chain =>
-            return "inherit_spec_chain";
+            return "inherit_specs";
          when Field_Selected_Name =>
             return "selected_name";
          when Field_Mode_View_Name =>
@@ -707,17 +707,17 @@ package body Vhdl.Nodes_Meta is
          when Field_Complete_Type_Definition =>
             return "complete_type_definition";
          when Field_Incomplete_Type_Ref_Chain =>
-            return "incomplete_type_ref_chain";
+            return "incomplete_type_refs";
          when Field_Associated_Type =>
             return "associated_type";
          when Field_Enumeration_Literal_List =>
             return "enumeration_literal_list";
          when Field_Entity_Class_Entry_Chain =>
-            return "entity_class_entry_chain";
+            return "entity_class_entrys";
          when Field_Group_Constituent_List =>
             return "group_constituent_list";
          when Field_Unit_Chain =>
-            return "unit_chain";
+            return "units";
          when Field_Primary_Unit =>
             return "primary_unit";
          when Field_Identifier =>
@@ -749,7 +749,7 @@ package body Vhdl.Nodes_Meta is
          when Field_Resolution_Indication =>
             return "resolution_indication";
          when Field_Record_Element_Resolution_Chain =>
-            return "record_element_resolution_chain";
+            return "record_element_resolutions";
          when Field_Tolerance =>
             return "tolerance";
          when Field_Plus_Terminal_Name =>
@@ -805,11 +805,11 @@ package body Vhdl.Nodes_Meta is
          when Field_Elements_Declaration_List =>
             return "elements_declaration_list";
          when Field_Elements_Definition_Chain =>
-            return "elements_definition_chain";
+            return "elements_definitions";
          when Field_Elements_Definition_List =>
             return "elements_definition_list";
          when Field_Owned_Elements_Chain =>
-            return "owned_elements_chain";
+            return "owned_elements";
          when Field_Designated_Type =>
             return "designated_type";
          when Field_Designated_Subtype_Indication =>
@@ -835,7 +835,7 @@ package body Vhdl.Nodes_Meta is
          when Field_Target =>
             return "target";
          when Field_Waveform_Chain =>
-            return "waveform_chain";
+            return "waveforms";
          when Field_Guard =>
             return "guard";
          when Field_Delay_Mechanism =>
@@ -911,9 +911,9 @@ package body Vhdl.Nodes_Meta is
          when Field_Instantiated_Header =>
             return "instantiated_header";
          when Field_Generic_Map_Aspect_Chain =>
-            return "generic_map_aspect_chain";
+            return "generic_map_aspects";
          when Field_Port_Map_Aspect_Chain =>
-            return "port_map_aspect_chain";
+            return "port_map_aspects";
          when Field_Configuration_Name =>
             return "configuration_name";
          when Field_Component_Configuration =>
@@ -927,15 +927,15 @@ package body Vhdl.Nodes_Meta is
          when Field_Expression =>
             return "expression";
          when Field_Conditional_Expression_Chain =>
-            return "conditional_expression_chain";
+            return "conditional_expressions";
          when Field_Allocator_Designated_Type =>
             return "allocator_designated_type";
          when Field_Selected_Waveform_Chain =>
-            return "selected_waveform_chain";
+            return "selected_waveforms";
          when Field_Selected_Expressions_Chain =>
-            return "selected_expressions_chain";
+            return "selected_expressions";
          when Field_Conditional_Waveform_Chain =>
-            return "conditional_waveform_chain";
+            return "conditional_waveforms";
          when Field_Guard_Expression =>
             return "guard_expression";
          when Field_Guard_Decl =>
@@ -943,7 +943,7 @@ package body Vhdl.Nodes_Meta is
          when Field_Guard_Sensitivity_List =>
             return "guard_sensitivity_list";
          when Field_Attribute_Implicit_Chain =>
-            return "attribute_implicit_chain";
+            return "attribute_implicits";
          when Field_Block_Block_Configuration =>
             return "block_block_configuration";
          when Field_Package_Header =>
@@ -1043,17 +1043,17 @@ package body Vhdl.Nodes_Meta is
          when Field_Parameter_4 =>
             return "parameter_4";
          when Field_Attr_Chain =>
-            return "attr_chain";
+            return "attrs";
          when Field_Actual_Type =>
             return "actual_type";
          when Field_Actual_Type_Definition =>
             return "actual_type_definition";
          when Field_Association_Chain =>
-            return "association_chain";
+            return "associations";
          when Field_Individual_Association_Chain =>
-            return "individual_association_chain";
+            return "individual_associations";
          when Field_Subprogram_Association_Chain =>
-            return "subprogram_association_chain";
+            return "subprogram_associations";
          when Field_Aggregate_Info =>
             return "aggregate_info";
          when Field_Sub_Aggregate_Info =>
@@ -1075,9 +1075,9 @@ package body Vhdl.Nodes_Meta is
          when Field_Determined_Aggregate_Flag =>
             return "determined_aggregate_flag";
          when Field_Association_Choices_Chain =>
-            return "association_choices_chain";
+            return "association_choices";
          when Field_Case_Statement_Alternative_Chain =>
-            return "case_statement_alternative_chain";
+            return "case_statement_alternatives";
          when Field_Matching_Flag =>
             return "matching_flag";
          when Field_Choice_Staticness =>
@@ -1087,7 +1087,7 @@ package body Vhdl.Nodes_Meta is
          when Field_Implementation =>
             return "implementation";
          when Field_Parameter_Association_Chain =>
-            return "parameter_association_chain";
+            return "parameter_associations";
          when Field_Method_Object =>
             return "method_object";
          when Field_Subtype_Type_Mark =>
@@ -1201,7 +1201,7 @@ package body Vhdl.Nodes_Meta is
          when Field_Suspend_State_Index =>
             return "suspend_state_index";
          when Field_Suspend_State_Chain =>
-            return "suspend_state_chain";
+            return "suspend_states";
          when Field_Suspend_State_Last =>
             return "suspend_state_last";
          when Field_Suspend_State_Decl =>
