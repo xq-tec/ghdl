@@ -367,22 +367,22 @@ package body Ghdljson is
                Put (">=");
 
             when Iir_Kind_Match_Equality_Operator =>
-               Put ("==");
+               Put ("?=");
 
             when Iir_Kind_Match_Inequality_Operator =>
-               Put ("/=");
+               Put ("?/=");
 
             when Iir_Kind_Match_Less_Than_Operator =>
-               Put ("<");
+               Put ("?<");
 
             when Iir_Kind_Match_Less_Than_Or_Equal_Operator =>
-               Put ("<=");
+               Put ("?<=");
 
             when Iir_Kind_Match_Greater_Than_Operator =>
-               Put (">");
+               Put ("?>");
 
             when Iir_Kind_Match_Greater_Than_Or_Equal_Operator =>
-               Put (">=");
+               Put ("?>=");
 
             when Iir_Kind_Sll_Operator =>
                Put ("sll");
