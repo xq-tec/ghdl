@@ -620,9 +620,21 @@ package body Ghdljson is
          for I in Fields'Range loop
             F := Fields (I);
             case F is
-               when Field_Chain => null;
-               when Field_Hash_Chain => null;
-               when Field_Suspend_State_Chain => null;
+               when Field_Chain
+                  | Field_Hash_Chain
+                  | Field_Covered_Flag
+                  | Field_Elab_Flag
+                  | Field_Elaborated_Flag
+                  | Field_Is_Forward_Ref
+                  | Field_Is_Ref
+                  | Field_Is_Within_Flag
+                  | Field_Seen_Flag
+                  | Field_Subprogram_Hash
+                  | Field_Suspend_Flag
+                  | Field_Suspend_State_Chain
+                  | Field_Use_Flag
+                  | Field_Visible_Flag
+                     => null;
                when others => Disp_Field (F, N);
             end case;
          end loop;
