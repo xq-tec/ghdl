@@ -253,6 +253,7 @@ package body Ghdljson is
 
    procedure Put_Node_Metadata (K : Iir_Kind; N : Iir) is
       Is_Operator : Boolean := False;
+      Is_Attribute : Boolean := False;
    begin
 
       Put ("{""");
@@ -265,6 +266,10 @@ package body Ghdljson is
          when Iir_Kinds_Dyadic_Operator =>
             Put ("binary_operator");
             Is_Operator := True;
+
+         when Iir_Kinds_Attribute =>
+            Put ("attribute");
+            Is_Attribute := True;
 
          when others =>
             Put (Get_Iir_Image (K));
@@ -292,7 +297,7 @@ package body Ghdljson is
       end;
 
       if Is_Operator then
-         Put (",""operator"":""");
+         Put (",""kind"":""");
          case K is
             when Iir_Kind_Identity_Operator =>
                Put ("+");
@@ -429,6 +434,179 @@ package body Ghdljson is
             when others =>
                null;
          end case;
+         Put ("""");
+      end if;
+
+      if Is_Attribute then
+         Put (",""kind"":""");
+         case K is
+            when Iir_Kind_Base_Attribute =>
+               Put ("base");
+
+            when Iir_Kind_Subtype_Attribute =>
+               Put ("subtype");
+
+            when Iir_Kind_Element_Attribute =>
+               Put ("element");
+
+            when Iir_Kind_Across_Attribute =>
+               Put ("across");
+
+            when Iir_Kind_Through_Attribute =>
+               Put ("through");
+
+            when Iir_Kind_Nature_Reference_Attribute =>
+               Put ("nature_reference");
+
+            when Iir_Kind_Left_Type_Attribute =>
+               Put ("left_type");
+
+            when Iir_Kind_Right_Type_Attribute =>
+               Put ("right_type");
+
+            when Iir_Kind_High_Type_Attribute =>
+               Put ("high_type");
+
+            when Iir_Kind_Low_Type_Attribute =>
+               Put ("low_type");
+
+            when Iir_Kind_Ascending_Type_Attribute =>
+               Put ("ascending_type");
+
+            when Iir_Kind_Image_Attribute =>
+               Put ("image");
+
+            when Iir_Kind_Value_Attribute =>
+               Put ("value");
+
+            when Iir_Kind_Pos_Attribute =>
+               Put ("pos");
+
+            when Iir_Kind_Val_Attribute =>
+               Put ("val");
+
+            when Iir_Kind_Succ_Attribute =>
+               Put ("succ");
+
+            when Iir_Kind_Pred_Attribute =>
+               Put ("pred");
+
+            when Iir_Kind_Leftof_Attribute =>
+               Put ("leftof");
+
+            when Iir_Kind_Rightof_Attribute =>
+               Put ("rightof");
+
+            when Iir_Kind_Signal_Slew_Attribute =>
+               Put ("signal_slew");
+
+            when Iir_Kind_Quantity_Slew_Attribute =>
+               Put ("quantity_slew");
+
+            when Iir_Kind_Ramp_Attribute =>
+               Put ("ramp");
+
+            when Iir_Kind_Zoh_Attribute =>
+               Put ("zoh");
+
+            when Iir_Kind_Ltf_Attribute =>
+               Put ("ltf");
+
+            when Iir_Kind_Ztf_Attribute =>
+               Put ("ztf");
+
+            when Iir_Kind_Dot_Attribute =>
+               Put ("dot");
+
+            when Iir_Kind_Integ_Attribute =>
+               Put ("integ");
+
+            when Iir_Kind_Quantity_Delayed_Attribute =>
+               Put ("quantity_delayed");
+
+            when Iir_Kind_Above_Attribute =>
+               Put ("above");
+
+            when Iir_Kind_Delayed_Attribute =>
+               Put ("delayed");
+
+            when Iir_Kind_Stable_Attribute =>
+               Put ("stable");
+
+            when Iir_Kind_Quiet_Attribute =>
+               Put ("quiet");
+
+            when Iir_Kind_Transaction_Attribute =>
+               Put ("transaction");
+
+            when Iir_Kind_Event_Attribute =>
+               Put ("event");
+
+            when Iir_Kind_Active_Attribute =>
+               Put ("active");
+
+            when Iir_Kind_Last_Event_Attribute =>
+               Put ("last_event");
+
+            when Iir_Kind_Last_Active_Attribute =>
+               Put ("last_active");
+
+            when Iir_Kind_Last_Value_Attribute =>
+               Put ("last_value");
+
+            when Iir_Kind_Driving_Attribute =>
+               Put ("driving");
+
+            when Iir_Kind_Driving_Value_Attribute =>
+               Put ("driving_value");
+
+            when Iir_Kind_Behavior_Attribute =>
+               Put ("behavior");
+
+            when Iir_Kind_Structure_Attribute =>
+               Put ("structure");
+
+            when Iir_Kind_Simple_Name_Attribute =>
+               Put ("simple_name");
+
+            when Iir_Kind_Instance_Name_Attribute =>
+               Put ("instance_name");
+
+            when Iir_Kind_Path_Name_Attribute =>
+               Put ("path_name");
+
+            when Iir_Kind_Converse_Attribute =>
+               Put ("converse");
+
+            when Iir_Kind_Left_Array_Attribute =>
+               Put ("left_array");
+
+            when Iir_Kind_Right_Array_Attribute =>
+               Put ("right_array");
+
+            when Iir_Kind_High_Array_Attribute =>
+               Put ("high_array");
+
+            when Iir_Kind_Low_Array_Attribute =>
+               Put ("low_array");
+
+            when Iir_Kind_Length_Array_Attribute =>
+               Put ("length_array");
+
+            when Iir_Kind_Ascending_Array_Attribute =>
+               Put ("ascending_array");
+
+            when Iir_Kind_Range_Array_Attribute =>
+               Put ("range_array");
+
+            when Iir_Kind_Reverse_Range_Array_Attribute =>
+               Put ("reverse_range_array");
+
+            when others =>
+               null;
+
+         end case;
+
          Put ("""");
       end if;
 
