@@ -251,6 +251,118 @@ package body Ghdljson is
       end case;
    end Disp_Iir_Flist;
 
+   function Get_Operator_Kind (K : Iir_Kind) return String is
+   begin
+      case K is
+         when Iir_Kind_Identity_Operator => return """+""";
+         when Iir_Kind_Negation_Operator => return """-""";
+         when Iir_Kind_Absolute_Operator => return """abs""";
+         when Iir_Kind_Not_Operator => return """not""";
+         when Iir_Kind_Implicit_Condition_Operator => return """??""";
+         when Iir_Kind_Condition_Operator => return """??""";
+         when Iir_Kind_Reduction_And_Operator => return """and""";
+         when Iir_Kind_Reduction_Or_Operator => return """or""";
+         when Iir_Kind_Reduction_Nand_Operator => return """nand""";
+         when Iir_Kind_Reduction_Nor_Operator => return """nor""";
+         when Iir_Kind_Reduction_Xor_Operator => return """xor""";
+         when Iir_Kind_Reduction_Xnor_Operator => return """xnor""";
+         when Iir_Kind_And_Operator => return """and""";
+         when Iir_Kind_Or_Operator => return """or""";
+         when Iir_Kind_Nand_Operator => return """nand""";
+         when Iir_Kind_Nor_Operator => return """nor""";
+         when Iir_Kind_Xor_Operator => return """xor""";
+         when Iir_Kind_Xnor_Operator => return """xnor""";
+         when Iir_Kind_Equality_Operator => return """=""";
+         when Iir_Kind_Inequality_Operator => return """/=""";
+         when Iir_Kind_Less_Than_Operator => return """<""";
+         when Iir_Kind_Less_Than_Or_Equal_Operator => return """<=""";
+         when Iir_Kind_Greater_Than_Operator => return """>""";
+         when Iir_Kind_Greater_Than_Or_Equal_Operator => return """>=""";
+         when Iir_Kind_Match_Equality_Operator => return """?=""";
+         when Iir_Kind_Match_Inequality_Operator => return """?/=""";
+         when Iir_Kind_Match_Less_Than_Operator => return """?<""";
+         when Iir_Kind_Match_Less_Than_Or_Equal_Operator => return """?<=""";
+         when Iir_Kind_Match_Greater_Than_Operator => return """?>""";
+         when Iir_Kind_Match_Greater_Than_Or_Equal_Operator => return """?>=""";
+         when Iir_Kind_Sll_Operator => return """sll""";
+         when Iir_Kind_Sla_Operator => return """sla""";
+         when Iir_Kind_Srl_Operator => return """srl""";
+         when Iir_Kind_Sra_Operator => return """sra""";
+         when Iir_Kind_Rol_Operator => return """rol""";
+         when Iir_Kind_Ror_Operator => return """ror""";
+         when Iir_Kind_Addition_Operator => return """+""";
+         when Iir_Kind_Substraction_Operator => return """-""";
+         when Iir_Kind_Concatenation_Operator => return """&""";
+         when Iir_Kind_Multiplication_Operator => return """*""";
+         when Iir_Kind_Division_Operator => return """/""";
+         when Iir_Kind_Modulus_Operator => return """mod""";
+         when Iir_Kind_Remainder_Operator => return """rem""";
+         when Iir_Kind_Exponentiation_Operator => return """**""";
+         when others => return "";
+      end case;
+   end Get_Operator_Kind;
+
+   function Get_Attribute_Kind (K : Iir_Kind) return String is
+   begin
+      case K is
+         when Iir_Kind_Base_Attribute => return """base""";
+         when Iir_Kind_Subtype_Attribute => return """subtype""";
+         when Iir_Kind_Element_Attribute => return """element""";
+         when Iir_Kind_Across_Attribute => return """across""";
+         when Iir_Kind_Through_Attribute => return """through""";
+         when Iir_Kind_Nature_Reference_Attribute => return """nature_reference""";
+         when Iir_Kind_Left_Type_Attribute => return """left_type""";
+         when Iir_Kind_Right_Type_Attribute => return """right_type""";
+         when Iir_Kind_High_Type_Attribute => return """high_type""";
+         when Iir_Kind_Low_Type_Attribute => return """low_type""";
+         when Iir_Kind_Ascending_Type_Attribute => return """ascending_type""";
+         when Iir_Kind_Image_Attribute => return """image""";
+         when Iir_Kind_Value_Attribute => return """value""";
+         when Iir_Kind_Pos_Attribute => return """pos""";
+         when Iir_Kind_Val_Attribute => return """val""";
+         when Iir_Kind_Succ_Attribute => return """succ""";
+         when Iir_Kind_Pred_Attribute => return """pred""";
+         when Iir_Kind_Leftof_Attribute => return """leftof""";
+         when Iir_Kind_Rightof_Attribute => return """rightof""";
+         when Iir_Kind_Signal_Slew_Attribute => return """signal_slew""";
+         when Iir_Kind_Quantity_Slew_Attribute => return """quantity_slew""";
+         when Iir_Kind_Ramp_Attribute => return """ramp""";
+         when Iir_Kind_Zoh_Attribute => return """zoh""";
+         when Iir_Kind_Ltf_Attribute => return """ltf""";
+         when Iir_Kind_Ztf_Attribute => return """ztf""";
+         when Iir_Kind_Dot_Attribute => return """dot""";
+         when Iir_Kind_Integ_Attribute => return """integ""";
+         when Iir_Kind_Quantity_Delayed_Attribute => return """quantity_delayed""";
+         when Iir_Kind_Above_Attribute => return """above""";
+         when Iir_Kind_Delayed_Attribute => return """delayed""";
+         when Iir_Kind_Stable_Attribute => return """stable""";
+         when Iir_Kind_Quiet_Attribute => return """quiet""";
+         when Iir_Kind_Transaction_Attribute => return """transaction""";
+         when Iir_Kind_Event_Attribute => return """event""";
+         when Iir_Kind_Active_Attribute => return """active""";
+         when Iir_Kind_Last_Event_Attribute => return """last_event""";
+         when Iir_Kind_Last_Active_Attribute => return """last_active""";
+         when Iir_Kind_Last_Value_Attribute => return """last_value""";
+         when Iir_Kind_Driving_Attribute => return """driving""";
+         when Iir_Kind_Driving_Value_Attribute => return """driving_value""";
+         when Iir_Kind_Behavior_Attribute => return """behavior""";
+         when Iir_Kind_Structure_Attribute => return """structure""";
+         when Iir_Kind_Simple_Name_Attribute => return """simple_name""";
+         when Iir_Kind_Instance_Name_Attribute => return """instance_name""";
+         when Iir_Kind_Path_Name_Attribute => return """path_name""";
+         when Iir_Kind_Converse_Attribute => return """converse""";
+         when Iir_Kind_Left_Array_Attribute => return """left_array""";
+         when Iir_Kind_Right_Array_Attribute => return """right_array""";
+         when Iir_Kind_High_Array_Attribute => return """high_array""";
+         when Iir_Kind_Low_Array_Attribute => return """low_array""";
+         when Iir_Kind_Length_Array_Attribute => return """length_array""";
+         when Iir_Kind_Ascending_Array_Attribute => return """ascending_array""";
+         when Iir_Kind_Range_Array_Attribute => return """range_array""";
+         when Iir_Kind_Reverse_Range_Array_Attribute => return """reverse_range_array""";
+         when others => return "";
+      end case;
+   end Get_Attribute_Kind;
+
    procedure Put_Node_Metadata (K : Iir_Kind; N : Iir) is
       Is_Operator : Boolean := False;
       Is_Attribute : Boolean := False;
@@ -297,319 +409,13 @@ package body Ghdljson is
       end;
 
       if Is_Operator then
-         Put (",""kind"":""");
-         case K is
-            when Iir_Kind_Identity_Operator =>
-               Put ("+");
-
-            when Iir_Kind_Negation_Operator =>
-               Put ("-");
-
-            when Iir_Kind_Absolute_Operator =>
-               Put ("abs");
-
-            when Iir_Kind_Not_Operator =>
-               Put ("not");
-
-            when Iir_Kind_Implicit_Condition_Operator =>
-               Put ("??");
-
-            when Iir_Kind_Condition_Operator =>
-               Put ("??");
-
-            when Iir_Kind_Reduction_And_Operator =>
-               Put ("and");
-
-            when Iir_Kind_Reduction_Or_Operator =>
-               Put ("or");
-
-            when Iir_Kind_Reduction_Nand_Operator =>
-               Put ("nand");
-
-            when Iir_Kind_Reduction_Nor_Operator =>
-               Put ("nor");
-
-            when Iir_Kind_Reduction_Xor_Operator =>
-               Put ("xor");
-
-            when Iir_Kind_Reduction_Xnor_Operator =>
-               Put ("xnor");
-
-            when Iir_Kind_And_Operator =>
-               Put ("and");
-
-            when Iir_Kind_Or_Operator =>
-               Put ("or");
-
-            when Iir_Kind_Nand_Operator =>
-               Put ("nand");
-
-            when Iir_Kind_Nor_Operator =>
-               Put ("nor");
-
-            when Iir_Kind_Xor_Operator =>
-               Put ("xor");
-
-            when Iir_Kind_Xnor_Operator =>
-               Put ("xnor");
-
-            when Iir_Kind_Equality_Operator =>
-               Put ("=");
-
-            when Iir_Kind_Inequality_Operator =>
-               Put ("/=");
-
-            when Iir_Kind_Less_Than_Operator =>
-               Put ("<");
-
-            when Iir_Kind_Less_Than_Or_Equal_Operator =>
-               Put ("<=");
-
-            when Iir_Kind_Greater_Than_Operator =>
-               Put (">");
-
-            when Iir_Kind_Greater_Than_Or_Equal_Operator =>
-               Put (">=");
-
-            when Iir_Kind_Match_Equality_Operator =>
-               Put ("?=");
-
-            when Iir_Kind_Match_Inequality_Operator =>
-               Put ("?/=");
-
-            when Iir_Kind_Match_Less_Than_Operator =>
-               Put ("?<");
-
-            when Iir_Kind_Match_Less_Than_Or_Equal_Operator =>
-               Put ("?<=");
-
-            when Iir_Kind_Match_Greater_Than_Operator =>
-               Put ("?>");
-
-            when Iir_Kind_Match_Greater_Than_Or_Equal_Operator =>
-               Put ("?>=");
-
-            when Iir_Kind_Sll_Operator =>
-               Put ("sll");
-
-            when Iir_Kind_Sla_Operator =>
-               Put ("sla");
-
-            when Iir_Kind_Srl_Operator =>
-               Put ("srl");
-
-            when Iir_Kind_Sra_Operator =>
-               Put ("sra");
-
-            when Iir_Kind_Rol_Operator =>
-               Put ("rol");
-
-            when Iir_Kind_Ror_Operator =>
-               Put ("ror");
-
-            when Iir_Kind_Addition_Operator =>
-               Put ("+");
-
-            when Iir_Kind_Substraction_Operator =>
-               Put ("-");
-
-            when Iir_Kind_Concatenation_Operator =>
-               Put ("&");
-
-            when Iir_Kind_Multiplication_Operator =>
-               Put ("*");
-
-            when Iir_Kind_Division_Operator =>
-               Put ("/");
-
-            when Iir_Kind_Modulus_Operator =>
-               Put ("mod");
-
-            when Iir_Kind_Remainder_Operator =>
-               Put ("rem");
-
-            when Iir_Kind_Exponentiation_Operator =>
-               Put ("**");
-
-            when others =>
-               null;
-         end case;
-         Put ("""");
+         Put (",""kind"":");
+         Put (Get_Operator_Kind (K));
       end if;
-
       if Is_Attribute then
-         Put (",""kind"":""");
-         case K is
-            when Iir_Kind_Base_Attribute =>
-               Put ("base");
-
-            when Iir_Kind_Subtype_Attribute =>
-               Put ("subtype");
-
-            when Iir_Kind_Element_Attribute =>
-               Put ("element");
-
-            when Iir_Kind_Across_Attribute =>
-               Put ("across");
-
-            when Iir_Kind_Through_Attribute =>
-               Put ("through");
-
-            when Iir_Kind_Nature_Reference_Attribute =>
-               Put ("nature_reference");
-
-            when Iir_Kind_Left_Type_Attribute =>
-               Put ("left_type");
-
-            when Iir_Kind_Right_Type_Attribute =>
-               Put ("right_type");
-
-            when Iir_Kind_High_Type_Attribute =>
-               Put ("high_type");
-
-            when Iir_Kind_Low_Type_Attribute =>
-               Put ("low_type");
-
-            when Iir_Kind_Ascending_Type_Attribute =>
-               Put ("ascending_type");
-
-            when Iir_Kind_Image_Attribute =>
-               Put ("image");
-
-            when Iir_Kind_Value_Attribute =>
-               Put ("value");
-
-            when Iir_Kind_Pos_Attribute =>
-               Put ("pos");
-
-            when Iir_Kind_Val_Attribute =>
-               Put ("val");
-
-            when Iir_Kind_Succ_Attribute =>
-               Put ("succ");
-
-            when Iir_Kind_Pred_Attribute =>
-               Put ("pred");
-
-            when Iir_Kind_Leftof_Attribute =>
-               Put ("leftof");
-
-            when Iir_Kind_Rightof_Attribute =>
-               Put ("rightof");
-
-            when Iir_Kind_Signal_Slew_Attribute =>
-               Put ("signal_slew");
-
-            when Iir_Kind_Quantity_Slew_Attribute =>
-               Put ("quantity_slew");
-
-            when Iir_Kind_Ramp_Attribute =>
-               Put ("ramp");
-
-            when Iir_Kind_Zoh_Attribute =>
-               Put ("zoh");
-
-            when Iir_Kind_Ltf_Attribute =>
-               Put ("ltf");
-
-            when Iir_Kind_Ztf_Attribute =>
-               Put ("ztf");
-
-            when Iir_Kind_Dot_Attribute =>
-               Put ("dot");
-
-            when Iir_Kind_Integ_Attribute =>
-               Put ("integ");
-
-            when Iir_Kind_Quantity_Delayed_Attribute =>
-               Put ("quantity_delayed");
-
-            when Iir_Kind_Above_Attribute =>
-               Put ("above");
-
-            when Iir_Kind_Delayed_Attribute =>
-               Put ("delayed");
-
-            when Iir_Kind_Stable_Attribute =>
-               Put ("stable");
-
-            when Iir_Kind_Quiet_Attribute =>
-               Put ("quiet");
-
-            when Iir_Kind_Transaction_Attribute =>
-               Put ("transaction");
-
-            when Iir_Kind_Event_Attribute =>
-               Put ("event");
-
-            when Iir_Kind_Active_Attribute =>
-               Put ("active");
-
-            when Iir_Kind_Last_Event_Attribute =>
-               Put ("last_event");
-
-            when Iir_Kind_Last_Active_Attribute =>
-               Put ("last_active");
-
-            when Iir_Kind_Last_Value_Attribute =>
-               Put ("last_value");
-
-            when Iir_Kind_Driving_Attribute =>
-               Put ("driving");
-
-            when Iir_Kind_Driving_Value_Attribute =>
-               Put ("driving_value");
-
-            when Iir_Kind_Behavior_Attribute =>
-               Put ("behavior");
-
-            when Iir_Kind_Structure_Attribute =>
-               Put ("structure");
-
-            when Iir_Kind_Simple_Name_Attribute =>
-               Put ("simple_name");
-
-            when Iir_Kind_Instance_Name_Attribute =>
-               Put ("instance_name");
-
-            when Iir_Kind_Path_Name_Attribute =>
-               Put ("path_name");
-
-            when Iir_Kind_Converse_Attribute =>
-               Put ("converse");
-
-            when Iir_Kind_Left_Array_Attribute =>
-               Put ("left_array");
-
-            when Iir_Kind_Right_Array_Attribute =>
-               Put ("right_array");
-
-            when Iir_Kind_High_Array_Attribute =>
-               Put ("high_array");
-
-            when Iir_Kind_Low_Array_Attribute =>
-               Put ("low_array");
-
-            when Iir_Kind_Length_Array_Attribute =>
-               Put ("length_array");
-
-            when Iir_Kind_Ascending_Array_Attribute =>
-               Put ("ascending_array");
-
-            when Iir_Kind_Range_Array_Attribute =>
-               Put ("range_array");
-
-            when Iir_Kind_Reverse_Range_Array_Attribute =>
-               Put ("reverse_range_array");
-
-            when others =>
-               null;
-
-         end case;
-
-         Put ("""");
+         Put (",""kind"":");
+         Put (Get_Attribute_Kind (K));
       end if;
-
    end Put_Node_Metadata;
 
    procedure Disp_Field (F : Fields_Enum; N : Iir) is
