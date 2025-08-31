@@ -97,7 +97,7 @@ endif
 
 WARN_ADAFLAGS+=-gnatwa -gnatwC -gnatf
 
-GNATFLAGS=-gnat12 -gnaty3befhkmr $(OPT_FLAGS) $(COVERAGE_FLAGS) $(WARN_ADAFLAGS) $(ADA_FLAGS)
+GNATFLAGS=-gnat12 -gnaty3befhkmrM100 $(OPT_FLAGS) $(COVERAGE_FLAGS) $(WARN_ADAFLAGS) $(ADA_FLAGS)
 GRT_FLAGS=$(COVERAGE_FLAGS)
 GRT_ADAFLAGS:=$(OPT_FLAGS) $(WARN_ADAFLAGS) -gnatw.X $(filter-out -gnata,$(ADA_FLAGS))
 
