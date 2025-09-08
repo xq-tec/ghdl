@@ -578,9 +578,22 @@ package body Ghdljson is
                Image_Token_Type (Get_Token_Type (N, F)));
 
          when Type_Name_Id =>
-            Put_Quoted_Attribute (
-               Get_Field_Image (F),
-               To_JSON (Image (Get_Name_Id (N, F))));
+            declare
+               Loc : constant Location_Type := Get_Location (N);
+               Name : constant String := Image (Get_Name_Id (N, F));
+            begin
+               if Name'Length > 0 then
+                  Put (",""");
+                  Put (Get_Field_Image (F));
+                  Put (""":[""");
+                  Put (To_JSON (Name));
+                  Put (""",");
+                  Put (Int64 (Loc));
+                  Put (",");
+                  Put (Int64 (Name'Length));
+                  Put ("]");
+               end if;
+            end;
 
          when Type_Source_File_Entry =>
             null;
@@ -662,6 +675,8 @@ package body Ghdljson is
          No_Source_File_Entry + 1;
       Last_Source : constant Source_File_Entry :=
          Files_Map.Get_Last_Source_File_Entry;
+
+      File_Start : Int64;
    begin
       Put ('[');
       for File in First_Source .. Last_Source loop
@@ -670,11 +685,17 @@ package body Ghdljson is
          else
             Put (',');
          end if;
-         Put ('"');
+         Put ("{""source"":""");
          Dir_Name := Files_Map.Get_Directory_Name (File);
          File_Name := Files_Map.Get_File_Name (File);
          Put (To_JSON (Files_Map.Get_Pathname (Dir_Name, File_Name)));
-         Put ('"');
+         Put (""",""start"":");
+         File_Start := Int64 (Files_Map.File_To_Location (File));
+         Put (File_Start);
+         Put (",""end"":");
+         -- Subtract 2 for the two terminal EOT
+         Put (File_Start + Int64 (Files_Map.Get_Buffer_Length (File)) - 2);
+         Put ('}');
       end loop;
       Put (']');
    end Output_File_List;
