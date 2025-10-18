@@ -541,10 +541,16 @@ package body Ghdljson is
                   Get_Iir_Delay_Mechanism (N, F)));
 
          when Type_Iir_Predefined_Functions =>
-            Put_Quoted_Attribute (
-               Get_Field_Image (F),
-               Image_Iir_Predefined_Functions (
-                  Get_Iir_Predefined_Functions (N, F)));
+            declare
+               Implicit : constant Iir_Predefined_Functions :=
+                  Get_Iir_Predefined_Functions (N, F);
+            begin
+               if Implicit /= Iir_Predefined_None then
+                  Put_Quoted_Attribute (
+                     Get_Field_Image (F),
+                     Image_Iir_Predefined_Functions (Implicit));
+               end if;
+            end;
 
          when Type_Direction_Type =>
             Put_Quoted_Attribute (
