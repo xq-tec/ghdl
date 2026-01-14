@@ -14,8 +14,7 @@
 --  You should have received a copy of the GNU General Public License
 --  along with this program.  If not, see <gnu.org/licenses>.
 
-with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
-with Ada.Strings.Unbounded.Text_IO;
+with System;
 
 with Types; use Types;
 with Flags;
@@ -29,75 +28,44 @@ with Vhdl.Nodes; use Vhdl.Nodes;
 with Vhdl.Sem_Lib; use Vhdl.Sem_Lib;
 with Ghdlmain; use Ghdlmain;
 with Ghdllocal; use Ghdllocal;
+with Adapter; use Adapter;
 
 package body Ghdljson is
 
-   Json : Unbounded_String;
-
-   procedure Put (S : String) is
+   procedure Append_Quoted_Attribute (Buffer : System.Address; Attr : String; Value : String) is
    begin
-      Append (Json, S);
-      if Length (Json) >= 32000 then
-         Ada.Strings.Unbounded.Text_IO.Put (Json);
-         Set_Unbounded_String (Json, "");
-      end if;
-   end Put;
+      Append (Buffer, ",""");
+      Append (Buffer, Attr);
+      Append (Buffer, """:""");
+      Append (Buffer, Value);
+      Append (Buffer, """");
+   end Append_Quoted_Attribute;
 
-   procedure Put (N : Int64) is
-      Buffer : String (1 .. 20);
-      Pos : Natural := Buffer'Last;
-      Val : Uns64;
+   procedure Append_Attribute (Buffer : System.Address; Attr : String; Value : Uns32) is
    begin
-      declare
-         pragma Suppress (Overflow_Check);
-      begin
-         -- Treat negative numbers as positive, add minus sign later
-         if N < 0 then
-            Val := Uns64 (-N);
-         else
-            Val := Uns64 (N);
-         end if;
-      end;
+      Append (Buffer, ",""");
+      Append (Buffer, Attr);
+      Append (Buffer, """:");
+      Append (Buffer, Value);
+   end Append_Attribute;
 
-      -- Convert digits from right to left
-      loop
-         Buffer (Pos) :=
-            Character'Val (Character'Pos ('0') + Integer (Val mod 10));
-         Val := Val / 10;
-         exit when Val = 0;
-         Pos := Pos - 1;
-      end loop;
-
-      if N < 0 then
-         Pos := Pos - 1;
-         Buffer (Pos) := '-';
-      end if;
-      Append (Json, Buffer (Pos .. Buffer'Last));
-   end Put;
-
-   procedure Put (C : Character) is
+   procedure Append_Attribute (Buffer : System.Address; Attr : String; Value : Int32) is
    begin
-      Append (Json, C);
-   end Put;
+      Append (Buffer, ",""");
+      Append (Buffer, Attr);
+      Append (Buffer, """:");
+      Append (Buffer, Value);
+   end Append_Attribute;
 
-   procedure Put_Quoted_Attribute (Attr : String; Value : String) is
+   procedure Append_Attribute (Buffer : System.Address; Attr : String; Value : Int64) is
    begin
-      Put (",""");
-      Put (Attr);
-      Put (""":""");
-      Put (Value);
-      Put ("""");
-   end Put_Quoted_Attribute;
+      Append (Buffer, ",""");
+      Append (Buffer, Attr);
+      Append (Buffer, """:");
+      Append (Buffer, Value);
+   end Append_Attribute;
 
-   procedure Put_Attribute (Attr : String; Value : Int64) is
-   begin
-      Put (",""");
-      Put (Attr);
-      Put (""":");
-      Put (Value);
-   end Put_Attribute;
-
-   procedure Put_Attribute (Attr : String; Value : Fp64) is
+   procedure Append_Attribute (Buffer : System.Address; Attr : String; Value : Fp64) is
       -- Strip leading blank from result of 'Image
       function Strip (S : String) return String is
       begin
@@ -110,146 +78,104 @@ package body Ghdljson is
       -- Use 17 digits for printing, to avoid rounding errors
       type Print_Fp64 is digits 17;
    begin
-      Put (",""");
-      Put (Attr);
-      Put (""":");
-      Put (Strip (Print_Fp64'Image (Print_Fp64 (Value))));
-   end Put_Attribute;
+      Append (Buffer, ",""");
+      Append (Buffer, Attr);
+      Append (Buffer, """:");
+      Append (Buffer, Strip (Print_Fp64'Image (Print_Fp64 (Value))));
+   end Append_Attribute;
 
-   procedure Put_Attribute (Attr : String; Value : Boolean) is
+   procedure Append_Attribute (Buffer : System.Address; Attr : String; Value : Boolean) is
    begin
-      Put (",""");
-      Put (Attr);
+      Append (Buffer, ",""");
+      Append (Buffer, Attr);
       if Value then
-         Put (""":true");
+         Append (Buffer, """:true");
       else
-         Put (""":false");
+         Append (Buffer, """:false");
       end if;
-   end Put_Attribute;
+   end Append_Attribute;
 
-   --  Espace special characters for JSON strings.
-   function To_JSON (Str : String) return String is
-      To_Hex : constant array (0 .. 15) of Character := "0123456789abcdef";
-      --  The escape sequence uses up to 6 characters.
-      Res : String (1 ..  6 * Str'Length);
-      Idx : Positive;
-      C : Character;
-      C_Pos : Natural;
-   begin
-      Idx := Res'First;
-      for I in Str'Range loop
-         C := Str (I);
-         case C is
-            when '\' | '"' =>
-               Res (Idx + 0) := '\';
-               Res (Idx + 1) := C;
-               Idx := Idx + 2;
-
-            when Character'Val (0) .. Character'Val (31) =>
-               Res (Idx + 0) := '\';
-               Res (Idx + 1) := 'u';
-               Res (Idx + 2) := '0';
-               Res (Idx + 3) := '0';
-               C_Pos := Character'Pos (C);
-               Res (Idx + 4) := To_Hex (C_Pos / 16);
-               Res (Idx + 5) := To_Hex (C_Pos mod 16);
-               Idx := Idx + 6;
-
-            when Character'Val (128) .. Character'Val (255) =>
-               C_Pos := Character'Pos (C);
-               Res (Idx + 0) := Character'Val (192 + (C_Pos / 64));
-               Res (Idx + 1) := Character'Val (128 + (C_Pos mod 64));
-               Idx := Idx + 2;
-
-            when others =>
-               Res (Idx) := C;
-               Idx := Idx + 1;
-         end case;
-      end loop;
-      return Res (1 .. Idx - 1);
-   end To_JSON;
-
-   procedure Disp_Iir_Chain (Id : String; N : Iir) is
+   procedure Append_Iir_Chain (Buffer : System.Address; Id : String; N : Iir) is
       El : Iir;
       Is_First_Item : Boolean := True;
    begin
-      Put (",""");
-      Put (Id);
-      Put (""":[");
+      Append (Buffer, ",""");
+      Append (Buffer, Id);
+      Append (Buffer, """:[");
 
       El := N;
       while Is_Valid (El) loop
          if Is_First_Item then
             Is_First_Item := False;
          else
-            Put (',');
+            Append (Buffer, ',');
          end if;
-         Put (Int64 (El));
+         Append (Buffer, Uns32 (El));
          El := Get_Chain (El);
       end loop;
 
-      Put (']');
-   end Disp_Iir_Chain;
+      Append (Buffer, ']');
+   end Append_Iir_Chain;
 
-   procedure Disp_Iir_List (Id : String; L : Iir_List) is
+   procedure Append_Iir_List (Buffer : System.Address; Id : String; L : Iir_List) is
       El : Iir;
       It : List_Iterator;
       Is_First_Item : Boolean := True;
    begin
-      Put (",""");
-      Put (Id);
-      Put (""":");
+      Append (Buffer, ",""");
+      Append (Buffer, Id);
+      Append (Buffer, """:");
 
       case L is
          when Iir_List_All =>
-            Put ("""all""");
+            Append (Buffer, """all""");
 
          when others =>
-            Put ('[');
+            Append (Buffer, '[');
             It := List_Iterate (L);
             while Is_Valid (It) loop
                El := Get_Element (It);
                if Is_First_Item then
                   Is_First_Item := False;
                else
-                  Put (',');
+                  Append (Buffer, ',');
                end if;
-               Put (Int64 (El));
+               Append (Buffer, Uns32 (El));
                Next (It);
             end loop;
-            Put (']');
+            Append (Buffer, ']');
       end case;
-   end Disp_Iir_List;
+   end Append_Iir_List;
 
-   procedure Disp_Iir_Flist (Id : String; L : Iir_Flist) is
+   procedure Append_Iir_Flist (Buffer : System.Address; Id : String; L : Iir_Flist) is
       El : Iir;
       Is_First_Item : Boolean := True;
    begin
-      Put (",""");
-      Put (Id);
-      Put (""":");
+      Append (Buffer, ",""");
+      Append (Buffer, Id);
+      Append (Buffer, """:");
 
       case L is
          when Iir_Flist_All =>
-            Put ("""all""");
+            Append (Buffer, """all""");
 
          when Iir_Flist_Others =>
-            Put ("""others""");
+            Append (Buffer, """others""");
 
          when others =>
-            Put ('[');
+            Append (Buffer, '[');
             for I in Flist_First .. Flist_Last (L) loop
                El := Get_Nth_Element (L, I);
                if Is_First_Item then
                   Is_First_Item := False;
                else
-                  Put (',');
+                  Append (Buffer, ',');
                end if;
-               Put (Int64 (El));
+               Append (Buffer, Uns32 (El));
             end loop;
-            Put (']');
+            Append (Buffer, ']');
       end case;
-   end Disp_Iir_Flist;
+   end Append_Iir_Flist;
 
    function Get_Operator_Kind (K : Iir_Kind) return String is
    begin
@@ -363,32 +289,32 @@ package body Ghdljson is
       end case;
    end Get_Attribute_Kind;
 
-   procedure Put_Node_Metadata (K : Iir_Kind; N : Iir) is
+   procedure Append_Node_Metadata (Buffer : System.Address; K : Iir_Kind; N : Iir) is
       Is_Operator : Boolean := False;
       Is_Attribute : Boolean := False;
    begin
 
-      Put ("{""");
+      Append (Buffer, "{""");
 
       case K is
          when Iir_Kinds_Monadic_Operator =>
-            Put ("unary_operator");
+            Append (Buffer, "unary_operator");
             Is_Operator := True;
 
          when Iir_Kinds_Dyadic_Operator =>
-            Put ("binary_operator");
+            Append (Buffer, "binary_operator");
             Is_Operator := True;
 
          when Iir_Kinds_Attribute =>
-            Put ("attribute");
+            Append (Buffer, "attribute");
             Is_Attribute := True;
 
          when others =>
-            Put (Get_Iir_Image (K));
+            Append (Buffer, Get_Iir_Image (K));
       end case;
 
-      Put (""":{""id"":");
-      Put (Int64 (N));
+      Append (Buffer, """:{""id"":");
+      Append (Buffer, Uns32 (N));
 
       declare
          Loc : constant Location_Type := Get_Location (N);
@@ -398,27 +324,27 @@ package body Ghdljson is
       begin
          if Loc /= No_Location then
             Files_Map.Location_To_Coord (Loc, File, Line_Pos, Line, Offset);
-            Put (",""loc"":[");
-            Put (Int64 (File) - 1);
-            Put (',');
-            Put (Int64 (Line));
-            Put (',');
-            Put (Int64 (Offset) + 1);
-            Put (']');
+            Append (Buffer, ",""loc"":[");
+            Append (Buffer, Uns32 (File) - 1);
+            Append (Buffer, ',');
+            Append (Buffer, Int64 (Line));
+            Append (Buffer, ',');
+            Append (Buffer, Int64 (Offset) + 1);
+            Append (Buffer, ']');
          end if;
       end;
 
       if Is_Operator then
-         Put (",""kind"":");
-         Put (Get_Operator_Kind (K));
+         Append (Buffer, ",""kind"":");
+         Append (Buffer, Get_Operator_Kind (K));
       end if;
       if Is_Attribute then
-         Put (",""kind"":");
-         Put (Get_Attribute_Kind (K));
+         Append (Buffer, ",""kind"":");
+         Append (Buffer, Get_Attribute_Kind (K));
       end if;
-   end Put_Node_Metadata;
+   end Append_Node_Metadata;
 
-   procedure Disp_Field (F : Fields_Enum; N : Iir) is
+   procedure Append_Field (Buffer : System.Address; F : Fields_Enum; N : Iir) is
    begin
       case Get_Field_Type (F) is
          when Type_Iir =>
@@ -428,9 +354,9 @@ package body Ghdljson is
                Val := Get_Iir (N, F);
                if Val /= Null_Iir then
                   if Get_Field_Attribute (F) = Attr_Chain then
-                     Disp_Iir_Chain (Get_Field_Image (F), Val);
+                     Append_Iir_Chain (Buffer, Get_Field_Image (F), Val);
                   else
-                     Put_Attribute (Get_Field_Image (F), Int64 (Val));
+                     Append_Attribute (Buffer, Get_Field_Image (F), Uns32 (Val));
                   end if;
                end if;
             end;
@@ -441,7 +367,7 @@ package body Ghdljson is
             begin
                Val := Get_Iir_List (N, F);
                if Val /= Null_Iir_List then
-                  Disp_Iir_List (Get_Field_Image (F), Val);
+                  Append_Iir_List (Buffer, Get_Field_Image (F), Val);
                end if;
             end;
 
@@ -451,20 +377,22 @@ package body Ghdljson is
             begin
                Val := Get_Iir_Flist (N, F);
                if Val /= Null_Iir_Flist then
-                  Disp_Iir_Flist (Get_Field_Image (F), Val);
+                  Append_Iir_Flist (Buffer, Get_Field_Image (F), Val);
                end if;
             end;
 
          when Type_String8_Id =>
-            Put_Quoted_Attribute (
-               Get_Field_Image (F),
-               To_JSON (Image_String8 (N)));
+            Append (Buffer, ",""");
+            Append (Buffer, Get_Field_Image (F));
+            Append (Buffer, """:""");
+            Append_Escaped (Buffer, Image_String8 (N));
+            Append (Buffer, """");
 
          when Type_PSL_NFA =>
-            Put_Quoted_Attribute (Get_Field_Image (F), "PSL-NFA");
+            Append_Quoted_Attribute (Buffer, Get_Field_Image (F), "PSL-NFA");
 
          when Type_PSL_Node =>
-            Put_Quoted_Attribute (Get_Field_Image (F), "PSL-NODE");
+            Append_Quoted_Attribute (Buffer, Get_Field_Image (F), "PSL-NODE");
 
          when Type_Source_Ptr =>
             null;
@@ -473,38 +401,44 @@ package body Ghdljson is
             null;
 
          when Type_Number_Base_Type =>
-            Put_Quoted_Attribute (
+            Append_Quoted_Attribute (
+               Buffer,
                Get_Field_Image (F),
                Number_Base_Type'Image (Get_Number_Base_Type (N, F)));
 
          when Type_Iir_Constraint =>
-            Put_Quoted_Attribute (
+            Append_Quoted_Attribute (
+               Buffer,
                Get_Field_Image (F),
                Image_Iir_Constraint (Get_Iir_Constraint (N, F)));
 
          when Type_Iir_Mode =>
-            Put_Quoted_Attribute (
+            Append_Quoted_Attribute (
+               Buffer,
                Get_Field_Image (F),
                Image_Iir_Mode (Get_Iir_Mode (N, F)));
 
          when Type_Iir_Force_Mode =>
-            Put_Quoted_Attribute (
+            Append_Quoted_Attribute (
+               Buffer,
                Get_Field_Image (F),
                Image_Iir_Force_Mode (Get_Iir_Force_Mode (N, F)));
 
          when Type_Iir_Index32 =>
-            Put_Attribute (
+            Append_Attribute (
+               Buffer,
                Get_Field_Image (F),
-               Int64 (Get_Iir_Index32 (N, F)));
+               Uns32 (Get_Iir_Index32 (N, F)));
 
          when Type_Int64 =>
-            Put_Attribute (Get_Field_Image (F), Get_Int64 (N, F));
+            Append_Attribute (Buffer, Get_Field_Image (F), Get_Int64 (N, F));
 
          when Type_Boolean =>
-            Put_Attribute (Get_Field_Image (F), Get_Boolean (N, F));
+            Append_Attribute (Buffer, Get_Field_Image (F), Get_Boolean (N, F));
 
          when Type_Iir_Staticness =>
-            Put_Quoted_Attribute (
+            Append_Quoted_Attribute (
+               Buffer,
                Get_Field_Image (F),
                Image_Iir_Staticness (Get_Iir_Staticness (N, F)));
 
@@ -515,27 +449,32 @@ package body Ghdljson is
             null;
 
          when Type_Iir_All_Sensitized =>
-            Put_Quoted_Attribute (
+            Append_Quoted_Attribute (
+               Buffer,
                Get_Field_Image (F),
                Image_Iir_All_Sensitized (Get_Iir_All_Sensitized (N, F)));
 
          when Type_Iir_Signal_Kind =>
-            Put_Quoted_Attribute (
+            Append_Quoted_Attribute (
+               Buffer,
                Get_Field_Image (F),
                Image_Iir_Signal_Kind (Get_Iir_Signal_Kind (N, F)));
 
          when Type_Tri_State_Type =>
-            Put_Quoted_Attribute (
+            Append_Quoted_Attribute (
+               Buffer,
                Get_Field_Image (F),
                Image_Tri_State_Type (Get_Tri_State_Type (N, F)));
 
          when Type_Iir_Pure_State =>
-            Put_Quoted_Attribute (
+            Append_Quoted_Attribute (
+               Buffer,
                Get_Field_Image (F),
                Image_Iir_Pure_State (Get_Iir_Pure_State (N, F)));
 
          when Type_Iir_Delay_Mechanism =>
-            Put_Quoted_Attribute (
+            Append_Quoted_Attribute (
+               Buffer,
                Get_Field_Image (F),
                Image_Iir_Delay_Mechanism (
                   Get_Iir_Delay_Mechanism (N, F)));
@@ -546,29 +485,34 @@ package body Ghdljson is
                   Get_Iir_Predefined_Functions (N, F);
             begin
                if Implicit /= Iir_Predefined_None then
-                  Put_Quoted_Attribute (
+                  Append_Quoted_Attribute (
+                     Buffer,
                      Get_Field_Image (F),
                      Image_Iir_Predefined_Functions (Implicit));
                end if;
             end;
 
          when Type_Direction_Type =>
-            Put_Quoted_Attribute (
+            Append_Quoted_Attribute (
+               Buffer,
                Get_Field_Image (F),
                Image_Direction_Type (Get_Direction_Type (N, F)));
 
          when Type_Iir_Int32 =>
-            Put_Attribute (
+            Append_Attribute (
+               Buffer,
                Get_Field_Image (F),
-               Int64 (Get_Iir_Int32 (N, F)));
+               Int32 (Get_Iir_Int32 (N, F)));
 
          when Type_Int32 =>
-            Put_Attribute (
+            Append_Attribute (
+               Buffer,
                Get_Field_Image (F),
-               Int64 (Get_Int32 (N, F)));
+               Get_Int32 (N, F));
 
          when Type_Fp64 =>
-            Put_Attribute (
+            Append_Attribute (
+               Buffer,
                Get_Field_Image (F),
                Get_Fp64 (N, F));
 
@@ -579,7 +523,8 @@ package body Ghdljson is
             null;
 
          when Type_Token_Type =>
-            Put_Quoted_Attribute (
+            Append_Quoted_Attribute (
+               Buffer,
                Get_Field_Image (F),
                Image_Token_Type (Get_Token_Type (N, F)));
 
@@ -589,32 +534,32 @@ package body Ghdljson is
                Name : constant String := Image (Get_Name_Id (N, F));
             begin
                if Name'Length > 0 then
-                  Put (",""");
-                  Put (Get_Field_Image (F));
-                  Put (""":[""");
-                  Put (To_JSON (Name));
-                  Put (""",");
-                  Put (Int64 (Loc));
-                  Put (",");
-                  Put (Int64 (Name'Length));
-                  Put ("]");
+                  Append (Buffer, ",""");
+                  Append (Buffer, Get_Field_Image (F));
+                  Append (Buffer, """:[""");
+                  Append_Escaped (Buffer, Name);
+                  Append (Buffer, """,");
+                  Append (Buffer, Int64 (Loc));
+                  Append (Buffer, ",");
+                  Append (Buffer, Int64 (Name'Length));
+                  Append (Buffer, "]");
                end if;
             end;
 
          when Type_Source_File_Entry =>
             null;
       end case;
-   end Disp_Field;
+   end Append_Field;
 
-   procedure Disp_Iir (N : Iir) is
+   procedure Encode_Iir (Buffer : System.Address; N : Iir) is
       Kind : constant Iir_Kind := Get_Kind (N);
    begin
       if Kind = Iir_Kind_Unused then
-         Put ("null");
+         Append (Buffer, "null" & ASCII.LF);
          return;
       end if;
 
-      Put_Node_Metadata (Kind, N);
+      Append_Node_Metadata (Buffer, Kind, N);
 
       declare
          Fields : constant Fields_Array := Get_Fields (Get_Kind (N));
@@ -638,13 +583,13 @@ package body Ghdljson is
                   | Field_Use_Flag
                   | Field_Visible_Flag
                      => null;
-               when others => Disp_Field (F, N);
+               when others => Append_Field (Buffer, F, N);
             end case;
          end loop;
       end;
 
-      Put ("}}");
-   end Disp_Iir;
+      Append (Buffer, "}}" & ASCII.LF);
+   end Encode_Iir;
 
    procedure Prepare_Ast is
       Library, Design_File, Design_Unit : Iir;
@@ -673,7 +618,7 @@ package body Ghdljson is
       end loop;
    end Prepare_Ast;
 
-   procedure Output_File_List is
+   procedure Encode_File_List (Buffer : System.Address) is
       Is_First : Boolean := True;
       File_Name, Dir_Name : Name_Id;
 
@@ -684,72 +629,86 @@ package body Ghdljson is
 
       File_Start : Int64;
    begin
-      Put ('[');
+      Append (Buffer, '[');
       for File in First_Source .. Last_Source loop
          if Is_First then
             Is_First := False;
          else
-            Put (',');
+            Append (Buffer, ',');
          end if;
-         Put ("{""source"":""");
+         Append (Buffer, "{""source"":""");
          Dir_Name := Files_Map.Get_Directory_Name (File);
          File_Name := Files_Map.Get_File_Name (File);
-         Put (To_JSON (Files_Map.Get_Pathname (Dir_Name, File_Name)));
-         Put (""",""start"":");
+         Append_Escaped (Buffer, Files_Map.Get_Pathname (Dir_Name, File_Name));
+         Append (Buffer, """,""start"":");
          File_Start := Int64 (Files_Map.File_To_Location (File));
-         Put (File_Start);
-         Put (",""end"":");
+         Append (Buffer, File_Start);
+         Append (Buffer, ",""end"":");
          -- Subtract 2 for the two terminal EOT
-         Put (File_Start + Int64 (Files_Map.Get_Buffer_Length (File)) - 2);
-         Put ('}');
+         Append (Buffer, File_Start + Int64 (Files_Map.Get_Buffer_Length (File)) - 2);
+         Append (Buffer, '}');
       end loop;
-      Put (']');
-   end Output_File_List;
+      Append (Buffer, ']');
+   end Encode_File_List;
 
-   procedure Output_Library_List is
+   procedure Encode_Library_List (Buffer : System.Address) is
       Is_First : Boolean := True;
       Library : Iir;
    begin
-      Put ('[');
+      Append (Buffer, '[');
       Library := Libraries.Get_Libraries_Chain;
       while Is_Valid (Library) loop
          if Is_First then
             Is_First := False;
          else
-            Put (',');
+            Append (Buffer, ',');
          end if;
-         Put (Int64 (Library));
+         Append (Buffer, Uns32 (Library));
          Library := Get_Chain (Library);
       end loop;
-      Put (']');
-   end Output_Library_List;
+      Append (Buffer, ']');
+   end Encode_Library_List;
 
-   procedure Output_Metadata is
+   procedure Encode_Metadata (Buffer : System.Address) is
    begin
-      Put ("{""first_id"":");
-      Put (Int64 (Get_First_Node));
-      Put (",""files"":");
-      Output_File_List;
-      Put (",""libraries"":");
-      Output_Library_List;
-      Put ('}' & ASCII.LF);
-   end Output_Metadata;
+      Append (Buffer, "{""first_id"":");
+      Append (Buffer, Uns32 (Get_First_Node));
+      Append (Buffer, ",""last_id"":");
+      Append (Buffer, Uns32 (Get_Last_Node));
+      Append (Buffer, ",""files"":");
+      Encode_File_List (Buffer);
+      Append (Buffer, ",""libraries"":");
+      Encode_Library_List (Buffer);
+      Append (Buffer, '}' & ASCII.LF);
+   end Encode_Metadata;
 
-   procedure Output_Ast is
+   procedure Encode_Node (Buffer : System.Address; N : Iir) is
+      -- The preceeding node if N is odd
+      Aligned_N : constant Iir := Iir (Uns32 (N) and not 1);
+   begin
+      -- If N is an odd node and the preceeding even node takes two slots, output "null"
+      if N /= Aligned_N and then Next_Node (Aligned_N) /= N then
+         Append (Buffer, "null" & ASCII.LF);
+      else
+         Encode_Iir (Buffer, N);
+      end if;
+   end Encode_Node;
+
+   procedure Encode_Ast (Buffer : System.Address) is
       Current : Iir := Get_First_Node;
-      Next : Iir;
       Last : constant Iir := Get_Last_Node;
+      Counter : Natural := 0;
    begin
-      while Int32 (Current) <= Int32 (Last) loop
-         Disp_Iir (Current);
-         Put (ASCII.LF);
-         Next := Next_Node (Current);
-         for I in Int32 (Current) + 1 .. Int32 (Next) - 1 loop
-            Put ("null" & ASCII.LF);
-         end loop;
-         Current := Next;
+      while Uns32 (Current) <= Uns32 (Last) loop
+         Encode_Node (Buffer, Current);
+         Current := Iir (Uns32 (Current) + 1);
+         Counter := Counter + 1;
+         if Counter >= 256 then
+            Adapter.Flush (Buffer);
+            Counter := 0;
+         end if;
       end loop;
-   end Output_Ast;
+   end Encode_Ast;
 
    --  Command --ast-to-json
    type Command_Ast_To_Json is new Command_Lib with null record;
@@ -781,11 +740,13 @@ package body Ghdljson is
    end Get_Short_Help;
 
    procedure Dump_Ast is
+      Buffer : constant System.Address := Adapter.Create_Buffer (64 * 1024);
    begin
-      Output_Metadata;
-      Output_Ast;
-      Ada.Strings.Unbounded.Text_IO.Put (Json);
-      Set_Unbounded_String (Json, "");
+      Encode_Metadata (Buffer);
+      Encode_Ast (Buffer);
+      Adapter.Flush (Buffer);
+
+      Adapter.Free_Buffer (Buffer);
    end Dump_Ast;
 
 
