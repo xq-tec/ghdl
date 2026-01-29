@@ -38,6 +38,16 @@ package body Elab.Vhdl_Context is
       Table_Low_Bound => First_Instance_Id,
       Table_Initial => 16);
 
+   function Get_Instance_Count return Instance_Id_Type is
+   begin
+      return Inst_Tables.Last;
+   end Get_Instance_Count;
+
+   function Get_Instance_By_Id (Instance_Id : Instance_Id_Type) return Synth_Instance_Acc is
+   begin
+      return Inst_Tables.Table (Instance_Id);
+   end Get_Instance_By_Id;
+
    function Get_Instance_Id (Inst : Synth_Instance_Acc)
                             return Instance_Id_Type is
    begin
@@ -784,5 +794,17 @@ package body Elab.Vhdl_Context is
          end if;
       end loop;
    end Iterate_Top_Level;
+
+   function Get_Instance_Max_Objs (Inst : Synth_Instance_Acc) return Object_Slot_Type is
+   begin
+      return Inst.Max_Objs;
+   end Get_Instance_Max_Objs;
+
+   function Get_Instance_Obj (Inst : Synth_Instance_Acc; Slot : Object_Slot_Type) return Obj_Type is
+   begin
+      return Inst.Objects (Slot);
+   end Get_Instance_Obj;
+
+
 
 end Elab.Vhdl_Context;

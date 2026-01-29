@@ -16,6 +16,7 @@
 --  You should have received a copy of the GNU General Public License
 --  along with this program.  If not, see <gnu.org/licenses>.
 
+with Adapter;
 with Areapools;
 
 with Synth.Flags;
@@ -66,6 +67,9 @@ package body Simul.Main is
       Ok : C_Boolean;
       Status : Integer;
    begin
+      --  Initialize WebSocket server for remote control
+      Adapter.Init_Websocket;
+
       Break_Time := Std_Time'Last;
       Break_Step := False;
 
@@ -112,6 +116,9 @@ package body Simul.Main is
          pragma Assert (Areapools.Is_Empty (Expr_Pool));
          pragma Assert (Areapools.Is_Empty (Process_Pool));
 
+         -- Wait until start-simulation command is received via WebSocket
+         Adapter.Wait_For_Start_Simulation;
+
          loop
             if Break_Time < Grt.Processes.Next_Time then
                Grt.Processes.Next_Time := Break_Time;
@@ -143,6 +150,9 @@ package body Simul.Main is
       end if;
 
       Grt.Main.Run_Finish (Status);
+
+      -- Wait until stop-simulation command is received via WebSocket
+      Adapter.Wait_For_Stop_Simulation;
    exception
 --      when Debugger_Quit =>
 --         null;

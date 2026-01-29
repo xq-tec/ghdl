@@ -38,6 +38,10 @@ package Elab.Vhdl_Context is
    type Instance_Id_Type is new Natural;
    First_Instance_Id : constant Instance_Id_Type := 1;
 
+   function Get_Instance_Count return Instance_Id_Type;
+
+   function Get_Instance_By_Id (Instance_Id : Instance_Id_Type) return Synth_Instance_Acc;
+
    function Get_Instance_Id (Inst : Synth_Instance_Acc)
                             return Instance_Id_Type;
    pragma Inline (Get_Instance_Id);
@@ -251,12 +255,6 @@ package Elab.Vhdl_Context is
 
    procedure Iterate_Top_Level (It : in out Iterator_Top_Level_Type;
                                 Res : out Synth_Instance_Acc);
-private
-   type Destroy_Type is record
-      Inst : Synth_Instance_Acc;
-      First : Object_Slot_Type;
-      Last : Object_Slot_Type;
-   end record;
 
    type Obj_Kind is
      (
@@ -290,6 +288,15 @@ private
          when Obj_Marker =>
             M_Mark : Areapools.Mark_Type;
       end case;
+   end record;
+
+   function Get_Instance_Max_Objs (Inst : Synth_Instance_Acc) return Object_Slot_Type;
+   function Get_Instance_Obj (Inst : Synth_Instance_Acc; Slot : Object_Slot_Type) return Obj_Type;
+private
+   type Destroy_Type is record
+      Inst : Synth_Instance_Acc;
+      First : Object_Slot_Type;
+      Last : Object_Slot_Type;
    end record;
 
    type Objects_Array is array (Object_Slot_Type range <>) of Obj_Type;

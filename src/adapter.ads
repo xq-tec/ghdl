@@ -43,4 +43,8 @@ package Adapter is
    procedure Flush (Buffer : System.Address)
       with Inline;
 
+   procedure Init_Websocket;
+   procedure Wait_For_Start_Simulation;
+   procedure Wait_For_Stop_Simulation;
+
 end Adapter;

@@ -1,0 +1,3 @@
+[submodule "hdl-simulation-protocol"]
+	path = hdl-simulation-protocol
+	url = https://github.com/xq-tec/hdl-simulation-protocol.git

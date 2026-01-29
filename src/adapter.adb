@@ -96,4 +96,25 @@ package body Adapter is
       Adapter_Flush (Buffer);
    end Flush;
 
+   procedure Init_Websocket is
+      procedure Adapter_Init_Websocket;
+      pragma Import (C, Adapter_Init_Websocket, "adapter_init_websocket");
+   begin
+      Adapter_Init_Websocket;
+   end Init_Websocket;
+
+   procedure Wait_For_Start_Simulation is
+      procedure Adapter_Wait_For_Start_Simulation;
+      pragma Import (C, Adapter_Wait_For_Start_Simulation, "adapter_wait_for_start_simulation");
+   begin
+      Adapter_Wait_For_Start_Simulation;
+   end Wait_For_Start_Simulation;
+
+   procedure Wait_For_Stop_Simulation is
+      procedure Adapter_Wait_For_Stop_Simulation;
+      pragma Import (C, Adapter_Wait_For_Stop_Simulation, "adapter_wait_for_stop_simulation");
+   begin
+      Adapter_Wait_For_Stop_Simulation;
+   end Wait_For_Stop_Simulation;
+
 end Adapter;

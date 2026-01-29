@@ -1,0 +1,226 @@
+--  GHDL Run Time (GRT) - Design Export.
+--  Copyright (C) 2026 xq-Tec GmbH
+--
+--  This program is free software: you can redistribute it and/or modify
+--  it under the terms of the GNU General Public License as published by
+--  the Free Software Foundation, either version 2 of the License, or
+--  (at your option) any later version.
+--
+--  This program is distributed in the hope that it will be useful,
+--  but WITHOUT ANY WARRANTY; without even the implied warranty of
+--  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+--  GNU General Public License for more details.
+--
+--  You should have received a copy of the GNU General Public License
+--  along with this program.  If not, see <gnu.org/licenses>.
+--
+--  As a special exception, if other files instantiate generics from this
+--  unit, or you link this unit with other files to produce an executable,
+--  this unit does not by itself cause the resulting executable to be
+--  covered by the GNU General Public License. This exception does not
+--  however invalidate any other reasons why the executable file might be
+--  covered by the GNU Public License.
+
+--  This package provides Ada bindings for Rust adapter functions.
+
+with System;
+
+with Adapter; use Adapter;
+with Elab.Vhdl_Annotations; use Elab.Vhdl_Annotations;
+with Elab.Vhdl_Context; use Elab.Vhdl_Context;
+with Elab.Vhdl_Objtypes; use Elab.Vhdl_Objtypes;
+with Elab.Vhdl_Insts;
+with Elab.Vhdl_Values; use Elab.Vhdl_Values;
+with Simul.Vhdl_Elab; use Simul.Vhdl_Elab;
+with Types; use Types;
+
+package body Grt.Export is
+
+   procedure Encode_Signal (Buffer : System.Address; Signal_Id : Uns32);
+   pragma Export (C, Encode_Signal, "adapter_encode_signal");
+
+   procedure Encode_Signal (Buffer : System.Address; Signal_Id : Uns32) is
+      Signal : Signal_Entry renames Signals_Table.Table (Signal_Index_Type (Signal_Id));
+   begin
+      Append (Buffer, "{""decl"":");
+      Append (Buffer, Uns32 (Signal.Decl));
+      Append (Buffer, '}');
+   end Encode_Signal;
+
+   procedure Encode_Instance (Buffer : System.Address; Instance_Id : Uns32);
+   pragma Export (C, Encode_Instance, "adapter_encode_instance");
+
+   procedure Encode_Instance (Buffer : System.Address; Instance_Id : Uns32) is
+      Is_First : Boolean := True;
+      procedure Append_Comma is
+      begin
+         if Is_First then
+            Is_First := False;
+         else
+            Append (Buffer, ',');
+         end if;
+      end Append_Comma;
+
+      Instance : constant Synth_Instance_Acc :=
+         Get_Instance_By_Id ( Instance_Id_Type (Instance_Id));
+      Object_Count : constant Object_Slot_Type := Get_Instance_Max_Objs (Instance);
+      Obj : Obj_Type;
+   begin
+      Append (Buffer, "{""stmt"":");
+      Append (Buffer, Uns32 (Get_Statement_Scope (Instance)));
+      Append (Buffer, ",""source"":");
+      Append (Buffer, Uns32 (Get_Source_Scope (Instance)));
+      Append (Buffer, ",""objects"":[");
+      for I in 1 .. Object_Count loop
+         Obj := Get_Instance_Obj (Instance, I);
+         case Obj.Kind is
+            when Obj_Object =>
+               Append_Comma;
+               Append (Buffer, "{""object"":{""val_kind"":");
+               case Obj.Obj.Val.Kind is
+                  when Value_Net =>
+                     Append (Buffer, "{""net"":{""n"":");
+                     Append (Buffer, Obj.Obj.Val.N);
+                     Append (Buffer, "}}");
+                  when Value_Wire =>
+                     Append (Buffer, "{""wire"":{""n"":");
+                     Append (Buffer, Obj.Obj.Val.N);
+                     Append (Buffer, "}}");
+                  when Value_Signal =>
+                     Append (Buffer, "{""signal"":{""id"":");
+                     Append (Buffer, Uns32 (Obj.Obj.Val.S));
+                     Append (Buffer, "}}");
+                  when Value_Memory =>
+                     Append (Buffer, """memory""");
+                  when Value_File =>
+                     Append (Buffer, """file""");
+                  when Value_Quantity =>
+                     Append (Buffer, """quantity""");
+                  when Value_Terminal =>
+                     Append (Buffer, """terminal""");
+                  when Value_Const =>
+                     Append (Buffer, """const""");
+                  when Value_Alias =>
+                     Append (Buffer, """alias""");
+                  when Value_Dyn_Alias =>
+                     Append (Buffer, """dyn_alias""");
+                  when Value_Sig_Val =>
+                     Append (Buffer, """sig_val""");
+               end case;
+
+               Append (Buffer, ",""type_kind"":");
+               case Obj.Obj.Typ.Kind is
+                  when Type_Bit =>
+                     Append (Buffer, "{""bit"":{");
+                  when Type_Logic =>
+                     Append (Buffer, "{""logic"":{");
+                  when Type_Discrete =>
+                     Append (Buffer, "{""discrete"":{");
+                  when Type_Float =>
+                     Append (Buffer, "{""float"":{");
+                  when Type_Slice =>
+                     Append (Buffer, """slice""");
+                  when Type_Vector =>
+                     Append (Buffer, """vector""");
+                  when Type_Unbounded_Vector =>
+                     Append (Buffer, """unbounded_vector""");
+                  when Type_Array =>
+                     Append (Buffer, """array""");
+                  when Type_Array_Unbounded =>
+                     Append (Buffer, """array_unbounded""");
+                  when Type_Unbounded_Array =>
+                     Append (Buffer, """unbounded_array""");
+                  when Type_Unbounded_Record =>
+                     Append (Buffer, """unbounded_record""");
+                  when Type_Record =>
+                     Append (Buffer, """record""");
+                  when Type_Access =>
+                     Append (Buffer, """access""");
+                  when Type_File =>
+                     Append (Buffer, """file""");
+                  when Type_Protected =>
+                     Append (Buffer, """protected""");
+               end case;
+
+               case Obj.Obj.Typ.Kind is
+                  when Type_Bit
+                     | Type_Logic
+                     | Type_Discrete =>
+                     Append (Buffer, """left"":");
+                     Append (Buffer, Obj.Obj.Typ.Drange.Left);
+                     Append (Buffer, ",""right"":");
+                     Append (Buffer, Obj.Obj.Typ.Drange.Right);
+                     Append (Buffer, ",""dir"":");
+                     Append (Buffer, Obj.Obj.Typ.Drange.Dir);
+                     Append (Buffer, "}}");
+
+                  when Type_Float =>
+                     Append (Buffer, """left"":");
+                     Append (Buffer, Obj.Obj.Typ.Frange.Left);
+                     Append (Buffer, ",""right"":");
+                     Append (Buffer, Obj.Obj.Typ.Frange.Right);
+                     Append (Buffer, ",""dir"":");
+                     Append (Buffer, Obj.Obj.Typ.Frange.Dir);
+                     Append (Buffer, "}}");
+
+                  when others =>
+                     null;
+                  --  when Type_Slice =>
+                  --     Slice_Base : Type_Acc;
+                  --     Slice_Len : Uns32;
+                  --     Slice_El : Type_Acc;
+                  --  when Type_Array
+                  --     | Type_Array_Unbounded
+                  --     | Type_Vector =>
+                  --     Abound : Bound_Type;
+                  --     Alast : Boolean;  --  True for the last dimension
+                  --     Arr_El : Type_Acc;
+                  --  when Type_Unbounded_Array
+                  --     | Type_Unbounded_Vector =>
+                  --     Uarr_El : Type_Acc;
+                  --     Ulast : Boolean;
+                  --     Uarr_Idx : Type_Acc;
+                  --  when Type_Record
+                  --     | Type_Unbounded_Record =>
+                  --     --  The base type, used to have compatible layouts.
+                  --     Rec_Base : Type_Acc;
+                  --     --  The first elements is in the LSBs of the net.
+                  --     Rec : Rec_El_Array_Acc;
+                  --  when Type_Access =>
+                  --     Acc_Acc : Type_Acc;
+                  --     --  Memory size to store the type and its bounds.
+                  --     Acc_Type_Sz : Size_Type;
+                  --     Acc_Bnd_Sz : Size_Type;
+                  --  when Type_File =>
+                  --     File_Typ  : Type_Acc;
+                  --     File_Signature : String_Acc;
+                  --  when Type_Protected =>
+                  --     null;
+               end case;
+
+               Append (Buffer, "}}");
+
+            when Obj_Instance =>
+               Append_Comma;
+               Append (Buffer, "{""instance"":{""id"":");
+               Append (Buffer, Uns32 (Get_Instance_Id (Obj.I_Inst)));
+               Append (Buffer, "}}");
+
+            when Obj_None | Obj_Subtype | Obj_Marker =>
+               null;
+         end case;
+      end loop;
+      Append (Buffer, "]}");
+   end Encode_Instance;
+
+   procedure Register_Design is
+      procedure Adapter_Register_Design (Root_Instance, Instance_Count, Signal_Count : Uns32);
+      pragma Import (C, Adapter_Register_Design, "adapter_register_design");
+   begin
+      Adapter_Register_Design (
+         Uns32 (Get_Instance_Id (Elab.Vhdl_Insts.Top_Instance)),
+         Uns32 (Get_Instance_Count),
+         Uns32 (Signals_Table.Last));
+   end Register_Design;
+
+end Grt.Export;
