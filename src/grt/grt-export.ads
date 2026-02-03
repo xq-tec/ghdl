@@ -21,6 +21,8 @@
 --  however invalidate any other reasons why the executable file might be
 --  covered by the GNU Public License.
 
+with Interfaces; use Interfaces;
+
 package Grt.Export is
 
    procedure Register_Design;

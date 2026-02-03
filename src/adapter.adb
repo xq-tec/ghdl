@@ -16,8 +16,8 @@
 
 package body Adapter is
 
-   function Create_Buffer (Size : Uns32) return System.Address is
-      function Adapter_Create_Buffer (Size : Uns32) return System.Address;
+   function Create_Buffer (Size : Unsigned_32) return System.Address is
+      function Adapter_Create_Buffer (Size : Unsigned_32) return System.Address;
       pragma Import (C, Adapter_Create_Buffer, "adapter_create_buffer");
    begin
       return Adapter_Create_Buffer (Size);
@@ -31,62 +31,64 @@ package body Adapter is
    end Free_Buffer;
 
    procedure Append (Buffer: System.Address; C : Character) is
-      procedure Adapter_Append_Char (Buffer : System.Address; C : Uns8);
+      procedure Adapter_Append_Char (Buffer : System.Address; C : Unsigned_8);
       pragma Import (C, Adapter_Append_Char, "adapter_append_char");
    begin
-      Adapter_Append_Char (Buffer, Uns8 (Character'Pos (C)));
+      Adapter_Append_Char (Buffer, Unsigned_8 (Character'Pos (C)));
    end Append;
 
    procedure Append (Buffer: System.Address; Str: String) is
-      procedure Adapter_Append_Str (Buffer : System.Address; Str : System.Address; Len : Uns64);
+      procedure Adapter_Append_Str (Buffer : System.Address;
+                                    Str : System.Address; Len : Unsigned_64);
       pragma Import (C, Adapter_Append_Str, "adapter_append_str");
    begin
-      Adapter_Append_Str (Buffer, Str (Str'First)'Address, Uns64 (Str'Length));
+      Adapter_Append_Str (Buffer, Str (Str'First)'Address, Unsigned_64 (Str'Length));
    end Append;
 
-   procedure Append (Buffer: System.Address; Value: Uns32) is
-      procedure Adapter_Append_U32 (Buffer : System.Address; Value : Uns32);
+   procedure Append (Buffer: System.Address; Value: Unsigned_32) is
+      procedure Adapter_Append_U32 (Buffer : System.Address; Value : Unsigned_32);
       pragma Import (C, Adapter_Append_U32, "adapter_append_u32");
    begin
       Adapter_Append_U32 (Buffer, Value);
    end Append;
 
-   procedure Append (Buffer: System.Address; Value: Int32) is
-      procedure Adapter_Append_I32 (Buffer : System.Address; Value : Int32);
+   procedure Append (Buffer: System.Address; Value: Integer_32) is
+      procedure Adapter_Append_I32 (Buffer : System.Address; Value : Integer_32);
       pragma Import (C, Adapter_Append_I32, "adapter_append_i32");
    begin
       Adapter_Append_I32 (Buffer, Value);
    end Append;
 
-   procedure Append (Buffer: System.Address; Value: Int64) is
-      procedure Adapter_Append_I64 (Buffer : System.Address; Value : Int64);
+   procedure Append (Buffer: System.Address; Value: Integer_64) is
+      procedure Adapter_Append_I64 (Buffer : System.Address; Value : Integer_64);
       pragma Import (C, Adapter_Append_I64, "adapter_append_i64");
    begin
       Adapter_Append_I64 (Buffer, Value);
    end Append;
 
-   procedure Append (Buffer: System.Address; Value: Fp64) is
-      procedure Adapter_Append_F64 (Buffer : System.Address; Value : Fp64);
+   procedure Append (Buffer: System.Address; Value: IEEE_Float_64) is
+      procedure Adapter_Append_F64 (Buffer : System.Address; Value : IEEE_Float_64);
       pragma Import (C, Adapter_Append_F64, "adapter_append_f64");
    begin
       Adapter_Append_F64 (Buffer, Value);
    end Append;
 
-   procedure Append (Buffer: System.Address; Value: Direction_Type) is
+   procedure Append (Buffer: System.Address; Value: Types.Direction_Type) is
    begin
       case Value is
-         when Dir_To =>
+         when Types.Dir_To =>
             Append (Buffer, """to""");
-         when Dir_Downto =>
+         when Types.Dir_Downto =>
             Append (Buffer, """downto""");
       end case;
    end Append;
 
    procedure Append_Escaped (Buffer: System.Address; Str: String) is
-      procedure Adapter_Append_Escaped (Buffer : System.Address; Str : System.Address; Len : Uns64);
+      procedure Adapter_Append_Escaped (Buffer : System.Address;
+                                        Str : System.Address; Len : Unsigned_64);
       pragma Import (C, Adapter_Append_Escaped, "adapter_append_escaped");
    begin
-      Adapter_Append_Escaped (Buffer, Str (Str'First)'Address, Uns64 (Str'Length));
+      Adapter_Append_Escaped (Buffer, Str (Str'First)'Address, Unsigned_64 (Str'Length));
    end Append_Escaped;
 
    procedure Flush (Buffer : System.Address) is

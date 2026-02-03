@@ -14,13 +14,14 @@
 --  You should have received a copy of the GNU General Public License
 --  along with this program.  If not, see <gnu.org/licenses>.
 
+with Interfaces; use Interfaces;
 with System;
 
-with Types; use Types;
+with Types;
 
 package Adapter is
 
-   function Create_Buffer (Size : Uns32) return System.Address
+   function Create_Buffer (Size : Unsigned_32) return System.Address
       with Inline;
    procedure Free_Buffer (Buffer : System.Address)
       with Inline;
@@ -28,15 +29,15 @@ package Adapter is
       with Inline;
    procedure Append (Buffer: System.Address; Str: String)
       with Inline;
-   procedure Append (Buffer: System.Address; Value: Uns32)
+   procedure Append (Buffer: System.Address; Value: Unsigned_32)
       with Inline;
-   procedure Append (Buffer: System.Address; Value: Int32)
+   procedure Append (Buffer: System.Address; Value: Integer_32)
       with Inline;
-   procedure Append (Buffer: System.Address; Value: Int64)
+   procedure Append (Buffer: System.Address; Value: Integer_64)
       with Inline;
-   procedure Append (Buffer: System.Address; Value: Fp64)
+   procedure Append (Buffer: System.Address; Value: IEEE_Float_64)
       with Inline;
-   procedure Append (Buffer: System.Address; Value: Direction_Type)
+   procedure Append (Buffer: System.Address; Value: Types.Direction_Type)
       with Inline;
    procedure Append_Escaped (Buffer: System.Address; Str: String)
       with Inline;

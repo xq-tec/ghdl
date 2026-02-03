@@ -14,6 +14,7 @@
 --  You should have received a copy of the GNU General Public License
 --  along with this program.  If not, see <gnu.org/licenses>.
 
+with Interfaces; use Interfaces;
 with System;
 
 with Types; use Types;
@@ -46,7 +47,7 @@ package body Ghdljson is
       Append (Buffer, ",""");
       Append (Buffer, Attr);
       Append (Buffer, """:");
-      Append (Buffer, Value);
+      Append (Buffer, Unsigned_32 (Value));
    end Append_Attribute;
 
    procedure Append_Attribute (Buffer : System.Address; Attr : String; Value : Int32) is
@@ -54,7 +55,7 @@ package body Ghdljson is
       Append (Buffer, ",""");
       Append (Buffer, Attr);
       Append (Buffer, """:");
-      Append (Buffer, Value);
+      Append (Buffer, Integer_32 (Value));
    end Append_Attribute;
 
    procedure Append_Attribute (Buffer : System.Address; Attr : String; Value : Int64) is
@@ -62,7 +63,7 @@ package body Ghdljson is
       Append (Buffer, ",""");
       Append (Buffer, Attr);
       Append (Buffer, """:");
-      Append (Buffer, Value);
+      Append (Buffer, Integer_64 (Value));
    end Append_Attribute;
 
    procedure Append_Attribute (Buffer : System.Address; Attr : String; Value : Fp64) is
@@ -81,6 +82,7 @@ package body Ghdljson is
       Append (Buffer, ",""");
       Append (Buffer, Attr);
       Append (Buffer, """:");
+      -- TODO use binary representation
       Append (Buffer, Strip (Print_Fp64'Image (Print_Fp64 (Value))));
    end Append_Attribute;
 
@@ -110,7 +112,7 @@ package body Ghdljson is
          else
             Append (Buffer, ',');
          end if;
-         Append (Buffer, Uns32 (El));
+         Append (Buffer, Unsigned_32 (El));
          El := Get_Chain (El);
       end loop;
 
@@ -140,7 +142,7 @@ package body Ghdljson is
                else
                   Append (Buffer, ',');
                end if;
-               Append (Buffer, Uns32 (El));
+               Append (Buffer, Unsigned_32 (El));
                Next (It);
             end loop;
             Append (Buffer, ']');
@@ -171,7 +173,7 @@ package body Ghdljson is
                else
                   Append (Buffer, ',');
                end if;
-               Append (Buffer, Uns32 (El));
+               Append (Buffer, Unsigned_32 (El));
             end loop;
             Append (Buffer, ']');
       end case;
@@ -314,7 +316,7 @@ package body Ghdljson is
       end case;
 
       Append (Buffer, """:{""id"":");
-      Append (Buffer, Uns32 (N));
+      Append (Buffer, Unsigned_32 (N));
 
       declare
          Loc : constant Location_Type := Get_Location (N);
@@ -325,11 +327,11 @@ package body Ghdljson is
          if Loc /= No_Location then
             Files_Map.Location_To_Coord (Loc, File, Line_Pos, Line, Offset);
             Append (Buffer, ",""loc"":[");
-            Append (Buffer, Uns32 (File) - 1);
+            Append (Buffer, Unsigned_32 (File) - 1);
             Append (Buffer, ',');
-            Append (Buffer, Int64 (Line));
+            Append (Buffer, Integer_64 (Line));
             Append (Buffer, ',');
-            Append (Buffer, Int64 (Offset) + 1);
+            Append (Buffer, Integer_64 (Offset) + 1);
             Append (Buffer, ']');
          end if;
       end;
@@ -539,9 +541,9 @@ package body Ghdljson is
                   Append (Buffer, """:[""");
                   Append_Escaped (Buffer, Name);
                   Append (Buffer, """,");
-                  Append (Buffer, Int64 (Loc));
+                  Append (Buffer, Integer_64 (Loc));
                   Append (Buffer, ",");
-                  Append (Buffer, Int64 (Name'Length));
+                  Append (Buffer, Integer_64 (Name'Length));
                   Append (Buffer, "]");
                end if;
             end;
@@ -627,7 +629,7 @@ package body Ghdljson is
       Last_Source : constant Source_File_Entry :=
          Files_Map.Get_Last_Source_File_Entry;
 
-      File_Start : Int64;
+      File_Start : Unsigned_32;
    begin
       Append (Buffer, '[');
       for File in First_Source .. Last_Source loop
@@ -641,11 +643,11 @@ package body Ghdljson is
          File_Name := Files_Map.Get_File_Name (File);
          Append_Escaped (Buffer, Files_Map.Get_Pathname (Dir_Name, File_Name));
          Append (Buffer, """,""start"":");
-         File_Start := Int64 (Files_Map.File_To_Location (File));
+         File_Start := Unsigned_32 (Files_Map.File_To_Location (File));
          Append (Buffer, File_Start);
          Append (Buffer, ",""end"":");
          -- Subtract 2 for the two terminal EOT
-         Append (Buffer, File_Start + Int64 (Files_Map.Get_Buffer_Length (File)) - 2);
+         Append (Buffer, File_Start + Unsigned_32 (Files_Map.Get_Buffer_Length (File)) - 2);
          Append (Buffer, '}');
       end loop;
       Append (Buffer, ']');
@@ -663,7 +665,7 @@ package body Ghdljson is
          else
             Append (Buffer, ',');
          end if;
-         Append (Buffer, Uns32 (Library));
+         Append (Buffer, Unsigned_32 (Library));
          Library := Get_Chain (Library);
       end loop;
       Append (Buffer, ']');
@@ -672,9 +674,9 @@ package body Ghdljson is
    procedure Encode_Metadata (Buffer : System.Address) is
    begin
       Append (Buffer, "{""first_id"":");
-      Append (Buffer, Uns32 (Get_First_Node));
+      Append (Buffer, Unsigned_32 (Get_First_Node));
       Append (Buffer, ",""last_id"":");
-      Append (Buffer, Uns32 (Get_Last_Node));
+      Append (Buffer, Unsigned_32 (Get_Last_Node));
       Append (Buffer, ",""files"":");
       Encode_File_List (Buffer);
       Append (Buffer, ",""libraries"":");

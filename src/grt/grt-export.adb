@@ -31,23 +31,24 @@ with Elab.Vhdl_Context; use Elab.Vhdl_Context;
 with Elab.Vhdl_Objtypes; use Elab.Vhdl_Objtypes;
 with Elab.Vhdl_Insts;
 with Elab.Vhdl_Values; use Elab.Vhdl_Values;
+with Grt.Signals;
+with Grt.Types;
 with Simul.Vhdl_Elab; use Simul.Vhdl_Elab;
-with Types; use Types;
 
 package body Grt.Export is
 
-   procedure Encode_Signal (Buffer : System.Address; Signal_Id : Uns32);
+   procedure Encode_Signal (Buffer : System.Address; Signal_Id : Unsigned_32);
    pragma Export (C, Encode_Signal, "adapter_encode_signal");
 
-   procedure Encode_Signal (Buffer : System.Address; Signal_Id : Uns32) is
+   procedure Encode_Signal (Buffer : System.Address; Signal_Id : Unsigned_32) is
       Signal : Signal_Entry renames Signals_Table.Table (Signal_Index_Type (Signal_Id));
    begin
       Append (Buffer, "{""decl"":");
-      Append (Buffer, Uns32 (Signal.Decl));
+      Append (Buffer, Unsigned_32 (Signal.Decl));
       Append (Buffer, '}');
    end Encode_Signal;
 
-   procedure Encode_Instance (Buffer : System.Address; Instance_Id : Uns32);
+   procedure Encode_Instance (Buffer : System.Address; Instance_Id : Unsigned_32);
    pragma Export (C, Encode_Instance, "adapter_encode_instance");
 
    procedure Encode_Instance (Buffer : System.Address; Instance_Id : Uns32) is
@@ -67,9 +68,9 @@ package body Grt.Export is
       Obj : Obj_Type;
    begin
       Append (Buffer, "{""stmt"":");
-      Append (Buffer, Uns32 (Get_Statement_Scope (Instance)));
+      Append (Buffer, Unsigned_32 (Get_Statement_Scope (Instance)));
       Append (Buffer, ",""source"":");
-      Append (Buffer, Uns32 (Get_Source_Scope (Instance)));
+      Append (Buffer, Unsigned_32 (Get_Source_Scope (Instance)));
       Append (Buffer, ",""objects"":[");
       for I in 1 .. Object_Count loop
          Obj := Get_Instance_Obj (Instance, I);
@@ -80,15 +81,15 @@ package body Grt.Export is
                case Obj.Obj.Val.Kind is
                   when Value_Net =>
                      Append (Buffer, "{""net"":{""n"":");
-                     Append (Buffer, Obj.Obj.Val.N);
+                     Append (Buffer, Unsigned_32 (Obj.Obj.Val.N));
                      Append (Buffer, "}}");
                   when Value_Wire =>
                      Append (Buffer, "{""wire"":{""n"":");
-                     Append (Buffer, Obj.Obj.Val.N);
+                     Append (Buffer, Unsigned_32 (Obj.Obj.Val.N));
                      Append (Buffer, "}}");
                   when Value_Signal =>
                      Append (Buffer, "{""signal"":{""id"":");
-                     Append (Buffer, Uns32 (Obj.Obj.Val.S));
+                     Append (Buffer, Unsigned_32 (Obj.Obj.Val.S));
                      Append (Buffer, "}}");
                   when Value_Memory =>
                      Append (Buffer, """memory""");
@@ -147,18 +148,18 @@ package body Grt.Export is
                      | Type_Logic
                      | Type_Discrete =>
                      Append (Buffer, """left"":");
-                     Append (Buffer, Obj.Obj.Typ.Drange.Left);
+                     Append (Buffer, Integer_64 (Obj.Obj.Typ.Drange.Left));
                      Append (Buffer, ",""right"":");
-                     Append (Buffer, Obj.Obj.Typ.Drange.Right);
+                     Append (Buffer, Integer_64 (Obj.Obj.Typ.Drange.Right));
                      Append (Buffer, ",""dir"":");
                      Append (Buffer, Obj.Obj.Typ.Drange.Dir);
                      Append (Buffer, "}}");
 
                   when Type_Float =>
                      Append (Buffer, """left"":");
-                     Append (Buffer, Obj.Obj.Typ.Frange.Left);
+                     Append (Buffer, IEEE_Float_64 (Obj.Obj.Typ.Frange.Left));
                      Append (Buffer, ",""right"":");
-                     Append (Buffer, Obj.Obj.Typ.Frange.Right);
+                     Append (Buffer, IEEE_Float_64 (Obj.Obj.Typ.Frange.Right));
                      Append (Buffer, ",""dir"":");
                      Append (Buffer, Obj.Obj.Typ.Frange.Dir);
                      Append (Buffer, "}}");
@@ -167,7 +168,7 @@ package body Grt.Export is
                      null;
                   --  when Type_Slice =>
                   --     Slice_Base : Type_Acc;
-                  --     Slice_Len : Uns32;
+                  --     Slice_Len : Unsigned_32;
                   --     Slice_El : Type_Acc;
                   --  when Type_Array
                   --     | Type_Array_Unbounded
@@ -203,7 +204,7 @@ package body Grt.Export is
             when Obj_Instance =>
                Append_Comma;
                Append (Buffer, "{""instance"":{""id"":");
-               Append (Buffer, Uns32 (Get_Instance_Id (Obj.I_Inst)));
+               Append (Buffer, Unsigned_32 (Get_Instance_Id (Obj.I_Inst)));
                Append (Buffer, "}}");
 
             when Obj_None | Obj_Subtype | Obj_Marker =>
@@ -214,13 +215,14 @@ package body Grt.Export is
    end Encode_Instance;
 
    procedure Register_Design is
-      procedure Adapter_Register_Design (Root_Instance, Instance_Count, Signal_Count : Uns32);
+      procedure Adapter_Register_Design (
+         Root_Instance, Instance_Count, Signal_Count : Unsigned_32);
       pragma Import (C, Adapter_Register_Design, "adapter_register_design");
    begin
       Adapter_Register_Design (
-         Uns32 (Get_Instance_Id (Elab.Vhdl_Insts.Top_Instance)),
-         Uns32 (Get_Instance_Count),
-         Uns32 (Signals_Table.Last));
+         Unsigned_32 (Get_Instance_Id (Elab.Vhdl_Insts.Top_Instance)),
+         Unsigned_32 (Get_Instance_Count),
+         Unsigned_32 (Signals_Table.Last));
    end Register_Design;
 
 end Grt.Export;
