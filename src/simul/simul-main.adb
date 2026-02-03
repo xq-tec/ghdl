@@ -19,6 +19,8 @@
 with Adapter;
 with Areapools;
 
+with Grt.Export;
+
 with Synth.Flags;
 
 with Elab.Vhdl_Objtypes; use Elab.Vhdl_Objtypes;
@@ -115,6 +117,9 @@ package body Simul.Main is
       if Status = 0 then
          pragma Assert (Areapools.Is_Empty (Expr_Pool));
          pragma Assert (Areapools.Is_Empty (Process_Pool));
+
+         --  Register the design hierarchy with the adapter
+         Grt.Export.Register_Design;
 
          -- Wait until start-simulation command is received via WebSocket
          Adapter.Wait_For_Start_Simulation;

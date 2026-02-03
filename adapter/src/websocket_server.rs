@@ -431,8 +431,8 @@ async fn run_websocket_server(command_tx: Sender<SimulationCommand>) {
 /// Must be called once before simulation starts.
 /// Spawns a background thread running the WebSocket server with a single-threaded tokio runtime.
 /// Returns a pointer to the WebSocket state that must be passed to other adapter functions.
+#[unsafe(no_mangle)]
 pub extern "C" fn adapter_init_websocket() -> *mut WebSocketState {
-pub extern "C" fn adapter_init_websocket() {
     // Create channel for simulation commands
     let (tx, rx) = crossbeam_channel::unbounded::<SimulationCommand>();
 
@@ -453,6 +453,24 @@ pub extern "C" fn adapter_init_websocket() {
     });
 
     eprintln!("WebSocket server thread started");
+
+    Box::into_raw(state)
+}
+
+/// Sets the design hierarchy to be sent to WebSocket clients.
+///
+/// Sends the hierarchy to all currently connected clients and stores it for new connections.
+pub fn set_design_hierarchy(state: &WebSocketState, hierarchy: DesignHierarchy) {
+    eprintln!("Setting design hierarchy: {hierarchy:#?}");
+    let signals = extract_signals_from_hierarchy(&hierarchy);
+    eprintln!("Extracted signals: {signals:#?}");
+
+    let data = DesignHierarchyWithSignals { hierarchy, signals };
+
+    // Send to all connected clients and store for new connections
+    if let Err(e) = state.update_tx.send(SimulationUpdate::Design(data)) {
+        eprintln!("Failed to broadcast design hierarchy: {e}");
+    }
 }
 
 /// Blocks until a StartSimulation command is received from a WebSocket client.
