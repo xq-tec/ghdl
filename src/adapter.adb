@@ -98,25 +98,32 @@ package body Adapter is
       Adapter_Flush (Buffer);
    end Flush;
 
+   Ws_State : System.Address := System.Null_Address;
+
    procedure Init_Websocket is
-      procedure Adapter_Init_Websocket;
+      function Adapter_Init_Websocket return System.Address;
       pragma Import (C, Adapter_Init_Websocket, "adapter_init_websocket");
    begin
-      Adapter_Init_Websocket;
+      Ws_State := Adapter_Init_Websocket;
    end Init_Websocket;
 
    procedure Wait_For_Start_Simulation is
-      procedure Adapter_Wait_For_Start_Simulation;
+      procedure Adapter_Wait_For_Start_Simulation (Ws_State : System.Address);
       pragma Import (C, Adapter_Wait_For_Start_Simulation, "adapter_wait_for_start_simulation");
    begin
-      Adapter_Wait_For_Start_Simulation;
+      Adapter_Wait_For_Start_Simulation (Ws_State);
    end Wait_For_Start_Simulation;
 
    procedure Wait_For_Stop_Simulation is
-      procedure Adapter_Wait_For_Stop_Simulation;
+      procedure Adapter_Wait_For_Stop_Simulation (Ws_State : System.Address);
       pragma Import (C, Adapter_Wait_For_Stop_Simulation, "adapter_wait_for_stop_simulation");
    begin
-      Adapter_Wait_For_Stop_Simulation;
+      Adapter_Wait_For_Stop_Simulation (Ws_State);
    end Wait_For_Stop_Simulation;
+
+   function Get_Ws_State return System.Address is
+   begin
+      return Ws_State;
+   end Get_Ws_State;
 
 end Adapter;

@@ -48,4 +48,6 @@ package Adapter is
    procedure Wait_For_Start_Simulation;
    procedure Wait_For_Stop_Simulation;
 
+   function Get_Ws_State return System.Address;
+
 end Adapter;

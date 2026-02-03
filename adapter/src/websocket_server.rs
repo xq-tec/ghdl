@@ -430,7 +430,8 @@ async fn run_websocket_server(command_tx: Sender<SimulationCommand>) {
 ///
 /// Must be called once before simulation starts.
 /// Spawns a background thread running the WebSocket server with a single-threaded tokio runtime.
-#[unsafe(no_mangle)]
+/// Returns a pointer to the WebSocket state that must be passed to other adapter functions.
+pub extern "C" fn adapter_init_websocket() -> *mut WebSocketState {
 pub extern "C" fn adapter_init_websocket() {
     // Create channel for simulation commands
     let (tx, rx) = crossbeam_channel::unbounded::<SimulationCommand>();
@@ -456,11 +457,7 @@ pub extern "C" fn adapter_init_websocket() {
 
 /// Blocks until a StartSimulation command is received from a WebSocket client.
 #[unsafe(no_mangle)]
-pub extern "C" fn adapter_wait_for_start_simulation() {
-    let state = WEBSOCKET_STATE
-        .get()
-        .expect("adapter_init_websocket should be called first");
-
+pub extern "C" fn adapter_wait_for_start_simulation(state: &WebSocketState) {
     eprintln!("Waiting for start simulation command...");
 
     loop {
@@ -483,11 +480,7 @@ pub extern "C" fn adapter_wait_for_start_simulation() {
 
 /// Blocks until a StopSimulation command is received from a WebSocket client.
 #[unsafe(no_mangle)]
-pub extern "C" fn adapter_wait_for_stop_simulation() {
-    let state = WEBSOCKET_STATE
-        .get()
-        .expect("adapter_init_websocket should be called first");
-
+pub extern "C" fn adapter_wait_for_stop_simulation(state: &WebSocketState) {
     eprintln!("Waiting for stop simulation command...");
 
     loop {

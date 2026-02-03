@@ -216,10 +216,11 @@ package body Grt.Export is
 
    procedure Register_Design is
       procedure Adapter_Register_Design (
-         Root_Instance, Instance_Count, Signal_Count : Unsigned_32);
+         Ws_State : System.Address; Root_Instance, Instance_Count, Signal_Count : Unsigned_32);
       pragma Import (C, Adapter_Register_Design, "adapter_register_design");
    begin
       Adapter_Register_Design (
+         Get_Ws_State,
          Unsigned_32 (Get_Instance_Id (Elab.Vhdl_Insts.Top_Instance)),
          Unsigned_32 (Get_Instance_Count),
          Unsigned_32 (Signals_Table.Last));
