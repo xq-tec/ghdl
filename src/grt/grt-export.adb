@@ -31,9 +31,9 @@ with Elab.Vhdl_Context; use Elab.Vhdl_Context;
 with Elab.Vhdl_Objtypes; use Elab.Vhdl_Objtypes;
 with Elab.Vhdl_Insts;
 with Elab.Vhdl_Values; use Elab.Vhdl_Values;
-with Grt.Signals;
-with Grt.Types;
+with Grt.Signals; use Grt.Signals;
 with Simul.Vhdl_Elab; use Simul.Vhdl_Elab;
+with Simul.Vhdl_Simul; use Simul.Vhdl_Simul;
 
 package body Grt.Export is
 
@@ -45,13 +45,107 @@ package body Grt.Export is
    begin
       Append (Buffer, "{""decl"":");
       Append (Buffer, Unsigned_32 (Signal.Decl));
+
+      Append (Buffer, ",""width"":");
+      Append (Buffer, Unsigned_32 (Signal.Typ.W));
+      Append (Buffer, ",""type_kind"":");
+
+      case Signal.Typ.Kind is
+         when Type_Bit =>
+            Append (Buffer, "{""bit"":{");
+         when Type_Logic =>
+            Append (Buffer, "{""logic"":{");
+         when Type_Discrete =>
+            Append (Buffer, "{""discrete"":{");
+         when Type_Float =>
+            Append (Buffer, "{""float"":{");
+         when Type_Slice =>
+            Append (Buffer, """slice""");
+         when Type_Vector =>
+            Append (Buffer, """vector""");
+         when Type_Unbounded_Vector =>
+            Append (Buffer, """unbounded_vector""");
+         when Type_Array =>
+            Append (Buffer, """array""");
+         when Type_Array_Unbounded =>
+            Append (Buffer, """array_unbounded""");
+         when Type_Unbounded_Array =>
+            Append (Buffer, """unbounded_array""");
+         when Type_Unbounded_Record =>
+            Append (Buffer, """unbounded_record""");
+         when Type_Record =>
+            Append (Buffer, """record""");
+         when Type_Access =>
+            Append (Buffer, """access""");
+         when Type_File =>
+            Append (Buffer, """file""");
+         when Type_Protected =>
+            Append (Buffer, """protected""");
+      end case;
+
+      case Signal.Typ.Kind is
+         when Type_Bit
+            | Type_Logic
+            | Type_Discrete =>
+            Append (Buffer, """left"":");
+            Append (Buffer, Integer_64 (Signal.Typ.Drange.Left));
+            Append (Buffer, ",""right"":");
+            Append (Buffer, Integer_64 (Signal.Typ.Drange.Right));
+            Append (Buffer, ",""dir"":");
+            Append (Buffer, Signal.Typ.Drange.Dir);
+            Append (Buffer, "}}");
+
+         when Type_Float =>
+            Append (Buffer, """left"":");
+            Append (Buffer, IEEE_Float_64 (Signal.Typ.Frange.Left));
+            Append (Buffer, ",""right"":");
+            Append (Buffer, IEEE_Float_64 (Signal.Typ.Frange.Right));
+            Append (Buffer, ",""dir"":");
+            Append (Buffer, Signal.Typ.Frange.Dir);
+            Append (Buffer, "}}");
+
+         when others =>
+            null;
+         --  when Type_Slice =>
+         --     Slice_Base : Type_Acc;
+         --     Slice_Len : Unsigned_32;
+         --     Slice_El : Type_Acc;
+         --  when Type_Array
+         --     | Type_Array_Unbounded
+         --     | Type_Vector =>
+         --     Abound : Bound_Type;
+         --     Alast : Boolean;  --  True for the last dimension
+         --     Arr_El : Type_Acc;
+         --  when Type_Unbounded_Array
+         --     | Type_Unbounded_Vector =>
+         --     Uarr_El : Type_Acc;
+         --     Ulast : Boolean;
+         --     Uarr_Idx : Type_Acc;
+         --  when Type_Record
+         --     | Type_Unbounded_Record =>
+         --     --  The base type, used to have compatible layouts.
+         --     Rec_Base : Type_Acc;
+         --     --  The first elements is in the LSBs of the net.
+         --     Rec : Rec_El_Array_Acc;
+         --  when Type_Access =>
+         --     Acc_Acc : Type_Acc;
+         --     --  Memory size to store the type and its bounds.
+         --     Acc_Type_Sz : Size_Type;
+         --     Acc_Bnd_Sz : Size_Type;
+         --  when Type_File =>
+         --     File_Typ  : Type_Acc;
+         --     File_Signature : String_Acc;
+         --  when Type_Protected =>
+         --     null;
+      end case;
+
       Append (Buffer, '}');
    end Encode_Signal;
 
    procedure Encode_Instance (Buffer : System.Address; Instance_Id : Unsigned_32);
    pragma Export (C, Encode_Instance, "adapter_encode_instance");
 
-   procedure Encode_Instance (Buffer : System.Address; Instance_Id : Uns32) is
+   procedure Encode_Instance (Buffer : System.Address; Instance_Id : Unsigned_32) is
       Is_First : Boolean := True;
       procedure Append_Comma is
       begin
@@ -108,97 +202,6 @@ package body Grt.Export is
                   when Value_Sig_Val =>
                      Append (Buffer, """sig_val""");
                end case;
-
-               Append (Buffer, ",""type_kind"":");
-               case Obj.Obj.Typ.Kind is
-                  when Type_Bit =>
-                     Append (Buffer, "{""bit"":{");
-                  when Type_Logic =>
-                     Append (Buffer, "{""logic"":{");
-                  when Type_Discrete =>
-                     Append (Buffer, "{""discrete"":{");
-                  when Type_Float =>
-                     Append (Buffer, "{""float"":{");
-                  when Type_Slice =>
-                     Append (Buffer, """slice""");
-                  when Type_Vector =>
-                     Append (Buffer, """vector""");
-                  when Type_Unbounded_Vector =>
-                     Append (Buffer, """unbounded_vector""");
-                  when Type_Array =>
-                     Append (Buffer, """array""");
-                  when Type_Array_Unbounded =>
-                     Append (Buffer, """array_unbounded""");
-                  when Type_Unbounded_Array =>
-                     Append (Buffer, """unbounded_array""");
-                  when Type_Unbounded_Record =>
-                     Append (Buffer, """unbounded_record""");
-                  when Type_Record =>
-                     Append (Buffer, """record""");
-                  when Type_Access =>
-                     Append (Buffer, """access""");
-                  when Type_File =>
-                     Append (Buffer, """file""");
-                  when Type_Protected =>
-                     Append (Buffer, """protected""");
-               end case;
-
-               case Obj.Obj.Typ.Kind is
-                  when Type_Bit
-                     | Type_Logic
-                     | Type_Discrete =>
-                     Append (Buffer, """left"":");
-                     Append (Buffer, Integer_64 (Obj.Obj.Typ.Drange.Left));
-                     Append (Buffer, ",""right"":");
-                     Append (Buffer, Integer_64 (Obj.Obj.Typ.Drange.Right));
-                     Append (Buffer, ",""dir"":");
-                     Append (Buffer, Obj.Obj.Typ.Drange.Dir);
-                     Append (Buffer, "}}");
-
-                  when Type_Float =>
-                     Append (Buffer, """left"":");
-                     Append (Buffer, IEEE_Float_64 (Obj.Obj.Typ.Frange.Left));
-                     Append (Buffer, ",""right"":");
-                     Append (Buffer, IEEE_Float_64 (Obj.Obj.Typ.Frange.Right));
-                     Append (Buffer, ",""dir"":");
-                     Append (Buffer, Obj.Obj.Typ.Frange.Dir);
-                     Append (Buffer, "}}");
-
-                  when others =>
-                     null;
-                  --  when Type_Slice =>
-                  --     Slice_Base : Type_Acc;
-                  --     Slice_Len : Unsigned_32;
-                  --     Slice_El : Type_Acc;
-                  --  when Type_Array
-                  --     | Type_Array_Unbounded
-                  --     | Type_Vector =>
-                  --     Abound : Bound_Type;
-                  --     Alast : Boolean;  --  True for the last dimension
-                  --     Arr_El : Type_Acc;
-                  --  when Type_Unbounded_Array
-                  --     | Type_Unbounded_Vector =>
-                  --     Uarr_El : Type_Acc;
-                  --     Ulast : Boolean;
-                  --     Uarr_Idx : Type_Acc;
-                  --  when Type_Record
-                  --     | Type_Unbounded_Record =>
-                  --     --  The base type, used to have compatible layouts.
-                  --     Rec_Base : Type_Acc;
-                  --     --  The first elements is in the LSBs of the net.
-                  --     Rec : Rec_El_Array_Acc;
-                  --  when Type_Access =>
-                  --     Acc_Acc : Type_Acc;
-                  --     --  Memory size to store the type and its bounds.
-                  --     Acc_Type_Sz : Size_Type;
-                  --     Acc_Bnd_Sz : Size_Type;
-                  --  when Type_File =>
-                  --     File_Typ  : Type_Acc;
-                  --     File_Signature : String_Acc;
-                  --  when Type_Protected =>
-                  --     null;
-               end case;
-
                Append (Buffer, "}}");
 
             when Obj_Instance =>
@@ -225,5 +228,27 @@ package body Grt.Export is
          Unsigned_32 (Get_Instance_Count),
          Unsigned_32 (Signals_Table.Last));
    end Register_Design;
+
+   procedure Set_Signal_Subscription (Signal_Id : Unsigned_32;
+                                      Sub_Idx : Subscription_Index) is
+      Signal : Signal_Entry renames Signals_Table.Table (Signal_Index_Type (Signal_Id));
+      Sig_Ptr : constant Ghdl_Signal_Ptr := Read_Sig (Signal.Sig);
+   begin
+      Sig_Ptr.Subscription := Sub_Idx;
+   end Set_Signal_Subscription;
+
+   procedure Notify_Signal_Event (Sig_Idx : Subscription_Index; Value : Ghdl_U64) is
+      procedure Adapter_Notify_Signal_Event (Ws_State : System.Address;
+                                             Physical_Time : Integer_64;
+                                             Delta_Cycle : Integer_64;
+                                             Sig_Idx : Unsigned_32;
+                                             Value : Unsigned_64);
+      pragma Import (C, Adapter_Notify_Signal_Event, "adapter_notify_signal_event");
+   begin
+      Adapter_Notify_Signal_Event (
+         Get_Ws_State,
+         10, 20,
+         Unsigned_32 (Sig_Idx), Unsigned_64 (Value));
+   end Notify_Signal_Event;
 
 end Grt.Export;

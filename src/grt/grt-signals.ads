@@ -22,6 +22,7 @@
 --  covered by the GNU Public License.
 with System;
 with Ada.Unchecked_Conversion;
+with Grt.Export; use Grt.Export;
 with Grt.Table;
 with Grt.Types; use Grt.Types;
 with Grt.Vhdl_Types; use Grt.Vhdl_Types;
@@ -361,6 +362,8 @@ package Grt.Signals is
       Ports : Signal_Arr_Ptr;
 
       Dump_Table_Idx : Dump_Table_Index;
+
+      Subscription : Subscription_Index;
 
       --  Mode of the signal (in, out ...)
       --Mode_Signal : Mode_Signal_Type;

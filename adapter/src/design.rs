@@ -1,6 +1,5 @@
 #![expect(unused, reason = "// TODO remove before release")]
 
-use std::collections::HashMap;
 use std::num::NonZeroU32;
 
 use hdl_simulation_protocol::SignalInstanceId;
@@ -13,9 +12,10 @@ use hdl_simulation_protocol::design_hierarchy::DesignHierarchyEntryKind;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchySignalType;
 
 #[derive(Debug, Deserialize)]
-struct Signal {
+pub struct Signal {
     decl: u32,
     name: Option<String>,
+    pub type_kind: TypeKind,
 }
 
 #[derive(Debug, Deserialize)]
@@ -31,7 +31,6 @@ struct Instance {
 enum ObjectKind {
     Object {
         val_kind: ValKind,
-        type_kind: TypeKind,
         name: Option<String>,
     },
     Instance {
@@ -43,11 +42,12 @@ enum ObjectKind {
 #[serde(rename_all = "snake_case")]
 enum ValKind {
     Signal { id: u32 },
+    Memory,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
-enum TypeKind {
+pub enum TypeKind {
     Bit {
         left: i64,
         right: i64,
@@ -72,9 +72,20 @@ enum TypeKind {
     },
 }
 
+impl TypeKind {
+    pub fn to_value_type(&self) -> SignalValueType {
+        match self {
+            TypeKind::Bit { .. } => SignalValueType::U8,
+            TypeKind::Logic { .. } => SignalValueType::Logic,
+            TypeKind::Discrete { .. } => SignalValueType::U8,
+            TypeKind::Float { .. } => SignalValueType::F64,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
-enum Dir {
+pub enum Dir {
     To,
     Downto,
 }
@@ -93,56 +104,56 @@ where
     Ok(f64::from_bits(bits))
 }
 
-/// Converts a GHDL TypeKind to a SignalValueType for the protocol.
-fn type_kind_to_signal_value_type(type_kind: &TypeKind) -> SignalValueType {
-    match type_kind {
-        TypeKind::Bit { .. } => SignalValueType::Logic,
-        TypeKind::Logic { .. } => SignalValueType::Logic,
-        TypeKind::Discrete { .. } => SignalValueType::U8,
-        TypeKind::Float { .. } => SignalValueType::F64,
-    }
-}
-
 /// Builds a DesignHierarchyTreeEntry for an instance recursively.
+///
+/// Takes the instance ID, the list of all instances (indexed by ID), and the list
+/// of all signals (indexed by ID). Both lists have a dummy element at index 0 since
+/// IDs start at 1.
 fn build_instance_entry(
     instance_id: u32,
-    instances: &HashMap<u32, Instance>,
-    signal_types: &HashMap<u32, TypeKind>,
+    instances: &[Instance],
+    signals: &[Signal],
 ) -> DesignHierarchyEntry {
-    let instance = instances.get(&instance_id);
+    let instance = &instances[instance_id as usize];
 
     let name = instance
-        .and_then(|i| i.name.clone())
+        .name
+        .clone()
         .unwrap_or_else(|| format!("instance_{instance_id}"));
 
     let mut entry = DesignHierarchyEntry::new(name, DesignHierarchyEntryKind::Module);
 
-    if let Some(inst) = instance {
-        for obj in &inst.objects {
-            match obj {
-                ObjectKind::Object {
-                    val_kind: ValKind::Signal { id },
-                    type_kind,
-                    name,
-                } => {
-                    let signal_name = name.clone().unwrap_or_else(|| format!("signal_{id}"));
+    for obj in &instance.objects {
+        match obj {
+            ObjectKind::Object {
+                val_kind: ValKind::Signal { id },
+                name,
+            } => {
+                let signal_name = name.clone().unwrap_or_else(|| format!("signal_{id}"));
 
-                    if let Some(non_zero_id) = NonZeroU32::new(*id) {
-                        let signal_entry = DesignHierarchyEntry::new(
-                            signal_name,
-                            DesignHierarchyEntryKind::Signal(
-                                SignalInstanceId(non_zero_id),
-                                DesignHierarchySignalType::Scalar,
-                                type_kind_to_signal_value_type(type_kind),
-                            ),
-                        );
-                        entry.add_child(signal_entry);
-                    }
+                if let Some(non_zero_id) = NonZeroU32::new(*id) {
+                    // Get the signal type from the signals list
+                    let type_kind = &signals[*id as usize].type_kind;
+                    let signal_entry = DesignHierarchyEntry::new(
+                        signal_name,
+                        DesignHierarchyEntryKind::Signal(
+                            SignalInstanceId(non_zero_id),
+                            DesignHierarchySignalType::Scalar,
+                            type_kind.to_value_type(),
+                        ),
+                    );
+                    entry.add_child(signal_entry);
                 }
-                ObjectKind::Instance { id } => {
-                    let child_entry = build_instance_entry(*id, instances, signal_types);
-                    entry.add_child(child_entry);
-                }
+            }
+            ObjectKind::Object {
+                val_kind: ValKind::Memory,
+                name,
+            } => {
+                // TODO
+            }
+            ObjectKind::Instance { id } => {
+                let child_entry = build_instance_entry(*id, instances, signals);
+                entry.add_child(child_entry);
             }
         }
     }
@@ -153,63 +164,65 @@ fn build_instance_entry(
 /// Registers the design hierarchy with the WebSocket server.
 #[unsafe(no_mangle)]
 pub extern "C" fn adapter_register_design(
-    ws_state: &crate::websocket_server::WebSocketState,
+    state: &mut crate::sim_interface::AdapterState,
     root_instance: u32,
     instance_count: u32,
     signal_count: u32,
 ) {
     let mut buffer = Vec::with_capacity(4096);
-    let mut signal_types: HashMap<u32, TypeKind> = HashMap::new();
-    let mut instances: HashMap<u32, Instance> = HashMap::new();
 
     eprintln!(
         "Registering design: root_instance={root_instance}, instances={instance_count}, signals={signal_count}"
     );
 
-    // First pass: collect all signals
+    // Collect all signals; signal IDs start at 1, so we put a dummy at index 0
+    let mut signals: Vec<Signal> = Vec::with_capacity(1 + signal_count as usize);
+    signals.push(Signal {
+        decl: 0,
+        name: None,
+        type_kind: TypeKind::Bit {
+            left: 0,
+            right: 0,
+            dir: Dir::To,
+        },
+    });
     for signal_id in 1..=signal_count {
         buffer.clear();
         adapter_encode_signal(&mut buffer, signal_id);
+        eprintln!("signal {}", String::from_utf8_lossy(&buffer));
         if let Ok(signal) = serde_json::from_slice::<Signal>(&buffer) {
-            eprintln!("signal {signal_id}: {:?}", signal);
+            signals.push(signal);
         }
     }
 
-    // Second pass: collect all instances
+    // Collect all instances; instance IDs start at 1, so we put a dummy at index 0
+    let mut instances: Vec<Instance> = Vec::with_capacity(1 + instance_count as usize);
+    instances.push(Instance {
+        stmt: 0,
+        source: 0,
+        name: None,
+        objects: vec![],
+    });
     for instance_id in 1..=instance_count {
         buffer.clear();
         adapter_encode_instance(&mut buffer, instance_id);
+        eprintln!("instance {}", String::from_utf8_lossy(&buffer));
         match serde_json::from_slice::<Instance>(&buffer) {
-            Ok(instance) => {
-                // Collect signal types from this instance
-                for obj in &instance.objects {
-                    if let ObjectKind::Object {
-                        val_kind: ValKind::Signal { id },
-                        type_kind,
-                        ..
-                    } = obj
-                    {
-                        signal_types.insert(*id, type_kind.clone());
-                    }
-                }
-                eprintln!("instance {instance_id}: {:?}", instance.name);
-                instances.insert(instance_id, instance);
-            }
+            Ok(instance) => instances.push(instance),
             Err(e) => {
-                eprintln!("Error deserializing instance {instance_id}: {e}");
+                panic!("Error deserializing instance {instance_id}: {e}");
             }
         }
     }
 
     // Build the design hierarchy tree starting from the root instance
-    let root_entry = build_instance_entry(root_instance, &instances, &signal_types);
+    let root_entry = build_instance_entry(root_instance, &instances, &signals);
 
-    let tree = DesignHierarchy { root: root_entry };
+    let hierarchy = DesignHierarchy { root: root_entry };
 
     eprintln!("Design hierarchy tree built successfully");
 
-    // Store the tree in the server state
-    crate::websocket_server::set_design_hierarchy(ws_state, tree);
+    state.set_design_hierarchy(hierarchy, signals);
 }
 
 unsafe extern "C" {

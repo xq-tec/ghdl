@@ -23,8 +23,20 @@
 
 with Interfaces; use Interfaces;
 
+with Grt.Types; use Grt.Types;
+
 package Grt.Export is
 
+   type Subscription_Index is new Unsigned_32;
+   Invalid_Subscription_Index : constant Subscription_Index := Subscription_Index'Last;
+
    procedure Register_Design;
+
+   --  Sets the Subscription field of a signal in the signal table.
+   procedure Set_Signal_Subscription (Signal_Id : Unsigned_32;
+                                      Sub_Idx : Subscription_Index);
+   pragma Export (C, Set_Signal_Subscription, "ghdl_set_signal_subscription");
+
+   procedure Notify_Signal_Event (Sig_Idx : Subscription_Index; Value : Ghdl_U64);
 
 end Grt.Export;

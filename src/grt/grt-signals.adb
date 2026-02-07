@@ -260,6 +260,7 @@ package body Grt.Signals is
                               Ports => null,
 
                               Dump_Table_Idx => 0,
+                              Subscription => Invalid_Subscription_Index,
 
                               S => S);
 
@@ -678,6 +679,7 @@ package body Grt.Signals is
                                      Ports => null,
 
                                      Dump_Table_Idx => 0,
+                                     Subscription => Invalid_Subscription_Index,
 
                                      S => (Mode_Sig => Mode_End));
 
@@ -3259,6 +3261,9 @@ package body Grt.Signals is
      (Sig : Ghdl_Signal_Ptr; Val : Value_Union)
    is
       El : Action_List_Acc;
+      Value : Ghdl_U64;
+
+      function F64_To_Binary is new Ada.Unchecked_Conversion (Ghdl_F64, Ghdl_U64);
    begin
       case Sig.Mode is
          when Mode_B1 =>
@@ -3267,37 +3272,51 @@ package body Grt.Signals is
             end if;
             Sig.Last_Value.B1 := Sig.Value_Ptr.B1;
             Sig.Value_Ptr.B1 := Val.B1;
+            if Sig.Value_Ptr.B1 then
+               Value := 1;
+            else
+               Value := 0;
+            end if;
          when Mode_E8 =>
             if Sig.Value_Ptr.E8 = Val.E8 then
                return;
             end if;
             Sig.Last_Value.E8 := Sig.Value_Ptr.E8;
             Sig.Value_Ptr.E8 := Val.E8;
+            Value := Ghdl_U64 (Sig.Value_Ptr.E8);
          when Mode_E32 =>
             if Sig.Value_Ptr.E32 = Val.E32 then
                return;
             end if;
             Sig.Last_Value.E32 := Sig.Value_Ptr.E32;
             Sig.Value_Ptr.E32 := Val.E32;
+            Value := Ghdl_U64 (Sig.Value_Ptr.E32);
          when Mode_I32 =>
             if Sig.Value_Ptr.I32 = Val.I32 then
                return;
             end if;
             Sig.Last_Value.I32 := Sig.Value_Ptr.I32;
             Sig.Value_Ptr.I32 := Val.I32;
+            Value := To_Ghdl_U64 (Ghdl_I64 (Sig.Value_Ptr.I32));
          when Mode_I64 =>
             if Sig.Value_Ptr.I64 = Val.I64 then
                return;
             end if;
             Sig.Last_Value.I64 := Sig.Value_Ptr.I64;
             Sig.Value_Ptr.I64 := Val.I64;
+            Value := To_Ghdl_U64 (Sig.Value_Ptr.I64);
          when Mode_F64 =>
             if Sig.Value_Ptr.F64 = Val.F64 then
                return;
             end if;
             Sig.Last_Value.F64 := Sig.Value_Ptr.F64;
             Sig.Value_Ptr.F64 := Val.F64;
+            Value := F64_To_Binary (Sig.Value_Ptr.F64);
       end case;
+
+      if Sig.Subscription /= Invalid_Subscription_Index then
+         Grt.Export.Notify_Signal_Event (Sig.Subscription, Value);
+      end if;
 
       Sig.Event := True;
       Sig.Last_Event := Current_Time;
