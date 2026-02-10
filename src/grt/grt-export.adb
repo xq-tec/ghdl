@@ -219,11 +219,11 @@ package body Grt.Export is
 
    procedure Register_Design is
       procedure Adapter_Register_Design (
-         Ws_State : System.Address; Root_Instance, Instance_Count, Signal_Count : Unsigned_32);
+         Adapter_State : System.Address; Root_Instance, Instance_Count, Signal_Count : Unsigned_32);
       pragma Import (C, Adapter_Register_Design, "adapter_register_design");
    begin
       Adapter_Register_Design (
-         Get_Ws_State,
+         Get_Adapter_State,
          Unsigned_32 (Get_Instance_Id (Elab.Vhdl_Insts.Top_Instance)),
          Unsigned_32 (Get_Instance_Count),
          Unsigned_32 (Signals_Table.Last));
@@ -238,7 +238,7 @@ package body Grt.Export is
    end Set_Signal_Subscription;
 
    procedure Notify_Signal_Event (Sig_Idx : Subscription_Index; Value : Ghdl_U64) is
-      procedure Adapter_Notify_Signal_Event (Ws_State : System.Address;
+      procedure Adapter_Notify_Signal_Event (Adapter_State : System.Address;
                                              Physical_Time : Integer_64;
                                              Delta_Cycle : Integer_64;
                                              Sig_Idx : Unsigned_32;
@@ -246,7 +246,7 @@ package body Grt.Export is
       pragma Import (C, Adapter_Notify_Signal_Event, "adapter_notify_signal_event");
    begin
       Adapter_Notify_Signal_Event (
-         Get_Ws_State,
+         Get_Adapter_State,
          10, 20,
          Unsigned_32 (Sig_Idx), Unsigned_64 (Value));
    end Notify_Signal_Event;

@@ -7,6 +7,7 @@ use futures_util::stream::SelectAll;
 use futures_util::{SinkExt, Stream, StreamExt};
 use hdl_simulation_protocol::SignalInstanceId;
 use hdl_simulation_protocol::SimulationId;
+use hdl_simulation_protocol::SimulationStatus;
 use hdl_simulation_protocol::from_simulator::Notification;
 use hdl_simulation_protocol::from_simulator::SimulationUpdate as WsSimulationUpdate;
 use hdl_simulation_protocol::to_simulator::Command;
@@ -141,19 +142,9 @@ pub(crate) async fn run_websocket_server(
 
     eprintln!("WebSocket server listening on {addr}");
 
-    // Connection state management
     let mut connections: HashMap<u64, Connection> = HashMap::new();
-    type TaggedWsStream = std::pin::Pin<
-        Box<
-            dyn futures_util::Stream<
-                    Item = (u64, Result<Message, tokio_tungstenite::tungstenite::Error>),
-                > + Send,
-        >,
-    >;
     let mut ws_receivers: SelectAll<TaggedWsStream> = SelectAll::new();
-    let mut next_connection_id: u64 = 0;
-
-    // Stored design hierarchy for new connections
+    let mut next_id: u64 = 0;
     let mut current_hierarchy: Option<DesignHierarchyWithSignals> = None;
 
     loop {
@@ -244,7 +235,6 @@ pub(crate) async fn run_websocket_server(
                             connections.len()
                         );
 
-                        // Store the hierarchy for new connections
                         current_hierarchy = Some(data.clone());
 
                         // Clear subscriptions since signal IDs may have changed
@@ -269,6 +259,21 @@ pub(crate) async fn run_websocket_server(
                             Notification::SignalValuesInRange(values),
                         )
                         .await;
+                    }
+                    SimulationUpdate::StatusChanged(status, ack_tx) => {
+                        let notification = match status {
+                            SimulationStatus::Paused => Notification::SimulationPaused,
+                            SimulationStatus::Running => Notification::SimulationResumed,
+                            SimulationStatus::Stopped => Notification::SimulationStopped,
+                        };
+                        eprintln!(
+                            "Broadcasting simulation status {status:?} to {} connections",
+                            connections.len()
+                        );
+                        broadcast(&mut connections, notification).await;
+                        if let Some(tx) = ack_tx {
+                            let _ = tx.send(());
+                        }
                     }
                 }
             }

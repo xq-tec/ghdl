@@ -20,6 +20,17 @@ with System;
 with Types;
 
 package Adapter is
+   pragma Warnings (Off, "the size of enums in C is implementation-defined");
+
+   type RustBool is (False, True) with Size => 8;
+   for RustBool use (False => 0, True => 1);
+   pragma Convention (C, RustBool);
+
+   type Simulation_Status is (Paused, Running, Stopped) with Size => 8;
+   for Simulation_Status use (Paused => 0, Running => 1, Stopped => 2);
+   pragma Convention (C, Simulation_Status);
+
+   pragma Warnings (On, "the size of enums in C is implementation-defined");
 
    function Create_Buffer (Size : Unsigned_32) return System.Address
       with Inline;
@@ -45,9 +56,15 @@ package Adapter is
       with Inline;
 
    procedure Init_Websocket;
-   procedure Wait_For_Start_Simulation;
-   procedure Wait_For_Stop_Simulation;
 
-   function Get_Ws_State return System.Address;
+   --  Processes all commands in the queue from the WebSocket.
+   --  When Block is True, blocks until at least one command has been received.
+   --  When Block is False, returns immediately if no command is pending.
+   procedure Process_Commands (Block : Boolean;
+                               Physical_Time : Integer_64; Delta_Cycle : Integer_64);
+   function Requested_Simulation_Status return Simulation_Status;
+   procedure Notify_Simulation_Status (Status : Simulation_Status);
+
+   function Get_Adapter_State return System.Address;
 
 end Adapter;

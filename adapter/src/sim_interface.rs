@@ -5,15 +5,15 @@ use std::thread;
 use crossbeam_channel::Receiver;
 use hdl_simulation_protocol::Logic;
 use hdl_simulation_protocol::SignalInstanceId;
+use hdl_simulation_protocol::SimulationStatus;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchy;
 use hdl_simulation_protocol::from_simulator::{NewValuesEnum, SignalValuesInRange};
 use hdl_simulation_protocol::time::{Delta, LogicalTime, PhysicalTime};
 use rustc_hash::FxHashMap;
 
-use crate::SimulationCommand;
-use crate::SimulationUpdate;
 use crate::design::Signal;
 use crate::websocket_server::run_websocket_server;
+use crate::{SimulationCommand, SimulationUpdate};
 
 unsafe extern "C" {
     /// Sets the Subscription field of a signal in GHDL's signal table.
@@ -56,6 +56,9 @@ pub struct AdapterState {
     signal_indices: FxHashMap<SignalInstanceId, usize>,
 
     events: SignalValuesInRange,
+
+    current_status: SimulationStatus,
+    requested_status: SimulationStatus,
 }
 
 impl AdapterState {
@@ -154,56 +157,9 @@ pub extern "C" fn adapter_init_websocket() -> *mut AdapterState {
             time_range: LogicalTime::ZERO..LogicalTime::ZERO,
             values_in_range: Vec::new(),
         },
+        current_status: SimulationStatus::Paused,
+        requested_status: SimulationStatus::Paused,
     }))
-}
-
-/// Blocks until a StartSimulation command is received from a WebSocket client.
-#[unsafe(no_mangle)]
-pub extern "C" fn adapter_wait_for_start_simulation(state: &mut AdapterState) {
-    eprintln!("Waiting for start simulation command...");
-
-    loop {
-        match state.command_rx.recv() {
-            Ok(SimulationCommand::Start) => {
-                eprintln!("Received start simulation command");
-                return;
-            }
-            Ok(SimulationCommand::Stop) => {
-                eprintln!("Ignoring stop command (waiting for start)");
-            }
-            Ok(SimulationCommand::Subscribe(signal_ids)) => {
-                state.subscribe(LogicalTime::ZERO, &signal_ids);
-            }
-            Ok(_) => todo!(),
-            Err(e) => {
-                eprintln!("Channel error while waiting for start: {e}");
-                return;
-            }
-        }
-    }
-}
-
-/// Blocks until a StopSimulation command is received from a WebSocket client.
-#[unsafe(no_mangle)]
-pub extern "C" fn adapter_wait_for_stop_simulation(state: &AdapterState) {
-    eprintln!("Waiting for stop simulation command...");
-
-    loop {
-        match state.command_rx.recv() {
-            Ok(SimulationCommand::Stop) => {
-                eprintln!("Received stop simulation command");
-                return;
-            }
-            Ok(SimulationCommand::Start) => {
-                eprintln!("Ignoring start command (waiting for stop)");
-            }
-            Ok(_) => todo!(),
-            Err(e) => {
-                eprintln!("Channel error while waiting for stop: {e}");
-                return;
-            }
-        }
-    }
 }
 
 /// Drains all pending commands from the WebSocket thread and processes them.
@@ -229,6 +185,115 @@ pub extern "C" fn adapter_handle_commands(
             }
             SimulationCommand::Start | SimulationCommand::Stop => {
                 // TODO
+            }
+        }
+    }
+}
+
+/// Processes commands from the WebSocket thread.
+///
+/// When `block` is non-zero, blocks until at least one command is received.
+/// When `block` is zero, returns immediately if no commands are pending.
+#[unsafe(no_mangle)]
+pub extern "C" fn adapter_process_commands(
+    state: &mut AdapterState,
+    block: bool,
+    physical_time: i64,
+    delta_cycle: i64,
+) {
+    let current_time = logical_time_from_ffi(physical_time, delta_cycle);
+
+    if block {
+        match state.command_rx.recv() {
+            Ok(cmd) => process_command(state, cmd, current_time),
+            Err(e) => {
+                eprintln!("Channel error in process_commands: {e}");
+                return;
+            }
+        }
+    };
+
+    while let Ok(command) = state.command_rx.try_recv() {
+        process_command(state, command, current_time);
+    }
+}
+
+/// Processes a single simulation command and returns the updated request code.
+fn process_command(
+    state: &mut AdapterState,
+    command: SimulationCommand,
+    current_time: LogicalTime,
+) {
+    match command {
+        SimulationCommand::Start => {
+            eprintln!("Received Start command");
+            state.requested_status = SimulationStatus::Running;
+        }
+        SimulationCommand::Stop => {
+            eprintln!("Received Stop command");
+            state.requested_status = SimulationStatus::Stopped;
+        }
+        SimulationCommand::Subscribe(signal_ids) => {
+            state.subscribe(current_time, &signal_ids);
+        }
+        SimulationCommand::Unsubscribe(_signal_ids) => {
+            state.transmit_events(current_time);
+            // TODO remove subscription from GHDL data structures
+        }
+        SimulationCommand::SendUpdate => {
+            state.transmit_events(current_time);
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn adapter_requested_simulation_status(state: &AdapterState) -> SimulationStatus {
+    state.requested_status
+}
+
+/// Sends a status update to all connected clients if the status has changed.
+///
+/// When the status is [`SimulationStatus::Stopped`], blocks until the
+/// notification has been flushed on all WebSocket connections (with a
+/// two-second timeout).
+#[unsafe(no_mangle)]
+pub extern "C" fn adapter_notify_simulation_status(
+    state: &mut AdapterState,
+    status: SimulationStatus,
+) {
+    if state.current_status == status {
+        return;
+    }
+    eprintln!(
+        "Simulation status changed: {:?} -> {status:?}",
+        state.current_status
+    );
+    state.current_status = status;
+
+    let (ack_tx, ack_rx) = if status == SimulationStatus::Stopped {
+        let (tx, rx) = std::sync::mpsc::sync_channel(0);
+        (Some(tx), Some(rx))
+    } else {
+        (None, None)
+    };
+    if let Err(e) = state
+        .update_tx
+        .send(SimulationUpdate::StatusChanged(status, ack_tx))
+    {
+        eprintln!("Failed to send simulation status update: {e}");
+        return;
+    }
+
+    if let Some(rx) = ack_rx {
+        match rx.recv_timeout(std::time::Duration::from_secs(2)) {
+            Ok(()) => {
+                eprintln!("Stopped notification acknowledged by WebSocket thread");
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                eprintln!("Timed out waiting for stopped notification acknowledgment");
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                eprintln!("WebSocket thread dropped the acknowledgment channel");
             }
         }
     }

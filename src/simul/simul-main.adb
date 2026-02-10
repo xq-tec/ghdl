@@ -16,7 +16,7 @@
 --  You should have received a copy of the GNU General Public License
 --  along with this program.  If not, see <gnu.org/licenses>.
 
-with Adapter;
+with Adapter; use Adapter;
 with Areapools;
 
 with Grt.Export;
@@ -70,7 +70,7 @@ package body Simul.Main is
       Status : Integer;
    begin
       --  Initialize WebSocket server for remote control
-      Adapter.Init_Websocket;
+      Init_Websocket;
 
       Break_Time := Std_Time'Last;
       Break_Step := False;
@@ -121,24 +121,37 @@ package body Simul.Main is
          --  Register the design hierarchy with the adapter
          Grt.Export.Register_Design;
 
-         -- Wait until start-simulation command is received via WebSocket
-         Adapter.Wait_For_Start_Simulation;
+         Sim_Loop: loop
+            Command_Loop: loop
+               Process_Commands (Block => Requested_Simulation_Status = Paused,
+                                 Physical_Time => 10, Delta_Cycle => 20);
 
-         loop
+               case Requested_Simulation_Status is
+                  when Paused =>
+                     Notify_Simulation_Status (Paused);
+                     -- Continue looping
+                  when Running =>
+                     exit Command_Loop;
+                  when Stopped =>
+                     exit Sim_Loop;
+               end case;
+            end loop Command_Loop;
+            Notify_Simulation_Status (Running);
+
             if Break_Time < Grt.Processes.Next_Time then
                Grt.Processes.Next_Time := Break_Time;
             end if;
 
             Status := Grt.Main.Run_Through_Longjump
               (Grt.Processes.Simulation_Cycle'Access);
-            exit when Status < 0
+            exit Sim_Loop when Status < 0
               or Status = Grt.Errors.Run_Stop;
 
             if Grt.Options.Trace_Signals then
                Grt.Disp_Signals.Disp_All_Signals;
             end if;
 
-            exit when Status = Grt.Errors.Run_Finished;
+            exit Sim_Loop when Status = Grt.Errors.Run_Finished;
 
             if Break_Step
               or else (Current_Time >= Break_Time
@@ -150,18 +163,16 @@ package body Simul.Main is
                Elab.Debugger.Debug_Time (Vhdl_Elab.Top_Instance);
             end if;
 
-            exit when Grt.Processes.Has_Simulation_Timeout;
-         end loop;
+            exit Sim_Loop when Grt.Processes.Has_Simulation_Timeout;
+         end loop Sim_Loop;
       end if;
 
       Grt.Main.Run_Finish (Status);
-
-      -- Wait until stop-simulation command is received via WebSocket
-      Adapter.Wait_For_Stop_Simulation;
+      Notify_Simulation_Status (Stopped);
    exception
 --      when Debugger_Quit =>
 --         null;
       when Simulation_Finished =>
-         null;
+         Notify_Simulation_Status (Stopped);
    end Simulation;
 end Simul.Main;
