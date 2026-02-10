@@ -6,9 +6,7 @@ use crossbeam_channel::Sender;
 use futures_util::stream::SelectAll;
 use futures_util::{SinkExt, Stream, StreamExt};
 use hdl_simulation_protocol::SignalInstanceId;
-use hdl_simulation_protocol::SimulationId;
 use hdl_simulation_protocol::SimulationStatus;
-use hdl_simulation_protocol::from_simulator::Notification;
 use hdl_simulation_protocol::from_simulator::SimulationUpdate as WsSimulationUpdate;
 use hdl_simulation_protocol::to_simulator::Command;
 use smallvec::SmallVec;
@@ -31,7 +29,6 @@ struct Connection {
     id: u64,
     sink: WsSink,
     subscribed_signals: HashSet<SignalInstanceId>,
-    simulation_id: SimulationId,
 }
 
 impl Connection {
@@ -42,44 +39,33 @@ impl Connection {
         Ok(())
     }
 
-    /// Wraps a notification with this connection's simulation ID and sends it.
-    async fn send_notification(&mut self, notification: Notification) -> Result<(), SendError> {
-        let message = WsSimulationUpdate {
-            simulation_id: self.simulation_id,
-            message: notification,
-        };
-        self.send(&message).await
-    }
-
     /// Processes a client command, forwarding simulation commands to the simulator
     /// thread and returning an optional response notification.
     fn handle_command(
         &mut self,
         command: Command,
         command_tx: &Sender<SimulationCommand>,
-    ) -> Option<Notification> {
+    ) -> Option<WsSimulationUpdate> {
         match command {
             Command::StartSimulation => {
-                self.simulation_id += 1;
                 let _ = command_tx.send(SimulationCommand::Start);
-                Some(Notification::SimulationStarted)
+                Some(WsSimulationUpdate::SimulationStarted)
             }
             Command::StopSimulation => {
                 let _ = command_tx.send(SimulationCommand::Stop);
-                Some(Notification::SimulationStopped)
+                Some(WsSimulationUpdate::SimulationStopped)
             }
             Command::PauseSimulation => {
                 // Not implemented yet, just confirm
-                Some(Notification::SimulationPaused)
+                Some(WsSimulationUpdate::SimulationPaused)
             }
             Command::ResumeSimulation => {
                 // Not implemented yet, just confirm
-                Some(Notification::SimulationResumed)
+                Some(WsSimulationUpdate::SimulationResumed)
             }
             Command::RestartSimulation => {
-                self.simulation_id += 1;
                 let _ = command_tx.send(SimulationCommand::Start);
-                Some(Notification::SimulationStarted)
+                Some(WsSimulationUpdate::SimulationStarted)
             }
             Command::TrackSignals(request) => {
                 let mut to_subscribe: SmallVec<[SignalInstanceId; 1]> = SmallVec::new();
@@ -112,11 +98,12 @@ impl Connection {
     }
 }
 
+// TODO don't re-encode the message for each connection
 /// Sends a notification to all connections, removing any that fail.
-async fn broadcast(connections: &mut HashMap<u64, Connection>, notification: Notification) {
+async fn broadcast(connections: &mut HashMap<u64, Connection>, update: &WsSimulationUpdate) {
     let mut to_remove = Vec::new();
     for conn in connections.values_mut() {
-        if let Err(e) = conn.send_notification(notification.clone()).await {
+        if let Err(e) = conn.send(update).await {
             eprintln!("Failed to send to connection {}: {e}", conn.id);
             to_remove.push(conn.id);
         }
@@ -175,13 +162,12 @@ pub(crate) async fn run_websocket_server(
                     id,
                     sink,
                     subscribed_signals: HashSet::new(),
-                    simulation_id: 0,
                 };
 
                 // Send current design hierarchy to the newly connected client
                 if let Some(ref data) = current_hierarchy {
-                    let notification = Notification::DesignHierarchy(data.hierarchy.clone());
-                    if let Err(e) = conn.send_notification(notification).await {
+                    let update = WsSimulationUpdate::DesignHierarchy(data.hierarchy.clone());
+                    if let Err(e) = conn.send(&update).await {
                         eprintln!("Failed to send design hierarchy to connection {id}: {e}");
                         continue;
                     }
@@ -219,8 +205,8 @@ pub(crate) async fn run_websocket_server(
                 let Some(conn) = connections.get_mut(&id) else { continue };
                 let response = conn.handle_command(command, &command_tx);
 
-                if let Some(notification) = response
-                    && let Err(e) = conn.send_notification(notification).await {
+                if let Some(update) = response
+                    && let Err(e) = conn.send(&update).await {
                         eprintln!("Failed to send response to connection {id}: {e}");
                         connections.remove(&id);
                     }
@@ -244,7 +230,7 @@ pub(crate) async fn run_websocket_server(
 
                         broadcast(
                             &mut connections,
-                            Notification::DesignHierarchy(data.hierarchy),
+                            &WsSimulationUpdate::DesignHierarchy(data.hierarchy),
                         )
                         .await;
                     }
@@ -256,21 +242,21 @@ pub(crate) async fn run_websocket_server(
 
                         broadcast(
                             &mut connections,
-                            Notification::SignalValuesInRange(values),
+                            &WsSimulationUpdate::SignalValuesInRange(values),
                         )
                         .await;
                     }
                     SimulationUpdate::StatusChanged(status, ack_tx) => {
-                        let notification = match status {
-                            SimulationStatus::Paused => Notification::SimulationPaused,
-                            SimulationStatus::Running => Notification::SimulationResumed,
-                            SimulationStatus::Stopped => Notification::SimulationStopped,
+                        let update = match status {
+                            SimulationStatus::Paused => WsSimulationUpdate::SimulationPaused,
+                            SimulationStatus::Running => WsSimulationUpdate::SimulationResumed,
+                            SimulationStatus::Stopped => WsSimulationUpdate::SimulationStopped,
                         };
                         eprintln!(
                             "Broadcasting simulation status {status:?} to {} connections",
                             connections.len()
                         );
-                        broadcast(&mut connections, notification).await;
+                        broadcast(&mut connections, &update).await;
                         if let Some(tx) = ack_tx {
                             let _ = tx.send(());
                         }
