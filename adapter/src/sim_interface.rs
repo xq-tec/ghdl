@@ -7,7 +7,7 @@ use hdl_simulation_protocol::Logic;
 use hdl_simulation_protocol::SignalInstanceId;
 use hdl_simulation_protocol::SimulationStatus;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchy;
-use hdl_simulation_protocol::from_simulator::{NewValuesEnum, SignalValuesInRange};
+use hdl_simulation_protocol::from_simulator::{EventsUpdate, NewValuesEnum};
 use hdl_simulation_protocol::time::{Delta, LogicalTime, PhysicalTime};
 use rustc_hash::FxHashMap;
 
@@ -46,7 +46,7 @@ pub struct AdapterState {
     signal_indices: FxHashMap<SignalInstanceId, usize>,
 
     time_for_events: LogicalTime,
-    events: SignalValuesInRange,
+    events: EventsUpdate,
 
     current_status: SimulationStatus,
     requested_status: SimulationStatus,
@@ -65,13 +65,13 @@ impl AdapterState {
                 .collect();
             let signal_values = replace(
                 &mut self.events,
-                SignalValuesInRange {
+                EventsUpdate {
                     time_range: end_time..end_time,
                     values_in_range,
                 },
             );
             self.update_tx
-                .send(SimulationUpdate::SignalValuesInRange(signal_values))
+                .send(SimulationUpdate::Events(signal_values))
                 .expect("Failed to send simulation update"); // TODO handle error
         }
     }
@@ -143,7 +143,7 @@ pub extern "C" fn adapter_init_websocket() -> *mut AdapterState {
         signals: Vec::new(),
         signal_indices: FxHashMap::default(),
         time_for_events: LogicalTime::ZERO,
-        events: SignalValuesInRange {
+        events: EventsUpdate {
             time_range: LogicalTime::ZERO..LogicalTime::ZERO,
             values_in_range: Vec::new(),
         },

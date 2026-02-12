@@ -236,15 +236,10 @@ pub(crate) async fn run_websocket_server(
                         )
                         .await;
                     }
-                    SimulationUpdate::SignalValuesInRange(values) => {
+                    SimulationUpdate::Events(values) => {
                         broadcast(
                             &mut connections,
-                            &WsSimulationUpdate::NewSimulationTime(values.time_range.end),
-                        )
-                        .await;
-                        broadcast(
-                            &mut connections,
-                            &WsSimulationUpdate::SignalValuesInRange(values),
+                            &WsSimulationUpdate::Events(values),
                         )
                         .await;
                     }

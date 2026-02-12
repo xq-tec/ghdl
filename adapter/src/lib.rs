@@ -1,6 +1,6 @@
 use hdl_simulation_protocol::SignalInstanceId;
 use hdl_simulation_protocol::SimulationStatus;
-use hdl_simulation_protocol::from_simulator::SignalValuesInRange;
+use hdl_simulation_protocol::from_simulator::EventsUpdate;
 use smallvec::SmallVec;
 
 use crate::sim_interface::DesignHierarchyWithSignals;
@@ -23,7 +23,7 @@ enum SimulationCommand {
 }
 
 enum SimulationUpdate {
-    SignalValuesInRange(SignalValuesInRange),
+    Events(EventsUpdate),
     Design(DesignHierarchyWithSignals),
     /// Notifies all connected clients of a simulation status change.
     ///
