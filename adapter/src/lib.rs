@@ -19,7 +19,6 @@ enum SimulationCommand {
     Subscribe(SmallVec<[SignalInstanceId; 1]>),
     #[expect(unused, reason = "TODO WIP")]
     Unsubscribe(SmallVec<[SignalInstanceId; 1]>),
-    #[expect(unused, reason = "TODO WIP")]
     SendUpdate,
 }
 

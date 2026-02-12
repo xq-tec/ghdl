@@ -20,6 +20,7 @@
 --  covered by the GNU General Public License. This exception does not
 --  however invalidate any other reasons why the executable file might be
 --  covered by the GNU Public License.
+with Adapter;
 with Grt.Table;
 with Ada.Unchecked_Deallocation;
 with Grt.Disp;
@@ -950,6 +951,7 @@ package body Grt.Processes is
       --     resumptions at Tn.
       --  GHDL: the check is done at the last step of the cycle.
       Current_Time := Next_Time;
+      Adapter.Set_Next_Event_Time (Current_Time, Current_Delta);
       if Grt.Options.Disp_Time then
          Grt.Disp.Disp_Now;
       end if;

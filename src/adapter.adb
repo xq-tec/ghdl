@@ -107,21 +107,14 @@ package body Adapter is
       Adapter_State := Adapter_Init_Websocket;
    end Init_Websocket;
 
-   procedure Process_Commands
-     (Block : Boolean;
-      Physical_Time : Integer_64;
-      Delta_Cycle : Integer_64)
+   procedure Process_Commands (Block : Boolean)
    is
-      procedure Adapter_Process_Commands
-        (Adapter_State : System.Address;
-         Block : RustBool;
-         Physical_Time : Integer_64;
-         Delta_Cycle : Integer_64);
+      procedure Adapter_Process_Commands (Adapter_State : System.Address; Block : RustBool);
       pragma Import (C, Adapter_Process_Commands, "adapter_process_commands");
 
       Blocking : constant RustBool := (if Block then True else False);
    begin
-      Adapter_Process_Commands (Adapter_State, Blocking, Physical_Time, Delta_Cycle);
+      Adapter_Process_Commands (Adapter_State, Blocking);
    end Process_Commands;
 
    function Requested_Simulation_Status return Simulation_Status is
@@ -131,6 +124,22 @@ package body Adapter is
    begin
       return Adapter_Requested_Simulation_Status (Adapter_State);
    end Requested_Simulation_Status;
+
+   procedure Set_Next_Event_Time (Physical_Time : Std_Time; Delta_Cycle : Integer) is
+      procedure Adapter_Set_Next_Event_Time (Adapter_State : System.Address;
+         Physical_Time : Integer_64;
+         Delta_Cycle : Integer_64);
+      pragma Import (C, Adapter_Set_Next_Event_Time, "adapter_set_next_event_time");
+   begin
+      Adapter_Set_Next_Event_Time (Adapter_State, Integer_64 (Physical_Time), Integer_64 (Delta_Cycle));
+   end Set_Next_Event_Time;
+
+   procedure Update_Simulation_Time is
+      procedure Adapter_Update_Simulation_Time (Adapter_State : System.Address);
+      pragma Import (C, Adapter_Update_Simulation_Time, "adapter_update_simulation_time");
+   begin
+      Adapter_Update_Simulation_Time (Adapter_State);
+   end Update_Simulation_Time;
 
    procedure Notify_Simulation_Status (Status : Simulation_Status) is
       procedure Adapter_Notify_Simulation_Status (Adapter_State : System.Address;

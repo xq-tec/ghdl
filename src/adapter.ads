@@ -18,6 +18,7 @@ with Interfaces; use Interfaces;
 with System;
 
 with Types;
+with Grt.Vhdl_Types; use Grt.Vhdl_Types;
 
 package Adapter is
    pragma Warnings (Off, "the size of enums in C is implementation-defined");
@@ -60,9 +61,10 @@ package Adapter is
    --  Processes all commands in the queue from the WebSocket.
    --  When Block is True, blocks until at least one command has been received.
    --  When Block is False, returns immediately if no command is pending.
-   procedure Process_Commands (Block : Boolean;
-                               Physical_Time : Integer_64; Delta_Cycle : Integer_64);
+   procedure Process_Commands (Block : Boolean);
    function Requested_Simulation_Status return Simulation_Status;
+   procedure Set_Next_Event_Time (Physical_Time : Std_Time; Delta_Cycle : Integer);
+   procedure Update_Simulation_Time;
    procedure Notify_Simulation_Status (Status : Simulation_Status);
 
    function Get_Adapter_State return System.Address;

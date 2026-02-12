@@ -41,8 +41,12 @@ enum ObjectKind {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum ValKind {
-    Signal { id: u32 },
+    Signal {
+        id: u32,
+    },
     Memory,
+    #[serde(other)]
+    Other,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -70,6 +74,8 @@ pub enum TypeKind {
         right: f64,
         dir: Dir,
     },
+    #[serde(other)]
+    Other,
 }
 
 impl TypeKind {
@@ -79,6 +85,7 @@ impl TypeKind {
             TypeKind::Logic { .. } => SignalValueType::Logic,
             TypeKind::Discrete { .. } => SignalValueType::U8,
             TypeKind::Float { .. } => SignalValueType::F64,
+            TypeKind::Other => SignalValueType::U8, // TODO
         }
     }
 }
@@ -155,6 +162,12 @@ fn build_instance_entry(
                 let child_entry = build_instance_entry(*id, instances, signals);
                 entry.add_child(child_entry);
             }
+            ObjectKind::Object {
+                val_kind: ValKind::Other,
+                name,
+            } => {
+                // TODO
+            }
         }
     }
 
@@ -189,9 +202,11 @@ pub extern "C" fn adapter_register_design(
     for signal_id in 1..=signal_count {
         buffer.clear();
         adapter_encode_signal(&mut buffer, signal_id);
-        eprintln!("signal {}", String::from_utf8_lossy(&buffer));
-        if let Ok(signal) = serde_json::from_slice::<Signal>(&buffer) {
-            signals.push(signal);
+        match serde_json::from_slice::<Signal>(&buffer) {
+            Ok(signal) => signals.push(signal),
+            Err(e) => {
+                panic!("Error deserializing signal {signal_id}: {e}");
+            }
         }
     }
 
@@ -206,7 +221,6 @@ pub extern "C" fn adapter_register_design(
     for instance_id in 1..=instance_count {
         buffer.clear();
         adapter_encode_instance(&mut buffer, instance_id);
-        eprintln!("instance {}", String::from_utf8_lossy(&buffer));
         match serde_json::from_slice::<Instance>(&buffer) {
             Ok(instance) => instances.push(instance),
             Err(e) => {

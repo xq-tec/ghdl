@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::pin::Pin;
+use std::time::Duration;
 
 use crossbeam_channel::Sender;
 use futures_util::stream::SelectAll;
@@ -133,9 +134,15 @@ pub(crate) async fn run_websocket_server(
     let mut ws_receivers: SelectAll<TaggedWsStream> = SelectAll::new();
     let mut next_id: u64 = 0;
     let mut current_hierarchy: Option<DesignHierarchyWithSignals> = None;
+    let mut update_interval = tokio::time::interval(Duration::from_millis(500));
 
     loop {
         tokio::select! {
+            // Periodically request a signal-value flush from the simulator
+            _ = update_interval.tick() => {
+                let _ = command_tx.send(SimulationCommand::SendUpdate);
+            }
+
             // Accept new connections
             result = listener.accept() => {
                 let (stream, _) = match result {
@@ -216,11 +223,6 @@ pub(crate) async fn run_websocket_server(
             Some(update) = update_rx.recv() => {
                 match update {
                     SimulationUpdate::Design(data) => {
-                        eprintln!(
-                            "Broadcasting design hierarchy to {} connections",
-                            connections.len()
-                        );
-
                         current_hierarchy = Some(data.clone());
 
                         // Clear subscriptions since signal IDs may have changed
@@ -235,11 +237,11 @@ pub(crate) async fn run_websocket_server(
                         .await;
                     }
                     SimulationUpdate::SignalValuesInRange(values) => {
-                        eprintln!(
-                            "Broadcasting signal values to {} connections",
-                            connections.len()
-                        );
-
+                        broadcast(
+                            &mut connections,
+                            &WsSimulationUpdate::NewSimulationTime(values.time_range.end),
+                        )
+                        .await;
                         broadcast(
                             &mut connections,
                             &WsSimulationUpdate::SignalValuesInRange(values),
@@ -252,10 +254,6 @@ pub(crate) async fn run_websocket_server(
                             SimulationStatus::Running => WsSimulationUpdate::SimulationResumed,
                             SimulationStatus::Stopped => WsSimulationUpdate::SimulationStopped,
                         };
-                        eprintln!(
-                            "Broadcasting simulation status {status:?} to {} connections",
-                            connections.len()
-                        );
                         broadcast(&mut connections, &update).await;
                         if let Some(tx) = ack_tx {
                             let _ = tx.send(());

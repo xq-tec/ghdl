@@ -123,8 +123,7 @@ package body Simul.Main is
 
          Sim_Loop: loop
             Command_Loop: loop
-               Process_Commands (Block => Requested_Simulation_Status = Paused,
-                                 Physical_Time => 10, Delta_Cycle => 20);
+               Process_Commands (Block => Requested_Simulation_Status = Paused);
 
                case Requested_Simulation_Status is
                   when Paused =>
@@ -144,6 +143,9 @@ package body Simul.Main is
 
             Status := Grt.Main.Run_Through_Longjump
               (Grt.Processes.Simulation_Cycle'Access);
+            if Status = Grt.Errors.Run_Resumed then
+               Update_Simulation_Time;
+            end if;
             exit Sim_Loop when Status < 0
               or Status = Grt.Errors.Run_Stop;
 

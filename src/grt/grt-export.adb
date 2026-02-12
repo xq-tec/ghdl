@@ -205,10 +205,12 @@ package body Grt.Export is
                Append (Buffer, "}}");
 
             when Obj_Instance =>
-               Append_Comma;
-               Append (Buffer, "{""instance"":{""id"":");
-               Append (Buffer, Unsigned_32 (Get_Instance_Id (Obj.I_Inst)));
-               Append (Buffer, "}}");
+               if Obj.I_Inst /= null then
+                  Append_Comma;
+                  Append (Buffer, "{""instance"":{""id"":");
+                  Append (Buffer, Unsigned_32 (Get_Instance_Id (Obj.I_Inst)));
+                  Append (Buffer, "}}");
+               end if;
 
             when Obj_None | Obj_Subtype | Obj_Marker =>
                null;
@@ -239,16 +241,11 @@ package body Grt.Export is
 
    procedure Notify_Signal_Event (Sig_Idx : Subscription_Index; Value : Ghdl_U64) is
       procedure Adapter_Notify_Signal_Event (Adapter_State : System.Address;
-                                             Physical_Time : Integer_64;
-                                             Delta_Cycle : Integer_64;
                                              Sig_Idx : Unsigned_32;
                                              Value : Unsigned_64);
       pragma Import (C, Adapter_Notify_Signal_Event, "adapter_notify_signal_event");
    begin
-      Adapter_Notify_Signal_Event (
-         Get_Adapter_State,
-         10, 20,
-         Unsigned_32 (Sig_Idx), Unsigned_64 (Value));
+      Adapter_Notify_Signal_Event (Get_Adapter_State, Unsigned_32 (Sig_Idx), Unsigned_64 (Value));
    end Notify_Signal_Event;
 
 end Grt.Export;

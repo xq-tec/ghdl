@@ -26,16 +26,6 @@ pub struct DesignHierarchyWithSignals {
     pub(crate) hierarchy: DesignHierarchy,
 }
 
-/// Constructs a [`LogicalTime`] from the FFI integer representation.
-fn logical_time_from_ffi(physical_time: i64, delta_cycle: i64) -> LogicalTime {
-    debug_assert!(physical_time >= 0);
-    debug_assert!(delta_cycle >= 0);
-    LogicalTime {
-        physical: PhysicalTime(physical_time as u64),
-        delta: Delta(delta_cycle as u64),
-    }
-}
-
 /// Simulator-facing adapter state.
 ///
 /// Created during initialization and passed to all `adapter_*` FFI functions
@@ -55,6 +45,7 @@ pub struct AdapterState {
     /// [`subscriptions`](Self::subscriptions) list.
     signal_indices: FxHashMap<SignalInstanceId, usize>,
 
+    time_for_events: LogicalTime,
     events: SignalValuesInRange,
 
     current_status: SimulationStatus,
@@ -63,9 +54,8 @@ pub struct AdapterState {
 
 impl AdapterState {
     /// Flushes accumulated signal events up to `end_time` to the WebSocket thread.
-    fn transmit_events(&mut self, end_time: LogicalTime) {
-        debug_assert!(self.events.time_range.end <= end_time);
-        self.events.time_range.end = end_time;
+    fn transmit_events(&mut self) {
+        let end_time = self.events.time_range.end;
         if !self.events.time_range.is_empty() {
             let values_in_range = self
                 .events
@@ -87,10 +77,10 @@ impl AdapterState {
     }
 
     /// Subscribes to the given signals, flushing any pending events first.
-    fn subscribe(&mut self, current_time: LogicalTime, signal_ids: &[SignalInstanceId]) {
+    fn subscribe(&mut self, signal_ids: &[SignalInstanceId]) {
         use std::collections::hash_map::Entry;
 
-        self.transmit_events(current_time);
+        self.transmit_events();
 
         let mut next_index = self.subscriptions.len();
         for &signal_id in signal_ids {
@@ -115,7 +105,6 @@ impl AdapterState {
     /// Sends the hierarchy to all currently connected clients and stores it
     /// for new connections.
     pub fn set_design_hierarchy(&mut self, hierarchy: DesignHierarchy, signals: Vec<Signal>) {
-        eprintln!("Setting design hierarchy: {hierarchy:#?}");
         self.signals = signals;
         let data = DesignHierarchyWithSignals { hierarchy };
 
@@ -153,6 +142,7 @@ pub extern "C" fn adapter_init_websocket() -> *mut AdapterState {
         subscriptions: Vec::new(),
         signals: Vec::new(),
         signal_indices: FxHashMap::default(),
+        time_for_events: LogicalTime::ZERO,
         events: SignalValuesInRange {
             time_range: LogicalTime::ZERO..LogicalTime::ZERO,
             values_in_range: Vec::new(),
@@ -162,50 +152,15 @@ pub extern "C" fn adapter_init_websocket() -> *mut AdapterState {
     }))
 }
 
-/// Drains all pending commands from the WebSocket thread and processes them.
-#[unsafe(no_mangle)]
-pub extern "C" fn adapter_handle_commands(
-    state: &mut AdapterState,
-    physical_time: i64,
-    delta_cycle: i64,
-) {
-    let current_time = logical_time_from_ffi(physical_time, delta_cycle);
-    while let Ok(command) = state.command_rx.try_recv() {
-        match command {
-            SimulationCommand::Subscribe(signal_ids) => {
-                state.subscribe(current_time, &signal_ids);
-            }
-            SimulationCommand::Unsubscribe(_signal_ids) => {
-                // TODO handle unsubscribe by one client, while others remain subscribed
-                state.transmit_events(current_time);
-                // TODO remove subscription from GHDL code
-            }
-            SimulationCommand::SendUpdate => {
-                state.transmit_events(current_time);
-            }
-            SimulationCommand::Start | SimulationCommand::Stop => {
-                // TODO
-            }
-        }
-    }
-}
-
 /// Processes commands from the WebSocket thread.
 ///
 /// When `block` is non-zero, blocks until at least one command is received.
 /// When `block` is zero, returns immediately if no commands are pending.
 #[unsafe(no_mangle)]
-pub extern "C" fn adapter_process_commands(
-    state: &mut AdapterState,
-    block: bool,
-    physical_time: i64,
-    delta_cycle: i64,
-) {
-    let current_time = logical_time_from_ffi(physical_time, delta_cycle);
-
+pub extern "C" fn adapter_process_commands(state: &mut AdapterState, block: bool) {
     if block {
         match state.command_rx.recv() {
-            Ok(cmd) => process_command(state, cmd, current_time),
+            Ok(cmd) => process_command(state, cmd),
             Err(e) => {
                 eprintln!("Channel error in process_commands: {e}");
                 return;
@@ -214,16 +169,12 @@ pub extern "C" fn adapter_process_commands(
     };
 
     while let Ok(command) = state.command_rx.try_recv() {
-        process_command(state, command, current_time);
+        process_command(state, command);
     }
 }
 
 /// Processes a single simulation command and returns the updated request code.
-fn process_command(
-    state: &mut AdapterState,
-    command: SimulationCommand,
-    current_time: LogicalTime,
-) {
+fn process_command(state: &mut AdapterState, command: SimulationCommand) {
     match command {
         SimulationCommand::Start => {
             eprintln!("Received Start command");
@@ -234,14 +185,14 @@ fn process_command(
             state.requested_status = SimulationStatus::Stopped;
         }
         SimulationCommand::Subscribe(signal_ids) => {
-            state.subscribe(current_time, &signal_ids);
+            state.subscribe(&signal_ids);
         }
         SimulationCommand::Unsubscribe(_signal_ids) => {
-            state.transmit_events(current_time);
+            state.transmit_events();
             // TODO remove subscription from GHDL data structures
         }
         SimulationCommand::SendUpdate => {
-            state.transmit_events(current_time);
+            state.transmit_events();
         }
     }
 }
@@ -249,6 +200,25 @@ fn process_command(
 #[unsafe(no_mangle)]
 pub extern "C" fn adapter_requested_simulation_status(state: &AdapterState) -> SimulationStatus {
     state.requested_status
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn adapter_set_next_event_time(
+    state: &mut AdapterState,
+    physical_time: i64,
+    delta_cycle: i64,
+) {
+    debug_assert!(physical_time >= 0);
+    debug_assert!(delta_cycle >= 0);
+    state.time_for_events = LogicalTime {
+        physical: PhysicalTime(physical_time as u64),
+        delta: Delta(delta_cycle as u64),
+    };
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn adapter_update_simulation_time(state: &mut AdapterState) {
+    state.events.time_range.end = state.time_for_events;
 }
 
 /// Sends a status update to all connected clients if the status has changed.
@@ -271,6 +241,7 @@ pub extern "C" fn adapter_notify_simulation_status(
     state.current_status = status;
 
     let (ack_tx, ack_rx) = if status == SimulationStatus::Stopped {
+        state.transmit_events();
         let (tx, rx) = std::sync::mpsc::sync_channel(0);
         (Some(tx), Some(rx))
     } else {
@@ -303,8 +274,6 @@ pub extern "C" fn adapter_notify_simulation_status(
 #[unsafe(no_mangle)]
 pub extern "C" fn adapter_notify_signal_event(
     state: &mut AdapterState,
-    physical_time: i64,
-    delta_cycle: i64,
     subscription_index: u32,
     value: u64,
 ) {
@@ -313,29 +282,17 @@ pub extern "C" fn adapter_notify_signal_event(
         // TODO this would be a bug
         panic!("Subscription index out of bounds: {subscription_index}");
     }
-    let current_time = logical_time_from_ffi(physical_time, delta_cycle);
     match &mut state.events.values_in_range[subscription_index] {
         NewValuesEnum::F64(v) => {
-            v.timestamps.push(current_time);
-            eprintln!(
-                "Notifying signal event: subscription index = {subscription_index}, value = {}",
-                f64::from_ne_bytes(value.to_ne_bytes())
-            );
+            v.timestamps.push(state.time_for_events);
             v.values.push(f64::from_ne_bytes(value.to_ne_bytes()));
         }
         NewValuesEnum::U8(v) => {
-            v.timestamps.push(current_time);
-            eprintln!(
-                "Notifying signal event: subscription index = {subscription_index}, value = {value}",
-            );
+            v.timestamps.push(state.time_for_events);
             v.values.push(value as u8);
         }
         NewValuesEnum::Logic(v) => {
-            v.timestamps.push(current_time);
-            eprintln!(
-                "Notifying signal event: subscription index = {subscription_index}, value = {}",
-                Logic::try_from(value as u8).unwrap()
-            );
+            v.timestamps.push(state.time_for_events);
             v.values.push(Logic::try_from(value as u8).unwrap());
         }
     }
