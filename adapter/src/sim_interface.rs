@@ -3,11 +3,12 @@ use std::num::NonZeroU32;
 use std::thread;
 
 use crossbeam_channel::Receiver;
-use hdl_simulation_protocol::Logic;
 use hdl_simulation_protocol::SignalInstanceId;
 use hdl_simulation_protocol::SimulationStatus;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchy;
-use hdl_simulation_protocol::from_simulator::{EventsUpdate, NewValuesEnum};
+use hdl_simulation_protocol::from_simulator::Event;
+use hdl_simulation_protocol::from_simulator::RawValue;
+use hdl_simulation_protocol::from_simulator::{EventsUpdate, SignalEvents};
 use hdl_simulation_protocol::time::{Delta, LogicalTime, PhysicalTime};
 use rustc_hash::FxHashMap;
 
@@ -57,17 +58,17 @@ impl AdapterState {
     fn transmit_events(&mut self) {
         let end_time = self.events.time_range.end;
         if !self.events.time_range.is_empty() {
-            let values_in_range = self
+            let signals = self
                 .events
-                .values_in_range
+                .signals
                 .iter()
-                .map(NewValuesEnum::clone_empty)
+                .map(SignalEvents::clone_empty)
                 .collect();
             let signal_values = replace(
                 &mut self.events,
                 EventsUpdate {
                     time_range: end_time..end_time,
-                    values_in_range,
+                    signals,
                 },
             );
             self.update_tx
@@ -89,11 +90,7 @@ impl AdapterState {
                 entry.insert(next_index);
                 self.subscriptions.push(signal_id);
                 ghdl_set_signal_subscription(signal_id.0, next_index as u32);
-                let type_kind = &self.signals[signal_id.0.get() as usize].type_kind;
-                let value_type = type_kind.to_value_type();
-                self.events
-                    .values_in_range
-                    .push(NewValuesEnum::new(signal_id, value_type));
+                self.events.signals.push(SignalEvents::new(signal_id));
 
                 next_index += 1;
             }
@@ -145,7 +142,7 @@ pub extern "C" fn adapter_init_websocket() -> *mut AdapterState {
         time_for_events: LogicalTime::ZERO,
         events: EventsUpdate {
             time_range: LogicalTime::ZERO..LogicalTime::ZERO,
-            values_in_range: Vec::new(),
+            signals: Vec::new(),
         },
         current_status: SimulationStatus::Paused,
         requested_status: SimulationStatus::Paused,
@@ -282,18 +279,8 @@ pub extern "C" fn adapter_notify_signal_event(
         // TODO this would be a bug
         panic!("Subscription index out of bounds: {subscription_index}");
     }
-    match &mut state.events.values_in_range[subscription_index] {
-        NewValuesEnum::F64(v) => {
-            v.timestamps.push(state.time_for_events);
-            v.values.push(f64::from_ne_bytes(value.to_ne_bytes()));
-        }
-        NewValuesEnum::U8(v) => {
-            v.timestamps.push(state.time_for_events);
-            v.values.push(value as u8);
-        }
-        NewValuesEnum::Logic(v) => {
-            v.timestamps.push(state.time_for_events);
-            v.values.push(Logic::try_from(value as u8).unwrap());
-        }
-    }
+    state.events.signals[subscription_index].events.push(Event {
+        time: state.time_for_events,
+        value: RawValue(value),
+    });
 }
