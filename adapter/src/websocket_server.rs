@@ -8,6 +8,7 @@ use futures_util::stream::SelectAll;
 use futures_util::{SinkExt, Stream, StreamExt};
 use hdl_simulation_protocol::SignalInstanceId;
 use hdl_simulation_protocol::SimulationStatus;
+use hdl_simulation_protocol::design_hierarchy::DesignHierarchy;
 use hdl_simulation_protocol::from_simulator::SimulationUpdate as WsSimulationUpdate;
 use hdl_simulation_protocol::to_simulator::Command;
 use smallvec::SmallVec;
@@ -18,7 +19,6 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::SimulationCommand;
 use crate::SimulationUpdate;
-use crate::sim_interface::DesignHierarchyWithSignals;
 
 type WsSink = futures_util::stream::SplitSink<WebSocketStream<TcpStream>, Message>;
 type TaggedWsStream =
@@ -133,7 +133,7 @@ pub(crate) async fn run_websocket_server(
     let mut connections: HashMap<u64, Connection> = HashMap::new();
     let mut ws_receivers: SelectAll<TaggedWsStream> = SelectAll::new();
     let mut next_id: u64 = 0;
-    let mut current_hierarchy: Option<DesignHierarchyWithSignals> = None;
+    let mut current_hierarchy: Option<DesignHierarchy> = None;
     let mut update_interval = tokio::time::interval(Duration::from_millis(500));
 
     loop {
@@ -172,8 +172,8 @@ pub(crate) async fn run_websocket_server(
                 };
 
                 // Send current design hierarchy to the newly connected client
-                if let Some(ref data) = current_hierarchy {
-                    let update = WsSimulationUpdate::DesignHierarchy(data.hierarchy.clone());
+                if let Some(ref hierarchy) = current_hierarchy {
+                    let update = WsSimulationUpdate::DesignHierarchy(hierarchy.clone());
                     if let Err(e) = conn.send(&update).await {
                         eprintln!("Failed to send design hierarchy to connection {id}: {e}");
                         continue;
@@ -222,8 +222,8 @@ pub(crate) async fn run_websocket_server(
             // Handle simulation updates from the simulator thread
             Some(update) = update_rx.recv() => {
                 match update {
-                    SimulationUpdate::Design(data) => {
-                        current_hierarchy = Some(data.clone());
+                    SimulationUpdate::Design(hierarchy) => {
+                        current_hierarchy = Some(hierarchy.clone());
 
                         // Clear subscriptions since signal IDs may have changed
                         for conn in connections.values_mut() {
@@ -232,7 +232,7 @@ pub(crate) async fn run_websocket_server(
 
                         broadcast(
                             &mut connections,
-                            &WsSimulationUpdate::DesignHierarchy(data.hierarchy),
+                            &WsSimulationUpdate::DesignHierarchy(hierarchy),
                         )
                         .await;
                     }

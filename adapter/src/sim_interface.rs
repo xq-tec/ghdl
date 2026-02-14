@@ -21,12 +21,6 @@ unsafe extern "C" {
     safe fn ghdl_set_signal_subscription(signal_id: NonZeroU32, sub_idx: u32);
 }
 
-/// The design hierarchy sent to clients, along with the extracted signal information.
-#[derive(Clone)]
-pub struct DesignHierarchyWithSignals {
-    pub(crate) hierarchy: DesignHierarchy,
-}
-
 /// Simulator-facing adapter state.
 ///
 /// Created during initialization and passed to all `adapter_*` FFI functions
@@ -103,9 +97,8 @@ impl AdapterState {
     /// for new connections.
     pub fn set_design_hierarchy(&mut self, hierarchy: DesignHierarchy, signals: Vec<Signal>) {
         self.signals = signals;
-        let data = DesignHierarchyWithSignals { hierarchy };
 
-        if let Err(e) = self.update_tx.send(SimulationUpdate::Design(data)) {
+        if let Err(e) = self.update_tx.send(SimulationUpdate::Design(hierarchy)) {
             eprintln!("Failed to broadcast design hierarchy: {e}");
         }
     }

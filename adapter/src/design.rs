@@ -1,7 +1,10 @@
 #![expect(unused, reason = "// TODO remove before release")]
 
+use std::fmt;
 use std::num::NonZeroU32;
+use std::ops::Deref;
 
+use compact_str::CompactString;
 use hdl_simulation_protocol::SignalInstanceId;
 use hdl_simulation_protocol::SignalValueType;
 use serde::Deserialize;
@@ -14,8 +17,9 @@ use hdl_simulation_protocol::design_hierarchy::DesignHierarchySignalType;
 #[derive(Debug, Deserialize)]
 pub struct Signal {
     decl: u32,
-    name: Option<String>,
-    pub type_kind: TypeKind,
+    #[serde(skip_deserializing)]
+    name: CompactString,
+    type_kind: TypeKind,
 }
 
 #[derive(Debug, Deserialize)]
@@ -29,20 +33,15 @@ struct Instance {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum ObjectKind {
-    Object {
-        val_kind: ValKind,
-        name: Option<String>,
-    },
-    Instance {
-        id: u32,
-    },
+    Object { val_kind: ValKind },
+    Instance { id: u32 },
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum ValKind {
     Signal {
-        id: u32,
+        id: NonZeroU32,
     },
     Memory,
     #[serde(other)]
@@ -111,6 +110,70 @@ where
     Ok(f64::from_bits(bits))
 }
 
+#[derive(Clone, PartialEq, Eq, Hash, Deserialize)]
+pub struct NormalizedIdentifier(CompactString);
+
+impl fmt::Display for NormalizedIdentifier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.0, f)
+    }
+}
+
+impl fmt::Debug for NormalizedIdentifier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.0, f)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SignalDeclaration {
+    pub identifier: Identifier,
+}
+
+#[derive(Clone, Eq)]
+pub struct Identifier {
+    normalized: NormalizedIdentifier,
+}
+
+impl Identifier {
+    #[must_use]
+    pub fn normalized(&self) -> &NormalizedIdentifier {
+        &self.normalized
+    }
+}
+
+impl<'de> Deserialize<'de> for Identifier {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Helper(NormalizedIdentifier, usize, usize);
+
+        let Helper(normalized, _, _) = Helper::deserialize(deserializer)?;
+
+        Ok(Self { normalized })
+    }
+}
+
+impl fmt::Debug for Identifier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(self.normalized(), f)
+    }
+}
+
+impl fmt::Display for Identifier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self.normalized(), f)
+    }
+}
+
+impl PartialEq for Identifier {
+    fn eq(&self, other: &Self) -> bool {
+        self.normalized() == other.normalized()
+    }
+}
+
 /// Builds a DesignHierarchyTreeEntry for an instance recursively.
 ///
 /// Takes the instance ID, the list of all instances (indexed by ID), and the list
@@ -125,36 +188,30 @@ fn build_instance_entry(
 
     let name = instance
         .name
-        .clone()
-        .unwrap_or_else(|| format!("instance_{instance_id}"));
+        .as_ref()
+        .map(|name| CompactString::new(name))
+        .unwrap_or_else(|| compact_str::format_compact!("instance_{instance_id}"));
 
     let mut entry = DesignHierarchyEntry::new(name, DesignHierarchyEntryKind::Module);
 
     for obj in &instance.objects {
         match obj {
-            ObjectKind::Object {
-                val_kind: ValKind::Signal { id },
-                name,
+            &ObjectKind::Object {
+                val_kind: ValKind::Signal { id: signal_id },
             } => {
-                let signal_name = name.clone().unwrap_or_else(|| format!("signal_{id}"));
-
-                if let Some(non_zero_id) = NonZeroU32::new(*id) {
-                    // Get the signal type from the signals list
-                    let type_kind = &signals[*id as usize].type_kind;
-                    let signal_entry = DesignHierarchyEntry::new(
-                        signal_name,
-                        DesignHierarchyEntryKind::Signal(
-                            SignalInstanceId(non_zero_id),
-                            DesignHierarchySignalType::Scalar,
-                            type_kind.to_value_type(),
-                        ),
-                    );
-                    entry.add_child(signal_entry);
-                }
+                let signal = &signals[signal_id.get() as usize];
+                let signal_entry = DesignHierarchyEntry::new(
+                    signal.name.clone(),
+                    DesignHierarchyEntryKind::Signal(
+                        SignalInstanceId(signal_id),
+                        DesignHierarchySignalType::Scalar,
+                        signal.type_kind.to_value_type(),
+                    ),
+                );
+                entry.add_child(signal_entry);
             }
             ObjectKind::Object {
                 val_kind: ValKind::Memory,
-                name,
             } => {
                 // TODO
             }
@@ -164,7 +221,6 @@ fn build_instance_entry(
             }
             ObjectKind::Object {
                 val_kind: ValKind::Other,
-                name,
             } => {
                 // TODO
             }
@@ -192,7 +248,7 @@ pub extern "C" fn adapter_register_design(
     let mut signals: Vec<Signal> = Vec::with_capacity(1 + signal_count as usize);
     signals.push(Signal {
         decl: 0,
-        name: None,
+        name: CompactString::new(""),
         type_kind: TypeKind::Bit {
             left: 0,
             right: 0,
@@ -203,7 +259,22 @@ pub extern "C" fn adapter_register_design(
         buffer.clear();
         adapter_encode_signal(&mut buffer, signal_id);
         match serde_json::from_slice::<Signal>(&buffer) {
-            Ok(signal) => signals.push(signal),
+            Ok(mut signal) => {
+                if let Some(node_id) = NonZeroU32::new(signal.decl) {
+                    buffer.clear();
+                    adapter_encode_ast_node(&mut buffer, node_id);
+                    #[derive(Deserialize)]
+                    struct Wrapper {
+                        signal_declaration: SignalDeclaration,
+                    }
+                    let Wrapper { signal_declaration } =
+                        serde_json::from_slice::<Wrapper>(&buffer).unwrap();
+                    signal.name = signal_declaration.identifier.normalized.0;
+                }
+                eprintln!("{signal:?}");
+                signals.push(signal);
+            }
+
             Err(e) => {
                 panic!("Error deserializing signal {signal_id}: {e}");
             }
@@ -244,4 +315,6 @@ unsafe extern "C" {
     safe fn adapter_encode_signal(buffer: &mut Vec<u8>, signal_id: u32);
     #[expect(improper_ctypes, reason = "opaque pointer")]
     safe fn adapter_encode_instance(buffer: &mut Vec<u8>, instance_id: u32);
+    #[expect(improper_ctypes, reason = "opaque pointer")]
+    safe fn adapter_encode_ast_node(buffer: &mut Vec<u8>, node_id: NonZeroU32);
 }

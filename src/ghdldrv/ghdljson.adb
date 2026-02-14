@@ -751,6 +751,14 @@ package body Ghdljson is
       Adapter.Free_Buffer (Buffer);
    end Dump_Ast;
 
+   procedure Encode_Ast_Node (Buffer : System.Address; Node_Id : Unsigned_32);
+   pragma Export (C, Encode_Ast_Node, "adapter_encode_ast_node");
+
+   procedure Encode_Ast_Node (Buffer : System.Address; Node_Id : Unsigned_32) is
+   begin
+      Encode_Iir (Buffer, Iir (Node_Id));
+   end Encode_Ast_Node;
+
 
    procedure Perform_Action (Cmd : in out Command_Ast_To_Json;
                              Files_Name : String_Acc_Array;
