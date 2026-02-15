@@ -532,8 +532,8 @@ package body Ghdljson is
 
          when Type_Name_Id =>
             declare
-               Loc : constant Location_Type := Get_Location (N);
                Name : constant String := Image (Get_Name_Id (N, F));
+               Has_Original : Boolean := False;
             begin
                if Name'Length > 0 then
                   Append (Buffer, ",""");
@@ -541,10 +541,38 @@ package body Ghdljson is
                   Append (Buffer, """:[""");
                   Append_Escaped (Buffer, Name);
                   Append (Buffer, """,");
-                  Append (Buffer, Integer_64 (Loc));
-                  Append (Buffer, ",");
-                  Append (Buffer, Integer_64 (Name'Length));
-                  Append (Buffer, "]");
+                  -- Look up original identifier from source for regular identifiers (not extended
+                  -- identifiers or char literals); also skip original identifier for design units
+                  -- (because for them, Get_Location doesn't actually return the location of the
+                  -- identifier).
+                  if (Name (Name'First) /= '\' and Name (Name'First) /= ''')
+                     and then Get_Kind (N) /= Iir_Kind_Design_Unit
+                  then
+                     declare
+                        Loc : constant Location_Type := Get_Location (N);
+                        File : Source_File_Entry;
+                        Pos : Source_Ptr;
+                     begin
+                        if Loc /= No_Location then
+                           Files_Map.Location_To_File_Pos (Loc, File, Pos);
+                           if File > 3 then
+                              declare
+                                 Buf : constant File_Buffer_Acc := Files_Map.Get_File_Source (File);
+                                 Len : constant Natural := Name'Length;
+                              begin
+                                 Append (Buffer, """");
+                                 Append_Escaped (Buffer,
+                                    String (Buf (Pos .. (Pos + Source_Ptr (Len) - 1))));
+                                 Append (Buffer, """]");
+                                 Has_Original := True;
+                              end;
+                           end if;
+                        end if;
+                     end;
+                  end if;
+                  if not Has_Original then
+                     Append (Buffer, "null]");
+                  end if;
                end if;
             end;
 
