@@ -26,7 +26,8 @@ pub struct Signal {
 struct Instance {
     stmt: u32,
     source: u32,
-    name: Option<String>,
+    #[serde(skip_deserializing)]
+    name: CompactString,
     objects: Vec<ObjectKind>,
 }
 
@@ -122,11 +123,11 @@ fn build_instance_entry(
 ) -> DesignHierarchyEntry {
     let instance = &instances[instance_id as usize];
 
-    let name = instance
-        .name
-        .as_ref()
-        .map(|name| CompactString::new(name))
-        .unwrap_or_else(|| compact_str::format_compact!("instance_{instance_id}"));
+    let name = if instance.name.is_empty() {
+        compact_str::format_compact!("instance_{instance_id}")
+    } else {
+        instance.name.clone()
+    };
 
     let mut entry = DesignHierarchyEntry::new(name, DesignHierarchyEntryKind::Module);
 
@@ -145,21 +146,21 @@ fn build_instance_entry(
                     ),
                 );
                 entry.add_child(signal_entry);
-            }
+            },
             ObjectKind::Object {
                 val_kind: ValKind::Memory,
             } => {
                 // TODO
-            }
+            },
             ObjectKind::Instance { id } => {
                 let child_entry = build_instance_entry(*id, instances, signals);
                 entry.add_child(child_entry);
-            }
+            },
             ObjectKind::Object {
                 val_kind: ValKind::Other,
             } => {
                 // TODO
-            }
+            },
         }
     }
 
@@ -207,11 +208,11 @@ pub extern "C" fn adapter_register_design(
                     }
                 }
                 signals.push(signal);
-            }
+            },
 
             Err(e) => {
                 panic!("Error deserializing signal {signal_id}: {e}");
-            }
+            },
         }
     }
 
@@ -220,17 +221,32 @@ pub extern "C" fn adapter_register_design(
     instances.push(Instance {
         stmt: 0,
         source: 0,
-        name: None,
+        name: CompactString::new(""),
         objects: vec![],
     });
     for instance_id in 1..=instance_count {
         buffer.clear();
         adapter_encode_instance(&mut buffer, instance_id);
         match serde_json::from_slice::<Instance>(&buffer) {
-            Ok(instance) => instances.push(instance),
+            Ok(mut instance) => {
+                if let Some(node_id) = NonZeroU32::new(instance.stmt) {
+                    buffer.clear();
+                    adapter_encode_ast_node(&mut buffer, node_id);
+                    let node = serde_json::from_slice::<ast::Node>(&buffer).unwrap();
+                    match node {
+                        ast::Node::ComponentInstantiationStatement(stmt) => {
+                            instance.name = stmt.label.original().clone();
+                        },
+                        _ => {
+                            // TODO
+                        },
+                    }
+                }
+                instances.push(instance);
+            },
             Err(e) => {
                 panic!("Error deserializing instance {instance_id}: {e}");
-            }
+            },
         }
     }
 

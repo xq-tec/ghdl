@@ -4,15 +4,18 @@ use std::pin::Pin;
 use std::time::Duration;
 
 use crossbeam_channel::Sender;
+use futures_util::SinkExt;
+use futures_util::Stream;
+use futures_util::StreamExt;
 use futures_util::stream::SelectAll;
-use futures_util::{SinkExt, Stream, StreamExt};
 use hdl_simulation_protocol::SignalInstanceId;
 use hdl_simulation_protocol::SimulationStatus;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchy;
 use hdl_simulation_protocol::from_simulator::SimulationUpdate as WsSimulationUpdate;
 use hdl_simulation_protocol::to_simulator::Command;
 use smallvec::SmallVec;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
+use tokio::net::TcpStream;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite;
 use tokio_tungstenite::tungstenite::Message;
@@ -51,23 +54,23 @@ impl Connection {
             Command::StartSimulation => {
                 let _ = command_tx.send(SimulationCommand::Start);
                 Some(WsSimulationUpdate::SimulationStarted)
-            }
+            },
             Command::StopSimulation => {
                 let _ = command_tx.send(SimulationCommand::Stop);
                 Some(WsSimulationUpdate::SimulationStopped)
-            }
+            },
             Command::PauseSimulation => {
                 // Not implemented yet, just confirm
                 Some(WsSimulationUpdate::SimulationPaused)
-            }
+            },
             Command::ResumeSimulation => {
                 // Not implemented yet, just confirm
                 Some(WsSimulationUpdate::SimulationResumed)
-            }
+            },
             Command::RestartSimulation => {
                 let _ = command_tx.send(SimulationCommand::Start);
                 Some(WsSimulationUpdate::SimulationStarted)
-            }
+            },
             Command::TrackSignals(request) => {
                 let mut to_subscribe: SmallVec<[SignalInstanceId; 1]> = SmallVec::new();
                 for &signal_id in &request.signal_instance_ids {
@@ -94,7 +97,7 @@ impl Connection {
                     self.subscribed_signals.len()
                 );
                 None
-            }
+            },
         }
     }
 }
@@ -125,7 +128,7 @@ pub(crate) async fn run_websocket_server(
         Err(e) => {
             eprintln!("Failed to bind WebSocket server to {addr}: {e}");
             return;
-        }
+        },
     };
 
     eprintln!("WebSocket server listening on {addr}");

@@ -7,14 +7,18 @@ use hdl_simulation_protocol::SignalInstanceId;
 use hdl_simulation_protocol::SimulationStatus;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchy;
 use hdl_simulation_protocol::from_simulator::Event;
+use hdl_simulation_protocol::from_simulator::EventsUpdate;
 use hdl_simulation_protocol::from_simulator::RawValue;
-use hdl_simulation_protocol::from_simulator::{EventsUpdate, SignalEvents};
-use hdl_simulation_protocol::time::{Delta, LogicalTime, PhysicalTime};
+use hdl_simulation_protocol::from_simulator::SignalEvents;
+use hdl_simulation_protocol::time::Delta;
+use hdl_simulation_protocol::time::LogicalTime;
+use hdl_simulation_protocol::time::PhysicalTime;
 use rustc_hash::FxHashMap;
 
+use crate::SimulationCommand;
+use crate::SimulationUpdate;
 use crate::design::Signal;
 use crate::websocket_server::run_websocket_server;
-use crate::{SimulationCommand, SimulationUpdate};
 
 unsafe extern "C" {
     /// Sets the Subscription field of a signal in GHDL's signal table.
@@ -154,7 +158,7 @@ pub extern "C" fn adapter_process_commands(state: &mut AdapterState, block: bool
             Err(e) => {
                 eprintln!("Channel error in process_commands: {e}");
                 return;
-            }
+            },
         }
     };
 
@@ -169,21 +173,21 @@ fn process_command(state: &mut AdapterState, command: SimulationCommand) {
         SimulationCommand::Start => {
             eprintln!("Received Start command");
             state.requested_status = SimulationStatus::Running;
-        }
+        },
         SimulationCommand::Stop => {
             eprintln!("Received Stop command");
             state.requested_status = SimulationStatus::Stopped;
-        }
+        },
         SimulationCommand::Subscribe(signal_ids) => {
             state.subscribe(&signal_ids);
-        }
+        },
         SimulationCommand::Unsubscribe(_signal_ids) => {
             state.transmit_events();
             // TODO remove subscription from GHDL data structures
-        }
+        },
         SimulationCommand::SendUpdate => {
             state.transmit_events();
-        }
+        },
     }
 }
 
@@ -249,13 +253,13 @@ pub extern "C" fn adapter_notify_simulation_status(
         match rx.recv_timeout(std::time::Duration::from_secs(2)) {
             Ok(()) => {
                 eprintln!("Stopped notification acknowledged by WebSocket thread");
-            }
+            },
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 eprintln!("Timed out waiting for stopped notification acknowledgment");
-            }
+            },
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                 eprintln!("WebSocket thread dropped the acknowledgment channel");
-            }
+            },
         }
     }
 }

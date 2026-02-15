@@ -29,7 +29,7 @@ pub unsafe extern "C" fn adapter_append_escaped(buffer: &mut Vec<u8>, str: *cons
             b'\\' | b'"' => {
                 buffer.push(b'\\');
                 buffer.push(byte);
-            }
+            },
 
             0..=31 => {
                 let hex_chars = [
@@ -40,16 +40,16 @@ pub unsafe extern "C" fn adapter_append_escaped(buffer: &mut Vec<u8>, str: *cons
                 bytes[4] = hex_chars[byte as usize / 16];
                 bytes[5] = hex_chars[byte as usize % 16];
                 buffer.extend_from_slice(&bytes);
-            }
+            },
 
             128..=255 => {
                 buffer.push(0xc0 + (byte >> 6));
                 buffer.push(0x80 + (byte & 0x3f));
-            }
+            },
 
             _ => {
                 buffer.push(byte);
-            }
+            },
         }
     }
 }
