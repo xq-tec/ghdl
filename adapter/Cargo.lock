@@ -3,6 +3,12 @@
 version = 4
 
 [[package]]
+name = "anyhow"
+version = "1.0.101"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f0e0fee31ef5ed1ba1316088939cea399010ed7731dba877ed44aeb407a75ea"
+
+[[package]]
 name = "atomic-polyfill"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -213,6 +219,7 @@ dependencies = [
  "compact_str",
  "crossbeam-channel",
  "futures-util",
+ "ghdl-ast",
  "hdl-simulation-protocol",
  "postcard",
  "rustc-hash",
@@ -221,6 +228,20 @@ dependencies = [
  "smallvec",
  "tokio",
  "tokio-tungstenite",
+]
+
+[[package]]
+name = "ghdl-ast"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "compact_str",
+ "log",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "thiserror",
 ]
 
 [[package]]

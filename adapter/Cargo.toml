@@ -10,6 +10,7 @@ crate-type = ["staticlib"]
 compact_str = { version = "0.9", features = ["serde", "smallvec"] }
 crossbeam-channel = "0.5"
 futures-util = "0.3"
+ghdl-ast = { path = "../ghdl-ast" }
 hdl-simulation-protocol = { path = "../hdl-simulation-protocol" }
 postcard = { version = "1", features = ["alloc"] }
 rustc-hash = "2"
