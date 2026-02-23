@@ -1,6 +1,6 @@
 use std::mem::replace;
 use std::num::NonZeroU32;
-use std::thread;
+use std::sync::OnceLock;
 
 use crossbeam_channel::Receiver;
 use hdl_simulation_protocol::SignalInstanceId;
@@ -14,6 +14,12 @@ use hdl_simulation_protocol::time::Delta;
 use hdl_simulation_protocol::time::LogicalTime;
 use hdl_simulation_protocol::time::PhysicalTime;
 use rustc_hash::FxHashMap;
+use tracing::debug;
+use tracing::error;
+use tracing::info;
+use tracing::instrument;
+use tracing::trace;
+use tracing::warn;
 
 use crate::SimulationCommand;
 use crate::SimulationUpdate;
@@ -83,7 +89,7 @@ impl AdapterState {
 
         let mut next_index = self.subscriptions.len();
         for &signal_id in signal_ids {
-            eprintln!("Subscribing to signal {signal_id}");
+            debug!(%signal_id, "subscribing to signal");
             if let Entry::Vacant(entry) = self.signal_indices.entry(signal_id) {
                 entry.insert(next_index);
                 self.subscriptions.push(signal_id);
@@ -103,32 +109,38 @@ impl AdapterState {
         self.signals = signals;
 
         if let Err(e) = self.update_tx.send(SimulationUpdate::Design(hierarchy)) {
-            eprintln!("Failed to broadcast design hierarchy: {e}");
+            error!("failed to broadcast design hierarchy: {e}");
         }
     }
 }
 
+static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+
 /// Initializes the adapter.
 ///
-/// Must be called once before simulation starts. Spawns a background thread
-/// running the WebSocket server with a single-threaded tokio runtime.
+/// Must be called once before simulation starts. Sets up the OpenTelemetry
+/// tracing subscriber and spawns the WebSocket server on a shared tokio
+/// runtime.
 /// Returns a pointer to the adapter state that must be passed to other
 /// `adapter_*` functions.
 #[unsafe(no_mangle)]
 pub extern "C" fn adapter_init_websocket() -> *mut AdapterState {
+    let rt = RUNTIME.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("failed to create tokio runtime")
+    });
+    let _rt_guard = rt.enter();
+
+    crate::logging::init_logging();
+
     let (command_tx, command_rx) = crossbeam_channel::unbounded::<SimulationCommand>();
     let (update_tx, update_rx) = tokio::sync::mpsc::unbounded_channel::<SimulationUpdate>();
 
-    thread::spawn(move || {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("Failed to create tokio runtime");
+    rt.spawn(run_websocket_server(command_tx, update_rx));
 
-        rt.block_on(run_websocket_server(command_tx, update_rx));
-    });
-
-    eprintln!("WebSocket server thread started");
+    info!("WebSocket server thread started");
 
     Box::into_raw(Box::new(AdapterState {
         command_rx,
@@ -150,13 +162,14 @@ pub extern "C" fn adapter_init_websocket() -> *mut AdapterState {
 ///
 /// When `block` is non-zero, blocks until at least one command is received.
 /// When `block` is zero, returns immediately if no commands are pending.
+#[instrument(skip(state), level = "debug")]
 #[unsafe(no_mangle)]
 pub extern "C" fn adapter_process_commands(state: &mut AdapterState, block: bool) {
     if block {
         match state.command_rx.recv() {
             Ok(cmd) => process_command(state, cmd),
             Err(e) => {
-                eprintln!("Channel error in process_commands: {e}");
+                error!("channel error in process_commands: {e}");
                 return;
             },
         }
@@ -171,11 +184,11 @@ pub extern "C" fn adapter_process_commands(state: &mut AdapterState, block: bool
 fn process_command(state: &mut AdapterState, command: SimulationCommand) {
     match command {
         SimulationCommand::Start => {
-            eprintln!("Received Start command");
+            info!("received Start command");
             state.requested_status = SimulationStatus::Running;
         },
         SimulationCommand::Stop => {
-            eprintln!("Received Stop command");
+            info!("received Stop command");
             state.requested_status = SimulationStatus::Stopped;
         },
         SimulationCommand::Subscribe(signal_ids) => {
@@ -208,11 +221,13 @@ pub extern "C" fn adapter_set_next_event_time(
         physical: PhysicalTime(physical_time as u64),
         delta: Delta(delta_cycle as u64),
     };
+    trace!(%state.time_for_events, "set next event time");
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn adapter_update_simulation_time(state: &mut AdapterState) {
     state.events.time_range.end = state.time_for_events;
+    trace!(%state.events.time_range.end, "updated simulation time");
 }
 
 /// Sends a status update to all connected clients if the status has changed.
@@ -220,6 +235,7 @@ pub extern "C" fn adapter_update_simulation_time(state: &mut AdapterState) {
 /// When the status is [`SimulationStatus::Stopped`], blocks until the
 /// notification has been flushed on all WebSocket connections (with a
 /// two-second timeout).
+#[instrument(skip(state))]
 #[unsafe(no_mangle)]
 pub extern "C" fn adapter_notify_simulation_status(
     state: &mut AdapterState,
@@ -228,9 +244,10 @@ pub extern "C" fn adapter_notify_simulation_status(
     if state.current_status == status {
         return;
     }
-    eprintln!(
-        "Simulation status changed: {:?} -> {status:?}",
-        state.current_status
+    info!(
+        previous = ?state.current_status,
+        new = ?status,
+        "simulation status changed",
     );
     state.current_status = status;
 
@@ -245,26 +262,27 @@ pub extern "C" fn adapter_notify_simulation_status(
         .update_tx
         .send(SimulationUpdate::StatusChanged(status, ack_tx))
     {
-        eprintln!("Failed to send simulation status update: {e}");
+        error!("failed to send simulation status update: {e}");
         return;
     }
 
     if let Some(rx) = ack_rx {
         match rx.recv_timeout(std::time::Duration::from_secs(2)) {
             Ok(()) => {
-                eprintln!("Stopped notification acknowledged by WebSocket thread");
+                debug!("stopped notification acknowledged by WebSocket thread");
             },
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                eprintln!("Timed out waiting for stopped notification acknowledgment");
+                warn!("timed out waiting for stopped notification acknowledgment");
             },
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                eprintln!("WebSocket thread dropped the acknowledgment channel");
+                warn!("WebSocket thread dropped the acknowledgment channel");
             },
         }
     }
 }
 
 /// Records a signal value change at the given simulation time.
+#[instrument(level = "trace", skip(state))]
 #[unsafe(no_mangle)]
 pub extern "C" fn adapter_notify_signal_event(
     state: &mut AdapterState,

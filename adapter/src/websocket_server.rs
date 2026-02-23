@@ -19,6 +19,7 @@ use tokio::net::TcpStream;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite;
 use tokio_tungstenite::tungstenite::Message;
+use tracing::{debug, error, info, info_span, instrument, warn};
 
 use crate::SimulationCommand;
 use crate::SimulationUpdate;
@@ -37,6 +38,7 @@ struct Connection {
 
 impl Connection {
     /// Encodes and sends a protocol message over the WebSocket.
+    #[instrument(skip(self, message), fields(connection_id = self.id))]
     async fn send(&mut self, message: &WsSimulationUpdate) -> Result<(), SendError> {
         let encoded = postcard::to_allocvec(message)?;
         self.sink.send(Message::Binary(encoded.into())).await?;
@@ -45,6 +47,7 @@ impl Connection {
 
     /// Processes a client command, forwarding simulation commands to the simulator
     /// thread and returning an optional response notification.
+    #[instrument(skip(self, command_tx), fields(connection_id = self.id))]
     fn handle_command(
         &mut self,
         command: Command,
@@ -77,13 +80,10 @@ impl Connection {
                     if request.subscribe && request.enabled {
                         self.subscribed_signals.insert(signal_id);
                         to_subscribe.push(signal_id);
-                        eprintln!("Connection {}: Subscribed to signal {signal_id}", self.id);
+                        debug!(%signal_id, "subscribed to signal");
                     } else {
                         self.subscribed_signals.remove(&signal_id);
-                        eprintln!(
-                            "Connection {}: Unsubscribed from signal {signal_id}",
-                            self.id
-                        );
+                        debug!(%signal_id, "unsubscribed from signal");
                     }
                 }
                 if !to_subscribe.is_empty() {
@@ -91,10 +91,9 @@ impl Connection {
                         .send(SimulationCommand::Subscribe(to_subscribe))
                         .unwrap();
                 }
-                eprintln!(
-                    "Connection {}: {} signals subscribed",
-                    self.id,
-                    self.subscribed_signals.len()
+                debug!(
+                    count = self.subscribed_signals.len(),
+                    "signal subscription count updated",
                 );
                 None
             },
@@ -104,11 +103,12 @@ impl Connection {
 
 // TODO don't re-encode the message for each connection
 /// Sends a notification to all connections, removing any that fail.
+#[instrument(skip_all)]
 async fn broadcast(connections: &mut HashMap<u64, Connection>, update: &WsSimulationUpdate) {
     let mut to_remove = Vec::new();
     for conn in connections.values_mut() {
         if let Err(e) = conn.send(update).await {
-            eprintln!("Failed to send to connection {}: {e}", conn.id);
+            warn!(connection_id = conn.id, "failed to send to connection: {e}");
             to_remove.push(conn.id);
         }
     }
@@ -118,6 +118,7 @@ async fn broadcast(connections: &mut HashMap<u64, Connection>, update: &WsSimula
 }
 
 /// Runs the async WebSocket server with all connections handled in a single event loop.
+#[instrument(skip_all)]
 pub(crate) async fn run_websocket_server(
     command_tx: Sender<SimulationCommand>,
     mut update_rx: tokio::sync::mpsc::UnboundedReceiver<SimulationUpdate>,
@@ -126,12 +127,12 @@ pub(crate) async fn run_websocket_server(
     let listener = match TcpListener::bind(addr).await {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("Failed to bind WebSocket server to {addr}: {e}");
+            error!(%addr, "failed to bind WebSocket server: {e}");
             return;
         },
     };
 
-    eprintln!("WebSocket server listening on {addr}");
+    info!(%addr, "WebSocket server listening");
 
     let mut connections: HashMap<u64, Connection> = HashMap::new();
     let mut ws_receivers: SelectAll<TaggedWsStream> = SelectAll::new();
@@ -151,21 +152,21 @@ pub(crate) async fn run_websocket_server(
                 let (stream, _) = match result {
                     Ok(pair) => pair,
                     Err(e) => {
-                        eprintln!("Failed to accept connection: {e}");
+                        warn!("failed to accept connection: {e}");
                         continue;
                     }
                 };
                 let ws_stream = match tokio_tungstenite::accept_async(stream).await {
                     Ok(ws) => ws,
                     Err(e) => {
-                        eprintln!("Error during WebSocket handshake: {e}");
+                        warn!("error during WebSocket handshake: {e}");
                         continue;
                     }
                 };
 
                 let id = next_id;
                 next_id += 1;
-                eprintln!("New WebSocket connection {id} established.");
+                let connection_span = info_span!("connection", id);
 
                 let (sink, stream) = ws_stream.split();
                 let mut conn = Connection {
@@ -174,12 +175,17 @@ pub(crate) async fn run_websocket_server(
                     subscribed_signals: HashSet::new(),
                 };
 
-                // Send current design hierarchy to the newly connected client
-                if let Some(ref hierarchy) = current_hierarchy {
-                    let update = WsSimulationUpdate::DesignHierarchy(hierarchy.clone());
-                    if let Err(e) = conn.send(&update).await {
-                        eprintln!("Failed to send design hierarchy to connection {id}: {e}");
-                        continue;
+                {
+                    let _enter = connection_span.enter();
+                    info!("WebSocket connection established");
+
+                    // Send current design hierarchy to the newly connected client
+                    if let Some(ref hierarchy) = current_hierarchy {
+                        let update = WsSimulationUpdate::DesignHierarchy(hierarchy.clone());
+                        if let Err(e) = conn.send(&update).await {
+                            warn!("failed to send design hierarchy: {e}");
+                            continue;
+                        }
                     }
                 }
 
@@ -189,16 +195,19 @@ pub(crate) async fn run_websocket_server(
 
             // Handle messages from any connection
             Some((id, result)) = ws_receivers.next() => {
+                let connection_span = info_span!("connection", id);
+                let _enter = connection_span.enter();
+
                 let text = match result {
                     Ok(Message::Text(text)) => text,
                     Ok(Message::Close(_)) => {
-                        eprintln!("Connection {id} closed by client.");
+                        info!("connection closed by client");
                         connections.remove(&id);
                         continue;
                     }
                     Ok(_) => continue,
                     Err(e) => {
-                        eprintln!("WebSocket error on connection {id}: {e}");
+                        warn!("WebSocket error: {e}");
                         connections.remove(&id);
                         continue;
                     }
@@ -207,7 +216,7 @@ pub(crate) async fn run_websocket_server(
                 let command: Command = match serde_json::from_str(&text) {
                     Ok(cmd) => cmd,
                     Err(e) => {
-                        eprintln!("Failed to parse message from connection {id}: {e}");
+                        warn!("failed to parse message: {e}");
                         continue;
                     }
                 };
@@ -217,7 +226,7 @@ pub(crate) async fn run_websocket_server(
 
                 if let Some(update) = response
                     && let Err(e) = conn.send(&update).await {
-                        eprintln!("Failed to send response to connection {id}: {e}");
+                        warn!("failed to send response: {e}");
                         connections.remove(&id);
                     }
             }

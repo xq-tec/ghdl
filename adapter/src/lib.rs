@@ -6,6 +6,7 @@ use smallvec::SmallVec;
 
 mod design;
 mod json_buffer;
+mod logging;
 mod sim_interface;
 mod websocket_server;
 

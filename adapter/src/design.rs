@@ -13,6 +13,7 @@ use hdl_simulation_protocol::design_hierarchy::DesignHierarchyEntry;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchyEntryKind;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchySignalType;
 use serde::Deserialize;
+use tracing::{info, instrument};
 
 #[derive(Debug, Deserialize)]
 pub struct Signal {
@@ -168,6 +169,7 @@ fn build_instance_entry(
 }
 
 /// Registers the design hierarchy with the WebSocket server.
+#[instrument(skip(state))]
 #[unsafe(no_mangle)]
 pub extern "C" fn adapter_register_design(
     state: &mut crate::sim_interface::AdapterState,
@@ -177,9 +179,7 @@ pub extern "C" fn adapter_register_design(
 ) {
     let mut buffer = Vec::with_capacity(4096);
 
-    eprintln!(
-        "Registering design: root_instance={root_instance}, instances={instance_count}, signals={signal_count}"
-    );
+    info!("registering design");
 
     // Collect all signals; signal IDs start at 1, so we put a dummy at index 0
     let mut signals: Vec<Signal> = Vec::with_capacity(1 + signal_count as usize);
@@ -255,7 +255,7 @@ pub extern "C" fn adapter_register_design(
 
     let hierarchy = DesignHierarchy { root: root_entry };
 
-    eprintln!("Design hierarchy tree built successfully");
+    info!("design hierarchy tree built successfully");
 
     state.set_design_hierarchy(hierarchy, signals);
 }
