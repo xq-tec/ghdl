@@ -56,7 +56,7 @@ package Adapter is
    procedure Flush (Buffer : System.Address)
       with Inline;
 
-   procedure Init_Websocket;
+   procedure Init_Websocket (Wait_For_Gui : Boolean);
 
    --  Processes all commands in the queue from the WebSocket.
    --  When Block is True, blocks until at least one command has been received.

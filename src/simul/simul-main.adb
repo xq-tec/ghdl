@@ -69,8 +69,7 @@ package body Simul.Main is
       Ok : C_Boolean;
       Status : Integer;
    begin
-      --  Initialize WebSocket server for remote control
-      Init_Websocket;
+      Init_Websocket (Flag_Gui);
 
       Break_Time := Std_Time'Last;
       Break_Step := False;

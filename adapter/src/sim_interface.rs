@@ -124,7 +124,7 @@ static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 /// Returns a pointer to the adapter state that must be passed to other
 /// `adapter_*` functions.
 #[unsafe(no_mangle)]
-pub extern "C" fn adapter_init_websocket() -> *mut AdapterState {
+pub extern "C" fn adapter_init_websocket(wait_for_gui: bool) -> *mut AdapterState {
     let rt = RUNTIME.get_or_init(|| {
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -154,7 +154,11 @@ pub extern "C" fn adapter_init_websocket() -> *mut AdapterState {
             signals: Vec::new(),
         },
         current_status: SimulationStatus::Paused,
-        requested_status: SimulationStatus::Paused,
+        requested_status: if wait_for_gui {
+            SimulationStatus::Paused
+        } else {
+            SimulationStatus::Running
+        },
     }))
 }
 
