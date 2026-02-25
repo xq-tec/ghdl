@@ -45,6 +45,13 @@ package body Adapter is
       Adapter_Append_Str (Buffer, Str (Str'First)'Address, Unsigned_64 (Str'Length));
    end Append;
 
+   procedure Append (Buffer: System.Address; Value: Boolean) is
+      procedure Adapter_Append_Bool (Buffer : System.Address; Value : RustBool);
+      pragma Import (C, Adapter_Append_Bool, "adapter_append_bool");
+   begin
+      Adapter_Append_Bool (Buffer, (if Value then True else False));
+   end Append;
+
    procedure Append (Buffer: System.Address; Value: Unsigned_32) is
       procedure Adapter_Append_U32 (Buffer : System.Address; Value : Unsigned_32);
       pragma Import (C, Adapter_Append_U32, "adapter_append_u32");
@@ -133,7 +140,9 @@ package body Adapter is
          Delta_Cycle : Integer_64);
       pragma Import (C, Adapter_Set_Next_Event_Time, "adapter_set_next_event_time");
    begin
-      Adapter_Set_Next_Event_Time (Adapter_State, Integer_64 (Physical_Time), Integer_64 (Delta_Cycle));
+      Adapter_Set_Next_Event_Time (
+         Adapter_State,
+         Integer_64 (Physical_Time), Integer_64 (Delta_Cycle));
    end Set_Next_Event_Time;
 
    procedure Update_Simulation_Time is

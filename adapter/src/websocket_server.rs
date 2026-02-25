@@ -8,9 +8,9 @@ use futures_util::SinkExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use futures_util::stream::SelectAll;
-use hdl_simulation_protocol::SignalInstanceId;
 use hdl_simulation_protocol::SimulationStatus;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchy;
+use hdl_simulation_protocol::design_hierarchy::SignalInstanceId;
 use hdl_simulation_protocol::from_simulator::SimulationUpdate as WsSimulationUpdate;
 use hdl_simulation_protocol::to_simulator::Command;
 use smallvec::SmallVec;
@@ -19,7 +19,12 @@ use tokio::net::TcpStream;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite;
 use tokio_tungstenite::tungstenite::Message;
-use tracing::{debug, error, info, info_span, instrument, warn};
+use tracing::debug;
+use tracing::error;
+use tracing::info;
+use tracing::info_span;
+use tracing::instrument;
+use tracing::warn;
 
 use crate::SimulationCommand;
 use crate::SimulationUpdate;
@@ -38,7 +43,7 @@ struct Connection {
 
 impl Connection {
     /// Encodes and sends a protocol message over the WebSocket.
-    #[instrument(skip(self, message), fields(connection_id = self.id))]
+    #[instrument(skip(self, message), fields(connection_id = self.id), level = "debug")]
     async fn send(&mut self, message: &WsSimulationUpdate) -> Result<(), SendError> {
         let encoded = postcard::to_allocvec(message)?;
         self.sink.send(Message::Binary(encoded.into())).await?;
@@ -47,7 +52,7 @@ impl Connection {
 
     /// Processes a client command, forwarding simulation commands to the simulator
     /// thread and returning an optional response notification.
-    #[instrument(skip(self, command_tx), fields(connection_id = self.id))]
+    #[instrument(skip(self, command_tx), fields(connection_id = self.id), level = "debug")]
     fn handle_command(
         &mut self,
         command: Command,
@@ -103,7 +108,7 @@ impl Connection {
 
 // TODO don't re-encode the message for each connection
 /// Sends a notification to all connections, removing any that fail.
-#[instrument(skip_all)]
+#[instrument(skip_all, level = "debug")]
 async fn broadcast(connections: &mut HashMap<u64, Connection>, update: &WsSimulationUpdate) {
     let mut to_remove = Vec::new();
     for conn in connections.values_mut() {

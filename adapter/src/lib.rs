@@ -1,6 +1,6 @@
-use hdl_simulation_protocol::SignalInstanceId;
 use hdl_simulation_protocol::SimulationStatus;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchy;
+use hdl_simulation_protocol::design_hierarchy::SignalInstanceId;
 use hdl_simulation_protocol::from_simulator::EventsUpdate;
 use smallvec::SmallVec;
 

@@ -55,6 +55,11 @@ pub unsafe extern "C" fn adapter_append_escaped(buffer: &mut Vec<u8>, str: *cons
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn adapter_append_bool(buffer: &mut Vec<u8>, value: bool) {
+    write!(buffer, "{}", if value { "true" } else { "false" }).unwrap();
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn adapter_append_u32(buffer: &mut Vec<u8>, value: u32) {
     write!(buffer, "{value}").unwrap();
 }
@@ -72,6 +77,11 @@ pub unsafe extern "C" fn adapter_append_i64(buffer: &mut Vec<u8>, value: i64) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn adapter_append_f64(buffer: &mut Vec<u8>, value: f64) {
     write!(buffer, "\"#{:x}\"", value.to_bits()).unwrap();
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn adapter_append_ptr(buffer: &mut Vec<u8>, value: *const u8) {
+    write!(buffer, "\"{value:p}\"").unwrap();
 }
 
 #[unsafe(no_mangle)]

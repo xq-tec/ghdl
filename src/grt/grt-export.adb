@@ -37,20 +37,15 @@ with Simul.Vhdl_Simul; use Simul.Vhdl_Simul;
 
 package body Grt.Export is
 
-   procedure Encode_Signal (Buffer : System.Address; Signal_Id : Unsigned_32);
-   pragma Export (C, Encode_Signal, "adapter_encode_signal");
-
-   procedure Encode_Signal (Buffer : System.Address; Signal_Id : Unsigned_32) is
-      Signal : Signal_Entry renames Signals_Table.Table (Signal_Index_Type (Signal_Id));
+   procedure Encode_Type (Buffer : System.Address; Typ : Type_Acc) is
+      procedure Append (Buffer: System.Address; Value: Type_Acc) is
+         procedure Adapter_Append_Ptr (Buffer : System.Address; Value : Type_Acc);
+         pragma Import (C, Adapter_Append_Ptr, "adapter_append_ptr");
+      begin
+         Adapter_Append_Ptr (Buffer, Value);
+      end Append;
    begin
-      Append (Buffer, "{""decl"":");
-      Append (Buffer, Unsigned_32 (Signal.Decl));
-
-      Append (Buffer, ",""width"":");
-      Append (Buffer, Unsigned_32 (Signal.Typ.W));
-      Append (Buffer, ",""type_kind"":");
-
-      case Signal.Typ.Kind is
+      case Typ.Kind is
          when Type_Bit =>
             Append (Buffer, "{""bit"":{");
          when Type_Logic =>
@@ -61,14 +56,12 @@ package body Grt.Export is
             Append (Buffer, "{""float"":{");
          when Type_Slice =>
             Append (Buffer, """slice""");
-         when Type_Vector =>
-            Append (Buffer, """vector""");
          when Type_Unbounded_Vector =>
             Append (Buffer, """unbounded_vector""");
-         when Type_Array =>
-            Append (Buffer, """array""");
-         when Type_Array_Unbounded =>
-            Append (Buffer, """array_unbounded""");
+         when Type_Array
+            | Type_Array_Unbounded
+            | Type_Vector =>
+            Append (Buffer, "{""array"":{");
          when Type_Unbounded_Array =>
             Append (Buffer, """unbounded_array""");
          when Type_Unbounded_Record =>
@@ -83,25 +76,44 @@ package body Grt.Export is
             Append (Buffer, """protected""");
       end case;
 
-      case Signal.Typ.Kind is
+      case Typ.Kind is
          when Type_Bit
             | Type_Logic
             | Type_Discrete =>
             Append (Buffer, """left"":");
-            Append (Buffer, Integer_64 (Signal.Typ.Drange.Left));
+            Append (Buffer, Integer_64 (Typ.Drange.Left));
             Append (Buffer, ",""right"":");
-            Append (Buffer, Integer_64 (Signal.Typ.Drange.Right));
+            Append (Buffer, Integer_64 (Typ.Drange.Right));
             Append (Buffer, ",""dir"":");
-            Append (Buffer, Signal.Typ.Drange.Dir);
+            Append (Buffer, Typ.Drange.Dir);
             Append (Buffer, "}}");
 
          when Type_Float =>
             Append (Buffer, """left"":");
-            Append (Buffer, IEEE_Float_64 (Signal.Typ.Frange.Left));
+            Append (Buffer, IEEE_Float_64 (Typ.Frange.Left));
             Append (Buffer, ",""right"":");
-            Append (Buffer, IEEE_Float_64 (Signal.Typ.Frange.Right));
+            Append (Buffer, IEEE_Float_64 (Typ.Frange.Right));
             Append (Buffer, ",""dir"":");
-            Append (Buffer, Signal.Typ.Frange.Dir);
+            Append (Buffer, Typ.Frange.Dir);
+            Append (Buffer, "}}");
+
+         when Type_Array
+            | Type_Array_Unbounded
+            | Type_Vector =>
+            Append (Buffer, """left"":");
+            Append (Buffer, Integer_32 (Typ.Abound.Left));
+            Append (Buffer, ",""right"":");
+            Append (Buffer, Integer_32 (Typ.Abound.Right));
+            Append (Buffer, ",""dir"":");
+            Append (Buffer, Typ.Abound.Dir);
+            Append (Buffer, ",""W"":");
+            Append (Buffer, Unsigned_32 (Typ.W));
+            Append (Buffer, ",""Sz"":");
+            Append (Buffer, Integer_64 (Typ.Sz));
+            Append (Buffer, ",""is_last"":");
+            Append (Buffer, Typ.Alast);
+            Append (Buffer, ",""element_type"":");
+            Encode_Type (Buffer, Typ.Arr_El);
             Append (Buffer, "}}");
 
          when others =>
@@ -138,6 +150,21 @@ package body Grt.Export is
          --  when Type_Protected =>
          --     null;
       end case;
+   end Encode_Type;
+
+   procedure Encode_Signal (Buffer : System.Address; Signal_Id : Unsigned_32);
+   pragma Export (C, Encode_Signal, "adapter_encode_signal");
+
+   procedure Encode_Signal (Buffer : System.Address; Signal_Id : Unsigned_32) is
+      Signal : Signal_Entry renames Signals_Table.Table (Signal_Index_Type (Signal_Id));
+   begin
+      Append (Buffer, "{""decl"":");
+      Append (Buffer, Unsigned_32 (Signal.Decl));
+
+      Append (Buffer, ",""width"":");
+      Append (Buffer, Unsigned_32 (Signal.Typ.W));
+      Append (Buffer, ",""type"":");
+      Encode_Type (Buffer, Signal.Typ);
 
       Append (Buffer, '}');
    end Encode_Signal;

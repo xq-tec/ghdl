@@ -41,6 +41,8 @@ package Adapter is
       with Inline;
    procedure Append (Buffer: System.Address; Str: String)
       with Inline;
+   procedure Append (Buffer: System.Address; Value: Boolean)
+      with Inline;
    procedure Append (Buffer: System.Address; Value: Unsigned_32)
       with Inline;
    procedure Append (Buffer: System.Address; Value: Integer_32)

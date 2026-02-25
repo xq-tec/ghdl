@@ -3,9 +3,9 @@ use std::num::NonZeroU32;
 use std::sync::OnceLock;
 
 use crossbeam_channel::Receiver;
-use hdl_simulation_protocol::SignalInstanceId;
 use hdl_simulation_protocol::SimulationStatus;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchy;
+use hdl_simulation_protocol::design_hierarchy::SignalInstanceId;
 use hdl_simulation_protocol::from_simulator::Event;
 use hdl_simulation_protocol::from_simulator::EventsUpdate;
 use hdl_simulation_protocol::from_simulator::RawValue;
@@ -239,7 +239,7 @@ pub extern "C" fn adapter_update_simulation_time(state: &mut AdapterState) {
 /// When the status is [`SimulationStatus::Stopped`], blocks until the
 /// notification has been flushed on all WebSocket connections (with a
 /// two-second timeout).
-#[instrument(skip(state))]
+#[instrument(skip(state), level = "debug")]
 #[unsafe(no_mangle)]
 pub extern "C" fn adapter_notify_simulation_status(
     state: &mut AdapterState,
