@@ -179,7 +179,7 @@ pub extern "C" fn adapter_register_design(
         root_modules: vec![root_module],
     };
     state.set_design_hierarchy(hierarchy, signals);
-    info!("design hierarchy tree built successfully");
+    info!("design hierarchy built successfully");
 }
 
 fn collect_signals(signal_count: u32) -> Vec<Signal> {
