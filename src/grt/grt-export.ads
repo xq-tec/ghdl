@@ -21,9 +21,8 @@
 --  however invalidate any other reasons why the executable file might be
 --  covered by the GNU Public License.
 
+with Ada.Unchecked_Conversion;
 with Interfaces; use Interfaces;
-
-with Grt.Types; use Grt.Types;
 
 package Grt.Export is
 
@@ -33,10 +32,10 @@ package Grt.Export is
    procedure Register_Design;
 
    --  Sets the Subscription field of a signal in the signal table.
-   procedure Set_Signal_Subscription (Signal_Id : Unsigned_32;
-                                      Sub_Idx : Subscription_Index);
+   procedure Set_Signal_Subscription (Signal_Id, Element_Index : Unsigned_32;
+                                      Subscription : Subscription_Index);
    pragma Export (C, Set_Signal_Subscription, "ghdl_set_signal_subscription");
 
-   procedure Notify_Signal_Event (Sig_Idx : Subscription_Index; Value : Ghdl_U64);
+   procedure Notify_Signal_Event (Sig_Idx : Subscription_Index; Value : Unsigned_64);
 
 end Grt.Export;

@@ -34,16 +34,11 @@ with Elab.Vhdl_Values; use Elab.Vhdl_Values;
 with Grt.Signals; use Grt.Signals;
 with Simul.Vhdl_Elab; use Simul.Vhdl_Elab;
 with Simul.Vhdl_Simul; use Simul.Vhdl_Simul;
+with Types;
 
 package body Grt.Export is
 
    procedure Encode_Type (Buffer : System.Address; Typ : Type_Acc) is
-      procedure Append (Buffer: System.Address; Value: Type_Acc) is
-         procedure Adapter_Append_Ptr (Buffer : System.Address; Value : Type_Acc);
-         pragma Import (C, Adapter_Append_Ptr, "adapter_append_ptr");
-      begin
-         Adapter_Append_Ptr (Buffer, Value);
-      end Append;
    begin
       case Typ.Kind is
          when Type_Bit =>
@@ -258,21 +253,23 @@ package body Grt.Export is
          Unsigned_32 (Signals_Table.Last));
    end Register_Design;
 
-   procedure Set_Signal_Subscription (Signal_Id : Unsigned_32;
-                                      Sub_Idx : Subscription_Index) is
+   procedure Set_Signal_Subscription (Signal_Id, Element_Index : Unsigned_32;
+                                      Subscription : Subscription_Index) is
+      -- This is the Signal_Entry type in simul-vhdl_elab.ads
       Signal : Signal_Entry renames Signals_Table.Table (Signal_Index_Type (Signal_Id));
-      Sig_Ptr : constant Ghdl_Signal_Ptr := Read_Sig (Signal.Sig);
+      Sig_Ptr : constant Ghdl_Signal_Ptr :=
+         Read_Sig (Sig_Index (Signal.Sig, Types.Uns32 (Element_Index)));
    begin
-      Sig_Ptr.Subscription := Sub_Idx;
+      Sig_Ptr.Subscription := Subscription;
    end Set_Signal_Subscription;
 
-   procedure Notify_Signal_Event (Sig_Idx : Subscription_Index; Value : Ghdl_U64) is
+   procedure Notify_Signal_Event (Sig_Idx : Subscription_Index; Value : Unsigned_64) is
       procedure Adapter_Notify_Signal_Event (Adapter_State : System.Address;
                                              Sig_Idx : Unsigned_32;
                                              Value : Unsigned_64);
       pragma Import (C, Adapter_Notify_Signal_Event, "adapter_notify_signal_event");
    begin
-      Adapter_Notify_Signal_Event (Get_Adapter_State, Unsigned_32 (Sig_Idx), Unsigned_64 (Value));
+      Adapter_Notify_Signal_Event (Get_Adapter_State, Unsigned_32 (Sig_Idx), Value);
    end Notify_Signal_Event;
 
 end Grt.Export;

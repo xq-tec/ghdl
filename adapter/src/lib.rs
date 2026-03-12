@@ -1,6 +1,6 @@
 use hdl_simulation_protocol::SimulationStatus;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchy;
-use hdl_simulation_protocol::design_hierarchy::SignalInstanceId;
+use hdl_simulation_protocol::design_hierarchy::SignalElementId;
 use hdl_simulation_protocol::from_simulator::EventsUpdate;
 use smallvec::SmallVec;
 
@@ -16,9 +16,9 @@ enum SimulationCommand {
     Start,
     Stop,
 
-    Subscribe(SmallVec<[SignalInstanceId; 1]>),
+    Subscribe(SmallVec<[SignalElementId; 1]>),
     #[expect(unused, reason = "TODO WIP")]
-    Unsubscribe(SmallVec<[SignalInstanceId; 1]>),
+    Unsubscribe(SmallVec<[SignalElementId; 1]>),
     SendUpdate,
 }
 

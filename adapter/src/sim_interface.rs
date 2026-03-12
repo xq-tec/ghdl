@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 use crossbeam_channel::Receiver;
 use hdl_simulation_protocol::SimulationStatus;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchy;
-use hdl_simulation_protocol::design_hierarchy::SignalInstanceId;
+use hdl_simulation_protocol::design_hierarchy::SignalElementId;
 use hdl_simulation_protocol::from_simulator::Event;
 use hdl_simulation_protocol::from_simulator::EventsUpdate;
 use hdl_simulation_protocol::from_simulator::RawValue;
@@ -27,9 +27,17 @@ use crate::design::Signal;
 use crate::websocket_server::run_websocket_server;
 
 unsafe extern "C" {
-    /// Sets the Subscription field of a signal in GHDL's signal table.
-    safe fn ghdl_set_signal_subscription(signal_id: NonZeroU32, sub_idx: u32);
+    /// Sets the `Subscription` field of a signal in GHDL's signal table.
+    safe fn ghdl_set_signal_subscription(
+        signal_id: NonZeroU32,
+        element_index: u32,
+        subscription_index: SubscriptionIndex,
+    );
 }
+
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+struct SubscriptionIndex(u32);
 
 /// Simulator-facing adapter state.
 ///
@@ -45,13 +53,8 @@ pub struct AdapterState {
     update_tx: tokio::sync::mpsc::UnboundedSender<SimulationUpdate>,
 
     signals: Vec<Signal>,
-    subscriptions: Vec<SignalInstanceId>,
-    /// Maps the IDs of subscribed signals to their index in the
-    /// [`subscriptions`](Self::subscriptions) list.
-    signal_indices: FxHashMap<SignalInstanceId, usize>,
-
+    subscriptions: SubscriptionTracker,
     time_for_events: LogicalTime,
-    events: EventsUpdate,
 
     current_status: SimulationStatus,
     requested_status: SimulationStatus,
@@ -60,56 +63,117 @@ pub struct AdapterState {
 impl AdapterState {
     /// Flushes accumulated signal events up to `end_time` to the WebSocket thread.
     fn transmit_events(&mut self) {
-        let end_time = self.events.time_range.end;
-        if !self.events.time_range.is_empty() {
-            let signals = self
-                .events
-                .signals
-                .iter()
-                .map(SignalEvents::clone_empty)
-                .collect();
-            let signal_values = replace(
-                &mut self.events,
-                EventsUpdate {
-                    time_range: end_time..end_time,
-                    signals,
-                },
-            );
+        if let Some(events_update) = self.subscriptions.extract_events() {
             self.update_tx
-                .send(SimulationUpdate::Events(signal_values))
+                .send(SimulationUpdate::Events(events_update))
                 .expect("Failed to send simulation update"); // TODO handle error
         }
     }
 
     /// Subscribes to the given signals, flushing any pending events first.
-    fn subscribe(&mut self, signal_ids: &[SignalInstanceId]) {
-        use std::collections::hash_map::Entry;
-
+    fn subscribe(&mut self, element_ids: &[SignalElementId]) {
         self.transmit_events();
-
-        let mut next_index = self.subscriptions.len();
-        for &signal_id in signal_ids {
-            debug!(%signal_id, "subscribing to signal");
-            if let Entry::Vacant(entry) = self.signal_indices.entry(signal_id) {
-                entry.insert(next_index);
-                self.subscriptions.push(signal_id);
-                ghdl_set_signal_subscription(signal_id.0, next_index as u32);
-                self.events.signals.push(SignalEvents::new(signal_id));
-
-                next_index += 1;
-            }
-        }
+        self.subscriptions.subscribe(element_ids);
     }
 
     /// Sets the design hierarchy to be sent to WebSocket clients.
     ///
     /// Sends the hierarchy to all currently connected clients and stores it
     /// for new connections.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the design hierarchy has already been set.
     pub fn set_design_hierarchy(&mut self, hierarchy: DesignHierarchy, signals: Vec<Signal>) {
-        self.signals = signals;
+        assert!(self.signals.is_empty(), "design hierarchy already set");
 
+        self.signals = signals;
         if let Err(e) = self.update_tx.send(SimulationUpdate::Design(hierarchy)) {
             error!("failed to broadcast design hierarchy: {e}");
+        }
+    }
+}
+
+struct SubscriptionTracker {
+    /// The list of currently subscribed signal elements.
+    subscriptions: Vec<SignalElementId>,
+    /// Maps the IDs of subscribed signal elements to their index in the
+    /// [`subscriptions`](Self::subscriptions) list.
+    element_indices: FxHashMap<SignalElementId, SubscriptionIndex>,
+
+    events: EventsUpdate,
+}
+
+impl SubscriptionTracker {
+    fn new() -> Self {
+        Self {
+            subscriptions: Vec::new(),
+            element_indices: FxHashMap::default(),
+            events: EventsUpdate {
+                time_range: LogicalTime::ZERO..LogicalTime::ZERO,
+                signals: Vec::new(),
+            },
+        }
+    }
+
+    /// Subscribes to the given signal elements.
+    fn subscribe(&mut self, element_ids: &[SignalElementId]) {
+        use std::collections::hash_map::Entry;
+
+        let mut next_index = self.subscriptions.len();
+        for &element_id in element_ids {
+            debug!(?element_id, "subscribing to signal");
+            if let Entry::Vacant(entry) = self.element_indices.entry(element_id) {
+                let subscription_index = SubscriptionIndex(next_index as u32);
+                entry.insert(subscription_index);
+                self.subscriptions.push(element_id);
+                ghdl_set_signal_subscription(
+                    element_id.signal_id.0,
+                    element_id.element_index,
+                    subscription_index,
+                );
+                self.events.signals.push(SignalEvents::new(element_id));
+
+                next_index += 1;
+            }
+        }
+    }
+
+    fn update_time_range(&mut self, time: LogicalTime) {
+        self.events.time_range.end = time;
+    }
+
+    fn notify_signal_event(
+        &mut self,
+        subscription_index: SubscriptionIndex,
+        time: LogicalTime,
+        value: u64,
+    ) {
+        let index = subscription_index.0 as usize;
+        self.events.signals[index].events.push(Event {
+            time,
+            value: RawValue(value),
+        });
+    }
+
+    fn extract_events(&mut self) -> Option<EventsUpdate> {
+        if !self.events.time_range.is_empty() {
+            let end_time = self.events.time_range.end;
+            let signals = self
+                .events
+                .signals
+                .iter()
+                .map(SignalEvents::clone_empty)
+                .collect();
+            Some(replace(
+                &mut self.events,
+                EventsUpdate {
+                    time_range: end_time..end_time,
+                    signals,
+                },
+            ))
+        } else {
+            None
         }
     }
 }
@@ -124,7 +188,7 @@ static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 /// Returns a pointer to the adapter state that must be passed to other
 /// `adapter_*` functions.
 #[unsafe(no_mangle)]
-pub extern "C" fn adapter_init_websocket(wait_for_gui: bool) -> *mut AdapterState {
+extern "C" fn adapter_init_websocket(wait_for_gui: bool) -> *mut AdapterState {
     let rt = RUNTIME.get_or_init(|| {
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -145,14 +209,9 @@ pub extern "C" fn adapter_init_websocket(wait_for_gui: bool) -> *mut AdapterStat
     Box::into_raw(Box::new(AdapterState {
         command_rx,
         update_tx,
-        subscriptions: Vec::new(),
         signals: Vec::new(),
-        signal_indices: FxHashMap::default(),
+        subscriptions: SubscriptionTracker::new(),
         time_for_events: LogicalTime::ZERO,
-        events: EventsUpdate {
-            time_range: LogicalTime::ZERO..LogicalTime::ZERO,
-            signals: Vec::new(),
-        },
         current_status: SimulationStatus::Paused,
         requested_status: if wait_for_gui {
             SimulationStatus::Paused
@@ -168,7 +227,7 @@ pub extern "C" fn adapter_init_websocket(wait_for_gui: bool) -> *mut AdapterStat
 /// When `block` is zero, returns immediately if no commands are pending.
 #[instrument(skip(state), level = "debug")]
 #[unsafe(no_mangle)]
-pub extern "C" fn adapter_process_commands(state: &mut AdapterState, block: bool) {
+extern "C" fn adapter_process_commands(state: &mut AdapterState, block: bool) {
     if block {
         match state.command_rx.recv() {
             Ok(cmd) => process_command(state, cmd),
@@ -209,12 +268,12 @@ fn process_command(state: &mut AdapterState, command: SimulationCommand) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn adapter_requested_simulation_status(state: &AdapterState) -> SimulationStatus {
+extern "C" fn adapter_requested_simulation_status(state: &AdapterState) -> SimulationStatus {
     state.requested_status
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn adapter_set_next_event_time(
+extern "C" fn adapter_set_next_event_time(
     state: &mut AdapterState,
     physical_time: i64,
     delta_cycle: i64,
@@ -229,9 +288,9 @@ pub extern "C" fn adapter_set_next_event_time(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn adapter_update_simulation_time(state: &mut AdapterState) {
-    state.events.time_range.end = state.time_for_events;
-    trace!(%state.events.time_range.end, "updated simulation time");
+extern "C" fn adapter_update_simulation_time(state: &mut AdapterState) {
+    state.subscriptions.update_time_range(state.time_for_events);
+    trace!(%state.time_for_events, "updated simulation time");
 }
 
 /// Sends a status update to all connected clients if the status has changed.
@@ -241,10 +300,7 @@ pub extern "C" fn adapter_update_simulation_time(state: &mut AdapterState) {
 /// two-second timeout).
 #[instrument(skip(state), level = "debug")]
 #[unsafe(no_mangle)]
-pub extern "C" fn adapter_notify_simulation_status(
-    state: &mut AdapterState,
-    status: SimulationStatus,
-) {
+extern "C" fn adapter_notify_simulation_status(state: &mut AdapterState, status: SimulationStatus) {
     if state.current_status == status {
         return;
     }
@@ -288,18 +344,12 @@ pub extern "C" fn adapter_notify_simulation_status(
 /// Records a signal value change at the given simulation time.
 #[instrument(level = "trace", skip(state))]
 #[unsafe(no_mangle)]
-pub extern "C" fn adapter_notify_signal_event(
+extern "C" fn adapter_notify_signal_event(
     state: &mut AdapterState,
-    subscription_index: u32,
+    subscription_index: SubscriptionIndex,
     value: u64,
 ) {
-    let subscription_index = subscription_index as usize;
-    if subscription_index >= state.subscriptions.len() {
-        // TODO this would be a bug
-        panic!("Subscription index out of bounds: {subscription_index}");
-    }
-    state.events.signals[subscription_index].events.push(Event {
-        time: state.time_for_events,
-        value: RawValue(value),
-    });
+    state
+        .subscriptions
+        .notify_signal_event(subscription_index, state.time_for_events, value);
 }

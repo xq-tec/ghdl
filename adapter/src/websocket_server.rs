@@ -10,7 +10,7 @@ use futures_util::StreamExt;
 use futures_util::stream::SelectAll;
 use hdl_simulation_protocol::SimulationStatus;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchy;
-use hdl_simulation_protocol::design_hierarchy::SignalInstanceId;
+use hdl_simulation_protocol::design_hierarchy::SignalElementId;
 use hdl_simulation_protocol::from_simulator::SimulationUpdate as WsSimulationUpdate;
 use hdl_simulation_protocol::to_simulator::Command;
 use smallvec::SmallVec;
@@ -38,7 +38,7 @@ type SendError = Box<dyn std::error::Error + Send + Sync>;
 struct Connection {
     id: u64,
     sink: WsSink,
-    subscribed_signals: HashSet<SignalInstanceId>,
+    subscribed_signals: HashSet<SignalElementId>,
 }
 
 impl Connection {
@@ -80,15 +80,15 @@ impl Connection {
                 Some(WsSimulationUpdate::SimulationStarted)
             },
             Command::TrackSignals(request) => {
-                let mut to_subscribe: SmallVec<[SignalInstanceId; 1]> = SmallVec::new();
-                for &signal_id in &request.signal_instance_ids {
+                let mut to_subscribe: SmallVec<[SignalElementId; 1]> = SmallVec::new();
+                for &element_id in &request.signal_element_ids {
                     if request.subscribe && request.enabled {
-                        self.subscribed_signals.insert(signal_id);
-                        to_subscribe.push(signal_id);
-                        debug!(%signal_id, "subscribed to signal");
+                        self.subscribed_signals.insert(element_id);
+                        to_subscribe.push(element_id);
+                        debug!(?element_id, "subscribed to signal");
                     } else {
-                        self.subscribed_signals.remove(&signal_id);
-                        debug!(%signal_id, "unsubscribed from signal");
+                        self.subscribed_signals.remove(&element_id);
+                        debug!(?element_id, "unsubscribed from signal");
                     }
                 }
                 if !to_subscribe.is_empty() {
@@ -143,7 +143,7 @@ pub(crate) async fn run_websocket_server(
     let mut ws_receivers: SelectAll<TaggedWsStream> = SelectAll::new();
     let mut next_id: u64 = 0;
     let mut current_hierarchy: Option<DesignHierarchy> = None;
-    let mut update_interval = tokio::time::interval(Duration::from_millis(500));
+    let mut update_interval = tokio::time::interval(Duration::from_millis(100));
 
     loop {
         tokio::select! {

@@ -24,6 +24,7 @@ with System; use System;
 with System.Storage_Elements; --  Work around GNAT bug.
 pragma Unreferenced (System.Storage_Elements);
 with Ada.Unchecked_Deallocation;
+with Interfaces;
 
 with Grt.Errors; use Grt.Errors;
 with Grt.Errors_Exec; use Grt.Errors_Exec;
@@ -3261,9 +3262,10 @@ package body Grt.Signals is
      (Sig : Ghdl_Signal_Ptr; Val : Value_Union)
    is
       El : Action_List_Acc;
-      Value : Ghdl_U64;
+      Value : Interfaces.Unsigned_64;
 
-      function F64_To_Binary is new Ada.Unchecked_Conversion (Ghdl_F64, Ghdl_U64);
+      function F64_To_Binary is new Ada.Unchecked_Conversion (Ghdl_F64, Interfaces.Unsigned_64);
+      function I64_To_Binary is new Ada.Unchecked_Conversion (Ghdl_I64, Interfaces.Unsigned_64);
    begin
       case Sig.Mode is
          when Mode_B1 =>
@@ -3283,28 +3285,28 @@ package body Grt.Signals is
             end if;
             Sig.Last_Value.E8 := Sig.Value_Ptr.E8;
             Sig.Value_Ptr.E8 := Val.E8;
-            Value := Ghdl_U64 (Sig.Value_Ptr.E8);
+            Value := Interfaces.Unsigned_64 (Sig.Value_Ptr.E8);
          when Mode_E32 =>
             if Sig.Value_Ptr.E32 = Val.E32 then
                return;
             end if;
             Sig.Last_Value.E32 := Sig.Value_Ptr.E32;
             Sig.Value_Ptr.E32 := Val.E32;
-            Value := Ghdl_U64 (Sig.Value_Ptr.E32);
+            Value := Interfaces.Unsigned_64 (Sig.Value_Ptr.E32);
          when Mode_I32 =>
             if Sig.Value_Ptr.I32 = Val.I32 then
                return;
             end if;
             Sig.Last_Value.I32 := Sig.Value_Ptr.I32;
             Sig.Value_Ptr.I32 := Val.I32;
-            Value := To_Ghdl_U64 (Ghdl_I64 (Sig.Value_Ptr.I32));
+            Value := I64_To_Binary (Ghdl_I64 (Sig.Value_Ptr.I32));
          when Mode_I64 =>
             if Sig.Value_Ptr.I64 = Val.I64 then
                return;
             end if;
             Sig.Last_Value.I64 := Sig.Value_Ptr.I64;
             Sig.Value_Ptr.I64 := Val.I64;
-            Value := To_Ghdl_U64 (Sig.Value_Ptr.I64);
+            Value := I64_To_Binary (Sig.Value_Ptr.I64);
          when Mode_F64 =>
             if Sig.Value_Ptr.F64 = Val.F64 then
                return;

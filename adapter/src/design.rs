@@ -90,6 +90,7 @@ impl From<&Type> for hierarchy::SignalType {
             Type::Bit { .. } => hierarchy::SignalType::Bit,
             Type::Logic { .. } => hierarchy::SignalType::Logic,
             &Type::Discrete { left, right, dir } => {
+                // TODO this doesn't work for empty ranges (e.g., 10 downto 11)
                 let (min, max) = dir.min_max(left, right);
                 hierarchy::SignalType::Integer {
                     min,
@@ -98,6 +99,7 @@ impl From<&Type> for hierarchy::SignalType {
                 }
             },
             &Type::Float { left, right, dir } => {
+                // TODO this doesn't work for empty ranges (e.g., 10 downto 11)
                 let (min, max) = dir.min_max(left, right);
                 hierarchy::SignalType::Real {
                     min,
@@ -111,11 +113,15 @@ impl From<&Type> for hierarchy::SignalType {
                 dir,
                 is_last,
                 ref element_type,
-            } => hierarchy::SignalType::Array {
-                left,
-                right,
-                direction: dir.into(),
-                element_type: Box::new(element_type.as_ref().into()),
+            } => {
+                let element_type: Box<hierarchy::SignalType> =
+                    Box::new(element_type.as_ref().into());
+                hierarchy::SignalType::Array {
+                    left,
+                    right,
+                    direction: dir.into(),
+                    element_type,
+                }
             },
             Type::Other => todo!(),
         }
@@ -164,7 +170,7 @@ where
 /// Registers the design hierarchy with the WebSocket server.
 #[instrument(skip(state))]
 #[unsafe(no_mangle)]
-pub extern "C" fn adapter_register_design(
+extern "C" fn adapter_register_design(
     state: &mut crate::sim_interface::AdapterState,
     root_instance: u32,
     instance_count: u32,
@@ -282,7 +288,6 @@ fn build_module(
                 signals.push(hierarchy::Signal {
                     name: signal.name.clone(),
                     id: SignalInstanceId(*signal_id),
-                    sub_id_start: None,
                     typ: (&signal.typ).into(),
                 });
             },
