@@ -127,6 +127,7 @@ impl SubscriptionTracker {
                 let subscription_index = SubscriptionIndex(next_index as u32);
                 entry.insert(subscription_index);
                 self.subscriptions.push(element_id);
+                // TODO ensure that signal_id and element_index are in bounds
                 ghdl_set_signal_subscription(
                     element_id.signal_id.0,
                     element_id.element_index,

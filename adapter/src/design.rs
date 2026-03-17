@@ -114,12 +114,20 @@ impl From<&Type> for hierarchy::SignalType {
                 is_last,
                 ref element_type,
             } => {
+                let direction: hierarchy::Direction = dir.into();
                 let element_type: Box<hierarchy::SignalType> =
                     Box::new(element_type.as_ref().into());
+                let length = direction.length_for(left, right);
+                let element_count = match &*element_type {
+                    hierarchy::SignalType::Array { element_count, .. } => length * *element_count,
+                    _ => length,
+                };
+
                 hierarchy::SignalType::Array {
                     left,
                     right,
-                    direction: dir.into(),
+                    direction,
+                    element_count,
                     element_type,
                 }
             },
