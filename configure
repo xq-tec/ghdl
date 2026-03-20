@@ -21,7 +21,7 @@
 # place.
 # Note the absence of spaces and the quotes.
 # Suffix "-dev" is used during development.
-ghdl_version="4.1.0"
+ghdl_version="5.0.0-dev"
 
 backend=mcode
 backend_version="none"
@@ -34,12 +34,13 @@ GNATMAKE=${GNATMAKE:-gnatmake}
 ADA_FLAGS=${ADA_FLAGS:-}
 MAKE=${MAKE:-make}
 LDFLAGS=${LDFLAGS:-}
+LLVM_LDFLAGS=${LLVM_LDFLAGS:-'`$(LLVM_CONFIG) --ldflags --libs --system-libs`'}
 prefix=/usr/local
 libdirsuffix=lib
 libghdldirsuffix=lib/ghdl
 incdirsuffix=include
 gcc_src_dir=
-llvm_config=
+llvm_config=llvm-config
 backtrace_lib=
 llvm_be=llvm6
 build=
@@ -69,6 +70,7 @@ enable_gplcompat enable_libghdl libghdl_version ghdl_version
 with_sundials sundials_incflags sundials_ldflags
 COMPILER_GCC COMPILER_DEBUG COMPILER_MCODE COMPILER_LLVM POST_PROCESSOR
 INSTALL_PREFIX LIBDIR_SUFFIX LIBGHDLDIR_SUFFIX INCDIR_SUFFIX
+LLVM_LDFLAGS
 "
 
 # Find srcdir
@@ -102,7 +104,7 @@ check_version()
 for opt do
   optarg=`expr x"$opt" : 'x[^=]*=\(.*\)'`
   case "$opt" in
-    CC=*|CFLAGS=*|GNATMAKE=*|LDFLAGS=*|CXX=*)
+    CC=*|CFLAGS=*|GNATMAKE=*|LDFLAGS=*|CXX=*|LLVM_LDFLAGS=*)
       optvar=`expr x"$opt" : 'x\([^=]*\)=.*'`
       eval $optvar=\"$optarg\"
       ;;
@@ -117,6 +119,7 @@ for opt do
       llvm_config="$optarg/bin/llvm-config";           backend=llvm;;
     --with-llvm-config)     llvm_config="llvm-config"; backend=llvm;;
     --with-llvm-config=*)   llvm_config="$optarg";     backend=llvm;;
+    --with-llvm-jit)        backend=llvm_jit;;
     --with-backtrace-lib=*) backtrace_lib="$optarg";;
     --with-readline)        with_readline="Gnu";;
     --with-sundials=*)      with_sundials=true;
@@ -156,6 +159,7 @@ Options [defaults in brackets]:
   --incdir=INCDIR             C include dir path relative to PREFIX [$incdirsuffix]
   --with-gcc=DIR              use gcc backend from DIR
   --with-llvm-config[=LLVM-CONFIG]  use llvm backend [llvm-config]
+  --with-llvm-jit             use llvm-jit backend
   --with-backtrace-lib=LIB.a  link with libbacktrace LIB.a to display a
                               backtrace on errors (only for llvm).
   --disable-werror            warnings don't stop build
@@ -287,7 +291,7 @@ if test $backend = gcc; then
 fi
 
 # For llvm backend, check llvm-config
-if test $backend = llvm; then
+if test $backend = llvm -o $backend = llvm_jit; then
   # No quotes for llvm_config, so that options (like --link-static) can be
   # added.  As a consequence, spaces in --with-llvm-config= are not allowed
   # for the path.
@@ -319,6 +323,7 @@ if test $backend = llvm; then
        check_version 16.0 $llvm_version ||
        check_version 17.0 $llvm_version ||
        check_version 18.1 $llvm_version ||
+       check_version 19. $llvm_version ||
        false; then
     echo "Debugging is enabled with llvm $llvm_version"
   else
@@ -394,7 +399,7 @@ rm -f config.status
   echo subst_vars=\"$subst_vars\"
   for v in $subst_vars; do
     eval vval=\$$v
-    echo $v=\"$vval\"
+    echo $v=\'$vval\'
   done
   subst_files="Makefile default_paths.ads ghdl.gpr scripts/gcc/Make-lang.in"
   echo "for f in $subst_files; do"
@@ -433,6 +438,7 @@ if test $backend = mcode; then
     *mingw32*) ortho_flags="Flags_Windows${mcode64}" ;;
     *linux*)   ortho_flags="Flags_Linux${mcode64}" ;;
     *openbsd*) ortho_flags="Flags_Macosx${mcode64}" ;;
+    *netbsd*)  ortho_flags="Flags_Macosx${mcode64}" ;;
     *) echo "Unsupported $build build for mcode"; exit 1;;
   esac
   echo "Generate ortho_code-x86-flags.ads"

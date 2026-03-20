@@ -1414,6 +1414,15 @@ package body Trans.Chap2 is
                Object_Static => Src.Object_Static,
                Object_Var => Instantiate_Var (Src.Object_Var),
                Object_Rti => Src.Object_Rti);
+         when Kind_Alias =>
+            Dest.all :=
+              (Kind => Kind_Alias,
+               Mark => False,
+               Alias_Var => (Mode_Value =>
+                               Instantiate_Var (Src.Alias_Var (Mode_Value)),
+                             Mode_Signal =>
+                               Instantiate_Var (Src.Alias_Var (Mode_Signal))),
+               Alias_Kind => Src.Alias_Kind);
          when Kind_Signal =>
             pragma Assert (Src.Signal_Driver = Null_Var);
             pragma Assert (Src.Signal_Function = O_Dnode_Null);
@@ -1738,7 +1747,7 @@ package body Trans.Chap2 is
 
          case Get_Kind (Inter) is
             when Iir_Kind_Interface_Constant_Declaration =>
-               null;
+               Instantiate_Iir_Info (Get_Subtype_Indication (Inter));
 
             when Iir_Kind_Interface_Package_Declaration =>
                Instantiate_Iir_Generic_Chain_Info (Get_Generic_Chain (Inter));
@@ -1778,6 +1787,12 @@ package body Trans.Chap2 is
       Pop_Instantiate_Var_Scope
         (Info.Package_Instance_Spec_Scope'Access);
    end Instantiate_Info_Package;
+
+   procedure Instantiate_Info_Entity (Inst : Iir) is
+   begin
+      Instantiate_Iir_Generic_Chain_Info (Get_Generic_Chain (Inst));
+      Instantiate_Iir_Chain_Info (Get_Port_Chain (Inst));
+   end Instantiate_Info_Entity;
 
    procedure Update_Info_Package (Inst : Iir)
    is

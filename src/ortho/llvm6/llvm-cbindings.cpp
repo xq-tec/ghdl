@@ -1399,7 +1399,16 @@ new_var_decl(ODnode *Res, OIdent Ident, OStorage Storage, OTnode Atype)
 extern "C" void
 new_var_body(ODnode Res, OStorage Storage, OTnode Atype)
 {
-  abort();
+    switch(Storage) {
+    case O_Storage_Public:
+    case O_Storage_Private:
+      LLVMSetInitializer(Res->Ref, LLVMConstNull(Atype->Ref));
+      break;
+    case O_Storage_External:
+    case O_Storage_Local:
+      abort();
+      break;
+    }
 }
 
 struct ODnodeConst : ODnodeBase {
@@ -2912,10 +2921,8 @@ llvm_jit_get_address (ODnode decl)
   case ODKConst:
   case ODKVar: {
     const llvm::GlobalValue *gv = dyn_cast<const GlobalValue>(val);
-    SmallString<128> FullName;
 
-    Mangler::getNameWithPrefix(FullName, gv->getName(), EE->getDataLayout());
-    return (void *)EE->getGlobalValueAddress(std::string(FullName));
+    return (void *)EE->getGlobalValueAddress(std::string(gv->getName()));
   }
   case ODKSubprg:
     return EE->getPointerToFunction(dyn_cast<Function>(val));

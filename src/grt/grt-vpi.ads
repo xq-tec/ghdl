@@ -20,6 +20,7 @@
 
 with System; use System;
 with Interfaces; use Interfaces;
+-- with Interfaces.C.Pointers;
 with Ada.Unchecked_Conversion;
 with Grt.Types; use Grt.Types;
 with Grt.Avhpi; use Grt.Avhpi;
@@ -101,7 +102,9 @@ package Grt.Vpi is
    vpiSuppressVal:   constant Integer := 13;
 
    -- codes for type tag of vpi_time structure
-   vpiSimTime:       constant Integer :=  2;
+   vpiScaledRealTime   : constant Integer :=  1;
+   vpiSimTime          : constant Integer :=  2;
+   vpiSuppressTime     : constant Integer :=  3;
 
    -- codes for the reason tag of cb_data structure
    cbValueChange       : constant := 1;
@@ -144,6 +147,16 @@ package Grt.Vpi is
    pragma Convention (C, s_vpi_time);
    type p_vpi_time is access s_vpi_time;
 
+   type s_vpi_vecval is record
+      aval : Unsigned_32; -- PLI_INT32 in the standard, but a bit mask
+      bval : Unsigned_32;
+   end record;
+   pragma Convention (C, s_vpi_vecval);
+   type p_vpi_vecval is access s_vpi_vecval; -- Should be array
+
+   procedure Increment_p_vpi_vecval (Ptr : in out p_vpi_vecval);
+   pragma Import (C, Increment_p_vpi_vecval, "Increment_p_vpi_vecval");
+
    -- typedef struct t_vpi_value
    -- { int format;
    --   union
@@ -172,7 +185,8 @@ package Grt.Vpi is
          when vpiRealVal=>
             Real_M : Ghdl_F64;
             --when vpiTimeVal=>     mTime:     p_vpi_time;
-            --when vpiVectorVal=>   mVector:   p_vpi_vecval;
+         when vpiVectorVal=>
+            Vector: p_vpi_vecval;
             --when vpiStrengthVal=> mStrength: p_vpi_strengthval;
          when others =>
             null;
@@ -211,6 +225,15 @@ package Grt.Vpi is
    end record;
    pragma Convention (C, s_cb_data);
 
+   -- Flags for vpi_put_value
+   vpiNoDelay            : constant Integer := 1;
+   vpiInertialDelay      : constant Integer := 2;
+   vpiTransportDelay     : constant Integer := 3;
+   vpiPureTransportDelay : constant Integer := 4;
+   vpiForceFlag          : constant Integer := 5;
+   vpiReleaseFlag        : constant Integer := 6;
+   vpiCancelEvent        : constant Integer := 7;
+
    -- vpiHandle  vpi_iterate(int type, vpiHandle ref)
    function vpi_iterate (aType : Integer; Ref : vpiHandle) return vpiHandle;
    pragma Export (C, vpi_iterate, "vpi_iterate");
@@ -236,6 +259,11 @@ package Grt.Vpi is
    -- void  vpi_get_value(vpiHandle expr, p_vpi_value value);
    procedure vpi_get_value (Expr : vpiHandle; Value : p_vpi_value);
    pragma Export (C, vpi_get_value, "vpi_get_value");
+
+   -- Ugly, but C can do allocation on the fly with an auto.  Ada???
+   -- void  vpi_vec_callback_helper (p_cb_data cb, int Len);
+   procedure vpi_vec_callback_helper (cb : p_cb_data; Len : Integer);
+   pragma Import (C, vpi_vec_callback_helper, "vpi_get_value_vec_helper");
 
    -- void  vpi_get_time(vpiHandle obj, s_vpi_time*t);
    procedure vpi_get_time (Obj: vpiHandle; Time: p_vpi_time);

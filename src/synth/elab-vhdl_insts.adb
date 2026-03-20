@@ -238,7 +238,20 @@ package body Elab.Vhdl_Insts is
                raise Internal_Error;
 
             when Iir_Kinds_Interface_Subprogram_Declaration =>
-               null;
+               declare
+                  Act : Node;
+               begin
+                  case Get_Kind (Assoc) is
+                     when Iir_Kind_Association_Element_Open =>
+                        Act := Get_Open_Actual (Assoc);
+                     when Iir_Kind_Association_Element_Subprogram =>
+                        Act := Get_Actual (Assoc);
+                     when others =>
+                        raise Internal_Error;
+                  end case;
+                  Act := Strip_Denoting_Name (Act);
+                  Create_Interface_Subprg (Sub_Inst, Inter, Act);
+               end;
          end case;
 
          Next_Association_Interface (Assoc, Assoc_Inter);
@@ -285,12 +298,13 @@ package body Elab.Vhdl_Insts is
       Elab_Declarations (Pkg_Inst, Get_Declaration_Chain (Bod));
    end Elab_Package_Body;
 
-   procedure Elab_Package_Instantiation
-     (Parent_Inst : Synth_Instance_Acc; Pkg : Node)
+   procedure Elab_Package_Instantiation_Assoc
+     (Parent_Inst : Synth_Instance_Acc;
+      Pkg : Node;
+      Sub_Inst : out Synth_Instance_Acc;
+      Bod : out Node)
    is
       Uninst : constant Node := Get_Uninstantiated_Package_Decl (Pkg);
-      Bod : Node;
-      Sub_Inst : Synth_Instance_Acc;
    begin
       Sub_Inst := Create_Package_Instance (Parent_Inst, Pkg);
 
@@ -314,25 +328,30 @@ package body Elab.Vhdl_Insts is
         (Sub_Inst, Parent_Inst,
          Get_Generic_Chain (Pkg), Get_Generic_Map_Aspect_Chain (Pkg));
 
-      Elab_Declarations (Sub_Inst, Get_Declaration_Chain (Pkg));
-
       if Bod /= Null_Node then
          --  Macro expanded package instantiation.
-         if Get_Immediate_Body_Flag (Pkg) then
-            Elab_Declarations
-              (Sub_Inst, Get_Declaration_Chain (Bod));
+         if not Get_Immediate_Body_Flag (Pkg) then
+            --  Body will be elaborated later.
+            Bod := Null_Node;
          end if;
       else
          --  Shared body
-         declare
-            Uninst_Bod : constant Node := Get_Package_Body (Uninst);
-         begin
-            --  Synth declarations of (optional) body.
-            if Uninst_Bod /= Null_Node then
-               Elab_Declarations
-                 (Sub_Inst, Get_Declaration_Chain (Uninst_Bod));
-            end if;
-         end;
+         Bod := Get_Package_Body (Uninst);
+      end if;
+   end Elab_Package_Instantiation_Assoc;
+
+   procedure Elab_Package_Instantiation
+     (Parent_Inst : Synth_Instance_Acc; Pkg : Node)
+   is
+      Bod : Node;
+      Sub_Inst : Synth_Instance_Acc;
+   begin
+      Elab_Package_Instantiation_Assoc (Parent_Inst, Pkg, Sub_Inst, Bod);
+
+      Elab_Declarations (Sub_Inst, Get_Declaration_Chain (Pkg));
+
+      if Bod /= Null_Node then
+         Elab_Declarations (Sub_Inst, Get_Declaration_Chain (Bod));
       end if;
    end Elab_Package_Instantiation;
 
@@ -588,14 +607,14 @@ package body Elab.Vhdl_Insts is
                                         Inter : Node;
                                         Assoc : Node) return Type_Acc
    is
-      Inter_Type : constant Node := Get_Type (Inter);
-      Ind : Node;
       Marker : Mark_Type;
       Inter_Typ : Type_Acc;
       Val : Valtyp;
       Res : Type_Acc;
    begin
-      if not Is_Fully_Constrained_Type (Inter_Type) then
+      Inter_Typ := Elab_Declaration_Type (Sub_Inst, Inter);
+
+      if not Is_Bounded_Type (Inter_Typ) then
          --  TODO
          --  Find the association for this interface
          --  * if individual assoc: get type
@@ -610,7 +629,6 @@ package body Elab.Vhdl_Insts is
            and then not Get_Inertial_Flag (Assoc)
          then
             --  For expression: just compute the expression and associate.
-            Inter_Typ := Elab_Declaration_Type (Sub_Inst, Inter);
             Val := Synth_Expression_With_Type
               (Syn_Inst, Get_Actual (Assoc), Inter_Typ);
             Res := Val.Typ;
@@ -632,22 +650,12 @@ package body Elab.Vhdl_Insts is
             if Res /= null then
                Res := Unshare (Res, Global_Pool'Access);
             end if;
-
-            Ind := Get_Subtype_Indication (Inter);
-            if Res /= null
-              and then Ind /= Null_Iir
-              and then Get_Kind (Ind) in Iir_Kinds_Subtype_Definition
-              and then not Get_Is_Ref (Inter)
-            then
-               Create_Subtype_Object (Sub_Inst, Inter_Type, Res);
-            end if;
          end if;
 
          Release_Expr_Pool (Marker);
          return Res;
       else
-         Res := Elab_Declaration_Type (Sub_Inst, Inter);
-         return Res;
+         return Inter_Typ;
       end if;
    end Elab_Port_Association_Type;
 
@@ -1013,6 +1021,7 @@ package body Elab.Vhdl_Insts is
       Arch : Node;
       Config : Node)
    is
+      use Elab.Vhdl_Annotations;
       Sub_Inst : Synth_Instance_Acc;
       E_Ent : Node;
       E_Arch : Node;
@@ -1020,17 +1029,30 @@ package body Elab.Vhdl_Insts is
       if Flag_Macro_Expand_Instance
         and then Get_Macro_Expand_Flag (Entity)
       then
-         E_Ent := Vhdl.Sem_Inst.Instantiate_Entity_Declaration (Entity, Stmt);
-         E_Arch := Vhdl.Sem_Inst.Instantiate_Architecture
-           (Arch, E_Ent, Stmt, Stmt);
-         Elab.Vhdl_Annotations.Instantiate_Annotate (E_Ent);
-         Elab.Vhdl_Annotations.Instantiate_Annotate (E_Arch);
+         E_Ent := Get_Instantiated_Header (Stmt);
+         if E_Ent /= Null_Node
+           and then Elab.Vhdl_Annotations.Get_Ann (E_Ent) /= null
+         then
+            --  Was already instantiated
+            --  Do not re-instantiate the entity.
+            --  TODO: use a hash map for the architecture.
+            E_Arch := Vhdl.Sem_Inst.Instantiate_Architecture
+              (Arch, E_Ent, Stmt, Stmt);
+            Elab.Vhdl_Annotations.Instantiate_Annotate (E_Arch);
+         else
+            E_Ent := Vhdl.Sem_Inst.Instantiate_Entity_Declaration
+              (Entity, Stmt);
+            E_Arch := Vhdl.Sem_Inst.Instantiate_Architecture
+              (Arch, E_Ent, Stmt, Stmt);
+            Elab.Vhdl_Annotations.Instantiate_Annotate (E_Ent);
+            Elab.Vhdl_Annotations.Instantiate_Annotate (E_Arch);
 
-         --  TODO: remove previous Instantiated_Header.
-         Set_Instantiated_Header (Stmt, E_Ent);
+            --  TODO: remove previous Instantiated_Header.
+            Set_Instantiated_Header (Stmt, E_Ent);
 
-         pragma Assert (Get_Parent (E_Ent) = Null_Iir);
-         Set_Parent (E_Ent, Stmt);
+            pragma Assert (Get_Parent (E_Ent) = Null_Iir);
+            Set_Parent (E_Ent, Stmt);
+         end if;
       else
          E_Ent := Entity;
          E_Arch := Arch;
@@ -1203,11 +1225,11 @@ package body Elab.Vhdl_Insts is
                                    Get_Port_Map_Aspect_Chain (Bind));
       pragma Assert (Is_Expr_Pool_Empty);
 
+      Add_To_Elab_Units (E_Arch);
+
       if Flag_Elab_Sub_Instances then
          Elab_Instance_Body (Sub_Inst);
       end if;
-
-      Add_To_Elab_Units (E_Arch);
    end Elab_Component_Instantiation_Statement;
 
    procedure Elab_Design_Instantiation_Statement

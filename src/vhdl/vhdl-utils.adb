@@ -360,6 +360,7 @@ package body Vhdl.Utils is
                | Iir_Kind_Aggregate_Info
                | Iir_Kind_Entity_Class
                | Iir_Kind_Signature
+               | Iir_Kind_Box_Name
                | Iir_Kind_Break_Element
                | Iir_Kind_Reference_Name
                | Iir_Kind_Package_Header
@@ -1168,10 +1169,21 @@ package body Vhdl.Utils is
                       Iir_Kind_Record_Subtype_Definition);
    end Is_Record_Type;
 
+   --  Like Get_Constraint_State but for any type.
+   --  Always return Fully_Constrained for non composite types.
+   function Get_Type_Constraint_State (Def : Iir) return Iir_Constraint is
+   begin
+      case Get_Kind (Def) is
+         when Iir_Kinds_Composite_Type_Definition =>
+            return Get_Constraint_State (Def);
+         when others =>
+            return Fully_Constrained;
+      end case;
+   end Get_Type_Constraint_State;
+
    function Is_Fully_Constrained_Type (Def : Iir) return Boolean is
    begin
-      return Get_Kind (Def) not in Iir_Kinds_Composite_Type_Definition
-        or else Get_Constraint_State (Def) = Fully_Constrained;
+      return Get_Type_Constraint_State (Def) = Fully_Constrained;
    end Is_Fully_Constrained_Type;
 
    function Is_Object_Fully_Constrained (Decl : Iir) return Boolean is
@@ -1203,7 +1215,7 @@ package body Vhdl.Utils is
       end if;
 
       --  That's also true if the object is declared with a subtype attribute.
-      Base := Get_Base_Name (Obj);
+      Base := Get_Object_Prefix (Obj);
       case Get_Kind (Base) is
          when Iir_Kind_Variable_Declaration
             | Iir_Kind_Signal_Declaration
@@ -1211,7 +1223,8 @@ package body Vhdl.Utils is
             | Iir_Kind_Interface_Variable_Declaration
             | Iir_Kind_Interface_Signal_Declaration
             | Iir_Kind_Object_Alias_Declaration
-            | Iir_Kind_Interface_Constant_Declaration =>
+            | Iir_Kind_Interface_Constant_Declaration
+            | Iir_Kinds_External_Name =>
             declare
                Ind : constant Iir := Get_Subtype_Indication (Base);
             begin

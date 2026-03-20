@@ -335,61 +335,62 @@ class Iir_Kind(IntEnum):
     Absolute_Pathname = 276
     Relative_Pathname = 277
     Pathname_Element = 278
-    Base_Attribute = 279
-    Subtype_Attribute = 280
-    Element_Attribute = 281
-    Across_Attribute = 282
-    Through_Attribute = 283
-    Nature_Reference_Attribute = 284
-    Left_Type_Attribute = 285
-    Right_Type_Attribute = 286
-    High_Type_Attribute = 287
-    Low_Type_Attribute = 288
-    Ascending_Type_Attribute = 289
-    Image_Attribute = 290
-    Value_Attribute = 291
-    Pos_Attribute = 292
-    Val_Attribute = 293
-    Succ_Attribute = 294
-    Pred_Attribute = 295
-    Leftof_Attribute = 296
-    Rightof_Attribute = 297
-    Signal_Slew_Attribute = 298
-    Quantity_Slew_Attribute = 299
-    Ramp_Attribute = 300
-    Zoh_Attribute = 301
-    Ltf_Attribute = 302
-    Ztf_Attribute = 303
-    Dot_Attribute = 304
-    Integ_Attribute = 305
-    Quantity_Delayed_Attribute = 306
-    Above_Attribute = 307
-    Delayed_Attribute = 308
-    Stable_Attribute = 309
-    Quiet_Attribute = 310
-    Transaction_Attribute = 311
-    Event_Attribute = 312
-    Active_Attribute = 313
-    Last_Event_Attribute = 314
-    Last_Active_Attribute = 315
-    Last_Value_Attribute = 316
-    Driving_Attribute = 317
-    Driving_Value_Attribute = 318
-    Behavior_Attribute = 319
-    Structure_Attribute = 320
-    Simple_Name_Attribute = 321
-    Instance_Name_Attribute = 322
-    Path_Name_Attribute = 323
-    Converse_Attribute = 324
-    Left_Array_Attribute = 325
-    Right_Array_Attribute = 326
-    High_Array_Attribute = 327
-    Low_Array_Attribute = 328
-    Length_Array_Attribute = 329
-    Ascending_Array_Attribute = 330
-    Range_Array_Attribute = 331
-    Reverse_Range_Array_Attribute = 332
-    Attribute_Name = 333
+    Box_Name = 279
+    Base_Attribute = 280
+    Subtype_Attribute = 281
+    Element_Attribute = 282
+    Across_Attribute = 283
+    Through_Attribute = 284
+    Nature_Reference_Attribute = 285
+    Left_Type_Attribute = 286
+    Right_Type_Attribute = 287
+    High_Type_Attribute = 288
+    Low_Type_Attribute = 289
+    Ascending_Type_Attribute = 290
+    Image_Attribute = 291
+    Value_Attribute = 292
+    Pos_Attribute = 293
+    Val_Attribute = 294
+    Succ_Attribute = 295
+    Pred_Attribute = 296
+    Leftof_Attribute = 297
+    Rightof_Attribute = 298
+    Signal_Slew_Attribute = 299
+    Quantity_Slew_Attribute = 300
+    Ramp_Attribute = 301
+    Zoh_Attribute = 302
+    Ltf_Attribute = 303
+    Ztf_Attribute = 304
+    Dot_Attribute = 305
+    Integ_Attribute = 306
+    Quantity_Delayed_Attribute = 307
+    Above_Attribute = 308
+    Delayed_Attribute = 309
+    Stable_Attribute = 310
+    Quiet_Attribute = 311
+    Transaction_Attribute = 312
+    Event_Attribute = 313
+    Active_Attribute = 314
+    Last_Event_Attribute = 315
+    Last_Active_Attribute = 316
+    Last_Value_Attribute = 317
+    Driving_Attribute = 318
+    Driving_Value_Attribute = 319
+    Behavior_Attribute = 320
+    Structure_Attribute = 321
+    Simple_Name_Attribute = 322
+    Instance_Name_Attribute = 323
+    Path_Name_Attribute = 324
+    Converse_Attribute = 325
+    Left_Array_Attribute = 326
+    Right_Array_Attribute = 327
+    High_Array_Attribute = 328
+    Low_Array_Attribute = 329
+    Length_Array_Attribute = 330
+    Ascending_Array_Attribute = 331
+    Range_Array_Attribute = 332
+    Reverse_Range_Array_Attribute = 333
+    Attribute_Name = 334
 
 
 @export
@@ -2028,21 +2029,21 @@ class Iir_Predefined(IntEnum):
 @BindToLibGHDL("vhdl__nodes__get_kind")
 def Get_Kind(node: Iir) -> IirKind:
     """Get node kind."""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
 @BindToLibGHDL("vhdl__nodes__get_location")
 def Get_Location(node: Iir) -> LocationType:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
 @BindToLibGHDL("vhdl__nodes__get_first_design_unit")
 def Get_First_Design_Unit(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2055,7 +2056,7 @@ def Set_First_Design_Unit(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_last_design_unit")
 def Get_Last_Design_Unit(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2068,7 +2069,7 @@ def Set_Last_Design_Unit(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_library_declaration")
 def Get_Library_Declaration(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2081,7 +2082,7 @@ def Set_Library_Declaration(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_file_checksum")
 def Get_File_Checksum(obj: Iir) -> FileChecksumId:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2094,7 +2095,7 @@ def Set_File_Checksum(obj: Iir, value: FileChecksumId) -> None:
 @BindToLibGHDL("vhdl__nodes__get_analysis_time_stamp")
 def Get_Analysis_Time_Stamp(obj: Iir) -> TimeStampId:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2107,7 +2108,7 @@ def Set_Analysis_Time_Stamp(obj: Iir, value: TimeStampId) -> None:
 @BindToLibGHDL("vhdl__nodes__get_design_file_source")
 def Get_Design_File_Source(obj: Iir) -> SourceFileEntry:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2120,7 +2121,7 @@ def Set_Design_File_Source(obj: Iir, value: SourceFileEntry) -> None:
 @BindToLibGHDL("vhdl__nodes__get_library")
 def Get_Library(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2133,7 +2134,7 @@ def Set_Library(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_design_file_filename")
 def Get_Design_File_Filename(obj: Iir) -> NameId:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2146,7 +2147,7 @@ def Set_Design_File_Filename(obj: Iir, value: NameId) -> None:
 @BindToLibGHDL("vhdl__nodes__get_design_file_directory")
 def Get_Design_File_Directory(obj: Iir) -> NameId:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2159,7 +2160,7 @@ def Set_Design_File_Directory(obj: Iir, value: NameId) -> None:
 @BindToLibGHDL("vhdl__nodes__get_design_file")
 def Get_Design_File(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2172,7 +2173,7 @@ def Set_Design_File(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_design_file_chain")
 def Get_Design_File_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2185,7 +2186,7 @@ def Set_Design_File_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_library_directory")
 def Get_Library_Directory(obj: Iir) -> NameId:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2198,7 +2199,7 @@ def Set_Library_Directory(obj: Iir, value: NameId) -> None:
 @BindToLibGHDL("vhdl__nodes__get_date")
 def Get_Date(obj: Iir) -> DateType:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2211,7 +2212,7 @@ def Set_Date(obj: Iir, value: DateType) -> None:
 @BindToLibGHDL("vhdl__nodes__get_context_items")
 def Get_Context_Items(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2224,7 +2225,7 @@ def Set_Context_Items(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_dependence_list")
 def Get_Dependence_List(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2237,7 +2238,7 @@ def Set_Dependence_List(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_analysis_checks_list")
 def Get_Analysis_Checks_List(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2250,7 +2251,7 @@ def Set_Analysis_Checks_List(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_date_state")
 def Get_Date_State(obj: Iir) -> DateStateType:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2263,7 +2264,7 @@ def Set_Date_State(obj: Iir, value: DateStateType) -> None:
 @BindToLibGHDL("vhdl__nodes__get_guarded_target_state")
 def Get_Guarded_Target_State(obj: Iir) -> TriStateType:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2276,7 +2277,7 @@ def Set_Guarded_Target_State(obj: Iir, value: TriStateType) -> None:
 @BindToLibGHDL("vhdl__nodes__get_library_unit")
 def Get_Library_Unit(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2289,7 +2290,7 @@ def Set_Library_Unit(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_hash_chain")
 def Get_Hash_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2302,7 +2303,7 @@ def Set_Hash_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_design_unit_source_pos")
 def Get_Design_Unit_Source_Pos(obj: Iir) -> SourcePtr:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2315,7 +2316,7 @@ def Set_Design_Unit_Source_Pos(obj: Iir, value: SourcePtr) -> None:
 @BindToLibGHDL("vhdl__nodes__get_design_unit_source_line")
 def Get_Design_Unit_Source_Line(obj: Iir) -> Int32:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2328,7 +2329,7 @@ def Set_Design_Unit_Source_Line(obj: Iir, value: Int32) -> None:
 @BindToLibGHDL("vhdl__nodes__get_design_unit_source_col")
 def Get_Design_Unit_Source_Col(obj: Iir) -> Int32:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2341,7 +2342,7 @@ def Set_Design_Unit_Source_Col(obj: Iir, value: Int32) -> None:
 @BindToLibGHDL("vhdl__nodes__get_value")
 def Get_Value(obj: Iir) -> Int64:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2354,7 +2355,7 @@ def Set_Value(obj: Iir, value: Int64) -> None:
 @BindToLibGHDL("vhdl__nodes__get_enum_pos")
 def Get_Enum_Pos(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2367,7 +2368,7 @@ def Set_Enum_Pos(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_physical_literal")
 def Get_Physical_Literal(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2380,7 +2381,7 @@ def Set_Physical_Literal(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_fp_value")
 def Get_Fp_Value(obj: Iir) -> Fp64:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2393,7 +2394,7 @@ def Set_Fp_Value(obj: Iir, value: Fp64) -> None:
 @BindToLibGHDL("vhdl__nodes__get_simple_aggregate_list")
 def Get_Simple_Aggregate_List(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2406,7 +2407,7 @@ def Set_Simple_Aggregate_List(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_string8_id")
 def Get_String8_Id(obj: Iir) -> String8Id:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2419,7 +2420,7 @@ def Set_String8_Id(obj: Iir, value: String8Id) -> None:
 @BindToLibGHDL("vhdl__nodes__get_string_length")
 def Get_String_Length(obj: Iir) -> Int32:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2432,7 +2433,7 @@ def Set_String_Length(obj: Iir, value: Int32) -> None:
 @BindToLibGHDL("vhdl__nodes__get_bit_string_base")
 def Get_Bit_String_Base(obj: Iir) -> NumberBaseType:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2445,7 +2446,7 @@ def Set_Bit_String_Base(obj: Iir, value: NumberBaseType) -> None:
 @BindToLibGHDL("vhdl__nodes__get_has_signed")
 def Get_Has_Signed(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2458,7 +2459,7 @@ def Set_Has_Signed(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_has_sign")
 def Get_Has_Sign(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2471,7 +2472,7 @@ def Set_Has_Sign(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_has_length")
 def Get_Has_Length(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2484,7 +2485,7 @@ def Set_Has_Length(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_literal_length")
 def Get_Literal_Length(obj: Iir) -> Int32:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2497,7 +2498,7 @@ def Set_Literal_Length(obj: Iir, value: Int32) -> None:
 @BindToLibGHDL("vhdl__nodes__get_literal_origin")
 def Get_Literal_Origin(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2510,7 +2511,7 @@ def Set_Literal_Origin(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_range_origin")
 def Get_Range_Origin(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2523,7 +2524,7 @@ def Set_Range_Origin(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_literal_subtype")
 def Get_Literal_Subtype(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2536,7 +2537,7 @@ def Set_Literal_Subtype(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_allocator_subtype")
 def Get_Allocator_Subtype(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2549,7 +2550,7 @@ def Set_Allocator_Subtype(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_entity_class")
 def Get_Entity_Class(obj: Iir) -> Tok:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2562,7 +2563,7 @@ def Set_Entity_Class(obj: Iir, value: Tok) -> None:
 @BindToLibGHDL("vhdl__nodes__get_entity_name_list")
 def Get_Entity_Name_List(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2575,7 +2576,7 @@ def Set_Entity_Name_List(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_attribute_designator")
 def Get_Attribute_Designator(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2588,7 +2589,7 @@ def Set_Attribute_Designator(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_attribute_specification_chain")
 def Get_Attribute_Specification_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2601,7 +2602,7 @@ def Set_Attribute_Specification_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_attribute_specification")
 def Get_Attribute_Specification(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2614,7 +2615,7 @@ def Set_Attribute_Specification(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_static_attribute_flag")
 def Get_Static_Attribute_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2627,7 +2628,7 @@ def Set_Static_Attribute_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_signal_list")
 def Get_Signal_List(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2640,7 +2641,7 @@ def Set_Signal_List(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_quantity_list")
 def Get_Quantity_List(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2653,7 +2654,7 @@ def Set_Quantity_List(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_designated_entity")
 def Get_Designated_Entity(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2666,7 +2667,7 @@ def Set_Designated_Entity(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_formal")
 def Get_Formal(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2679,7 +2680,7 @@ def Set_Formal(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_actual")
 def Get_Actual(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2692,7 +2693,7 @@ def Set_Actual(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_open_actual")
 def Get_Open_Actual(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2705,7 +2706,7 @@ def Set_Open_Actual(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_actual_conversion")
 def Get_Actual_Conversion(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2718,7 +2719,7 @@ def Set_Actual_Conversion(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_formal_conversion")
 def Get_Formal_Conversion(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2731,7 +2732,7 @@ def Set_Formal_Conversion(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_whole_association_flag")
 def Get_Whole_Association_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2744,7 +2745,7 @@ def Set_Whole_Association_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_collapse_signal_flag")
 def Get_Collapse_Signal_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2757,7 +2758,7 @@ def Set_Collapse_Signal_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_artificial_flag")
 def Get_Artificial_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2770,7 +2771,7 @@ def Set_Artificial_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_open_flag")
 def Get_Open_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2783,7 +2784,7 @@ def Set_Open_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_after_drivers_flag")
 def Get_After_Drivers_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2796,7 +2797,7 @@ def Set_After_Drivers_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_we_value")
 def Get_We_Value(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2809,7 +2810,7 @@ def Set_We_Value(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_time")
 def Get_Time(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2822,7 +2823,7 @@ def Set_Time(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_associated_expr")
 def Get_Associated_Expr(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2835,7 +2836,7 @@ def Set_Associated_Expr(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_associated_block")
 def Get_Associated_Block(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2848,7 +2849,7 @@ def Set_Associated_Block(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_associated_chain")
 def Get_Associated_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2861,7 +2862,7 @@ def Set_Associated_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_choice_name")
 def Get_Choice_Name(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2874,7 +2875,7 @@ def Set_Choice_Name(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_choice_expression")
 def Get_Choice_Expression(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2887,7 +2888,7 @@ def Set_Choice_Expression(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_choice_range")
 def Get_Choice_Range(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2900,7 +2901,7 @@ def Set_Choice_Range(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_same_alternative_flag")
 def Get_Same_Alternative_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2913,7 +2914,7 @@ def Set_Same_Alternative_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_element_type_flag")
 def Get_Element_Type_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2926,7 +2927,7 @@ def Set_Element_Type_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_architecture")
 def Get_Architecture(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2939,7 +2940,7 @@ def Set_Architecture(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_block_specification")
 def Get_Block_Specification(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2952,7 +2953,7 @@ def Set_Block_Specification(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_prev_block_configuration")
 def Get_Prev_Block_Configuration(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2965,7 +2966,7 @@ def Set_Prev_Block_Configuration(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_configuration_item_chain")
 def Get_Configuration_Item_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2978,7 +2979,7 @@ def Set_Configuration_Item_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_attribute_value_chain")
 def Get_Attribute_Value_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -2991,7 +2992,7 @@ def Set_Attribute_Value_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_spec_chain")
 def Get_Spec_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3004,7 +3005,7 @@ def Set_Spec_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_value_chain")
 def Get_Value_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3017,7 +3018,7 @@ def Set_Value_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_attribute_value_spec_chain")
 def Get_Attribute_Value_Spec_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3030,7 +3031,7 @@ def Set_Attribute_Value_Spec_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_entity_name")
 def Get_Entity_Name(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3043,7 +3044,7 @@ def Set_Entity_Name(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_package")
 def Get_Package(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3056,7 +3057,7 @@ def Set_Package(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_package_body")
 def Get_Package_Body(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3069,7 +3070,7 @@ def Set_Package_Body(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_instance_package_body")
 def Get_Instance_Package_Body(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3082,7 +3083,7 @@ def Set_Instance_Package_Body(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_owned_instance_package_body")
 def Get_Owned_Instance_Package_Body(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3095,7 +3096,7 @@ def Set_Owned_Instance_Package_Body(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_need_body")
 def Get_Need_Body(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3108,7 +3109,7 @@ def Set_Need_Body(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_immediate_body_flag")
 def Get_Immediate_Body_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3121,7 +3122,7 @@ def Set_Immediate_Body_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_macro_expand_flag")
 def Get_Macro_Expand_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3134,7 +3135,7 @@ def Set_Macro_Expand_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_need_instance_bodies")
 def Get_Need_Instance_Bodies(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3147,7 +3148,7 @@ def Set_Need_Instance_Bodies(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_hierarchical_name")
 def Get_Hierarchical_Name(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3160,7 +3161,7 @@ def Set_Hierarchical_Name(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_vunit_item_chain")
 def Get_Vunit_Item_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3173,7 +3174,7 @@ def Set_Vunit_Item_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_bound_vunit_chain")
 def Get_Bound_Vunit_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3186,7 +3187,7 @@ def Set_Bound_Vunit_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_verification_block_configuration")
 def Get_Verification_Block_Configuration(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3199,7 +3200,7 @@ def Set_Verification_Block_Configuration(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_block_configuration")
 def Get_Block_Configuration(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3212,7 +3213,7 @@ def Set_Block_Configuration(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_concurrent_statement_chain")
 def Get_Concurrent_Statement_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3225,7 +3226,7 @@ def Set_Concurrent_Statement_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_chain")
 def Get_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3238,7 +3239,7 @@ def Set_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_port_chain")
 def Get_Port_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3251,7 +3252,7 @@ def Set_Port_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_generic_chain")
 def Get_Generic_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3264,7 +3265,7 @@ def Set_Generic_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_type")
 def Get_Type(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3277,7 +3278,7 @@ def Set_Type(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_subtype_indication")
 def Get_Subtype_Indication(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3290,7 +3291,7 @@ def Set_Subtype_Indication(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_discrete_range")
 def Get_Discrete_Range(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3303,7 +3304,7 @@ def Set_Discrete_Range(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_type_definition")
 def Get_Type_Definition(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3316,7 +3317,7 @@ def Set_Type_Definition(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_subtype_definition")
 def Get_Subtype_Definition(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3329,7 +3330,7 @@ def Set_Subtype_Definition(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_incomplete_type_declaration")
 def Get_Incomplete_Type_Declaration(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3342,7 +3343,7 @@ def Set_Incomplete_Type_Declaration(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_interface_type_subprograms")
 def Get_Interface_Type_Subprograms(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3355,7 +3356,7 @@ def Set_Interface_Type_Subprograms(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_interface_type_definition")
 def Get_Interface_Type_Definition(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3368,7 +3369,7 @@ def Set_Interface_Type_Definition(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_nature_definition")
 def Get_Nature_Definition(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3381,7 +3382,7 @@ def Set_Nature_Definition(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_nature")
 def Get_Nature(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3394,7 +3395,7 @@ def Set_Nature(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_subnature_indication")
 def Get_Subnature_Indication(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3407,7 +3408,7 @@ def Set_Subnature_Indication(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_reference_terminal_flag")
 def Get_Reference_Terminal_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3420,7 +3421,7 @@ def Set_Reference_Terminal_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_mode")
 def Get_Mode(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3433,7 +3434,7 @@ def Set_Mode(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_guarded_signal_flag")
 def Get_Guarded_Signal_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3446,7 +3447,7 @@ def Set_Guarded_Signal_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_signal_kind")
 def Get_Signal_Kind(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3459,7 +3460,7 @@ def Set_Signal_Kind(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_base_name")
 def Get_Base_Name(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3472,7 +3473,7 @@ def Set_Base_Name(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_interface_declaration_chain")
 def Get_Interface_Declaration_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3485,7 +3486,7 @@ def Set_Interface_Declaration_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_default_subprogram")
 def Get_Default_Subprogram(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3498,7 +3499,7 @@ def Set_Default_Subprogram(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_associated_subprogram")
 def Get_Associated_Subprogram(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3511,7 +3512,7 @@ def Set_Associated_Subprogram(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_subprogram_specification")
 def Get_Subprogram_Specification(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3524,7 +3525,7 @@ def Set_Subprogram_Specification(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_sequential_statement_chain")
 def Get_Sequential_Statement_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3537,7 +3538,7 @@ def Set_Sequential_Statement_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_simultaneous_statement_chain")
 def Get_Simultaneous_Statement_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3550,7 +3551,7 @@ def Set_Simultaneous_Statement_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_subprogram_body")
 def Get_Subprogram_Body(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3563,7 +3564,7 @@ def Set_Subprogram_Body(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_overload_number")
 def Get_Overload_Number(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3576,7 +3577,7 @@ def Set_Overload_Number(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_subprogram_depth")
 def Get_Subprogram_Depth(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3589,7 +3590,7 @@ def Set_Subprogram_Depth(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_subprogram_hash")
 def Get_Subprogram_Hash(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3602,7 +3603,7 @@ def Set_Subprogram_Hash(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_impure_depth")
 def Get_Impure_Depth(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3615,7 +3616,7 @@ def Set_Impure_Depth(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_return_type")
 def Get_Return_Type(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3628,7 +3629,7 @@ def Set_Return_Type(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_implicit_definition")
 def Get_Implicit_Definition(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3641,7 +3642,7 @@ def Set_Implicit_Definition(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_uninstantiated_subprogram_name")
 def Get_Uninstantiated_Subprogram_Name(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3654,7 +3655,7 @@ def Set_Uninstantiated_Subprogram_Name(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_default_value")
 def Get_Default_Value(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3667,7 +3668,7 @@ def Set_Default_Value(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_mode_view_indication")
 def Get_Mode_View_Indication(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3680,7 +3681,7 @@ def Set_Mode_View_Indication(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_deferred_declaration")
 def Get_Deferred_Declaration(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3693,7 +3694,7 @@ def Set_Deferred_Declaration(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_deferred_declaration_flag")
 def Get_Deferred_Declaration_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3706,7 +3707,7 @@ def Set_Deferred_Declaration_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_shared_flag")
 def Get_Shared_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3719,7 +3720,7 @@ def Set_Shared_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_design_unit")
 def Get_Design_Unit(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3732,7 +3733,7 @@ def Set_Design_Unit(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_block_statement")
 def Get_Block_Statement(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3745,7 +3746,7 @@ def Set_Block_Statement(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_signal_driver")
 def Get_Signal_Driver(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3758,7 +3759,7 @@ def Set_Signal_Driver(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_declaration_chain")
 def Get_Declaration_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3771,7 +3772,7 @@ def Set_Declaration_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_file_logical_name")
 def Get_File_Logical_Name(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3784,7 +3785,7 @@ def Set_File_Logical_Name(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_file_open_kind")
 def Get_File_Open_Kind(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3797,7 +3798,7 @@ def Set_File_Open_Kind(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_element_position")
 def Get_Element_Position(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3810,7 +3811,7 @@ def Set_Element_Position(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_use_clause_chain")
 def Get_Use_Clause_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3823,7 +3824,7 @@ def Set_Use_Clause_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_context_reference_chain")
 def Get_Context_Reference_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3836,7 +3837,7 @@ def Set_Context_Reference_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_inherit_spec_chain")
 def Get_Inherit_Spec_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3849,7 +3850,7 @@ def Set_Inherit_Spec_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_selected_name")
 def Get_Selected_Name(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3862,7 +3863,7 @@ def Set_Selected_Name(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_mode_view_name")
 def Get_Mode_View_Name(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3875,7 +3876,7 @@ def Set_Mode_View_Name(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_type_declarator")
 def Get_Type_Declarator(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3888,7 +3889,7 @@ def Set_Type_Declarator(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_complete_type_definition")
 def Get_Complete_Type_Definition(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3901,7 +3902,7 @@ def Set_Complete_Type_Definition(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_incomplete_type_ref_chain")
 def Get_Incomplete_Type_Ref_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3914,7 +3915,7 @@ def Set_Incomplete_Type_Ref_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_associated_type")
 def Get_Associated_Type(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3927,7 +3928,7 @@ def Set_Associated_Type(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_enumeration_literal_list")
 def Get_Enumeration_Literal_List(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3940,7 +3941,7 @@ def Set_Enumeration_Literal_List(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_entity_class_entry_chain")
 def Get_Entity_Class_Entry_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3953,7 +3954,7 @@ def Set_Entity_Class_Entry_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_group_constituent_list")
 def Get_Group_Constituent_List(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3966,7 +3967,7 @@ def Set_Group_Constituent_List(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_unit_chain")
 def Get_Unit_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3979,7 +3980,7 @@ def Set_Unit_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_primary_unit")
 def Get_Primary_Unit(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -3992,7 +3993,7 @@ def Set_Primary_Unit(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_identifier")
 def Get_Identifier(obj: Iir) -> NameId:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4005,7 +4006,7 @@ def Set_Identifier(obj: Iir, value: NameId) -> None:
 @BindToLibGHDL("vhdl__nodes__get_label")
 def Get_Label(obj: Iir) -> NameId:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4018,7 +4019,7 @@ def Set_Label(obj: Iir, value: NameId) -> None:
 @BindToLibGHDL("vhdl__nodes__get_return_identifier")
 def Get_Return_Identifier(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4031,7 +4032,7 @@ def Set_Return_Identifier(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_visible_flag")
 def Get_Visible_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4044,7 +4045,7 @@ def Set_Visible_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_range_constraint")
 def Get_Range_Constraint(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4057,7 +4058,7 @@ def Set_Range_Constraint(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_direction")
 def Get_Direction(obj: Iir) -> DirectionType:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4070,7 +4071,7 @@ def Set_Direction(obj: Iir, value: DirectionType) -> None:
 @BindToLibGHDL("vhdl__nodes__get_left_limit")
 def Get_Left_Limit(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4083,7 +4084,7 @@ def Set_Left_Limit(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_right_limit")
 def Get_Right_Limit(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4096,7 +4097,7 @@ def Set_Right_Limit(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_left_limit_expr")
 def Get_Left_Limit_Expr(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4109,7 +4110,7 @@ def Set_Left_Limit_Expr(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_right_limit_expr")
 def Get_Right_Limit_Expr(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4122,7 +4123,7 @@ def Set_Right_Limit_Expr(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_parent_type")
 def Get_Parent_Type(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4135,7 +4136,7 @@ def Set_Parent_Type(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_simple_nature")
 def Get_Simple_Nature(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4148,7 +4149,7 @@ def Set_Simple_Nature(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_base_nature")
 def Get_Base_Nature(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4161,7 +4162,7 @@ def Set_Base_Nature(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_resolution_indication")
 def Get_Resolution_Indication(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4174,7 +4175,7 @@ def Set_Resolution_Indication(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_record_element_resolution_chain")
 def Get_Record_Element_Resolution_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4187,7 +4188,7 @@ def Set_Record_Element_Resolution_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_tolerance")
 def Get_Tolerance(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4200,7 +4201,7 @@ def Set_Tolerance(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_plus_terminal_name")
 def Get_Plus_Terminal_Name(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4213,7 +4214,7 @@ def Set_Plus_Terminal_Name(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_minus_terminal_name")
 def Get_Minus_Terminal_Name(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4226,7 +4227,7 @@ def Set_Minus_Terminal_Name(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_plus_terminal")
 def Get_Plus_Terminal(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4239,7 +4240,7 @@ def Set_Plus_Terminal(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_minus_terminal")
 def Get_Minus_Terminal(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4252,7 +4253,7 @@ def Set_Minus_Terminal(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_magnitude_expression")
 def Get_Magnitude_Expression(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4265,7 +4266,7 @@ def Set_Magnitude_Expression(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_phase_expression")
 def Get_Phase_Expression(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4278,7 +4279,7 @@ def Set_Phase_Expression(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_power_expression")
 def Get_Power_Expression(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4291,7 +4292,7 @@ def Set_Power_Expression(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_simultaneous_left")
 def Get_Simultaneous_Left(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4304,7 +4305,7 @@ def Set_Simultaneous_Left(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_simultaneous_right")
 def Get_Simultaneous_Right(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4317,7 +4318,7 @@ def Set_Simultaneous_Right(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_text_file_flag")
 def Get_Text_File_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4330,7 +4331,7 @@ def Set_Text_File_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_only_characters_flag")
 def Get_Only_Characters_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4343,7 +4344,7 @@ def Set_Only_Characters_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_is_character_type")
 def Get_Is_Character_Type(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4356,7 +4357,7 @@ def Set_Is_Character_Type(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_nature_staticness")
 def Get_Nature_Staticness(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4369,7 +4370,7 @@ def Set_Nature_Staticness(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_type_staticness")
 def Get_Type_Staticness(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4382,7 +4383,7 @@ def Set_Type_Staticness(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_constraint_state")
 def Get_Constraint_State(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4395,7 +4396,7 @@ def Set_Constraint_State(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_index_subtype_list")
 def Get_Index_Subtype_List(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4408,7 +4409,7 @@ def Set_Index_Subtype_List(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_index_subtype_definition_list")
 def Get_Index_Subtype_Definition_List(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4421,7 +4422,7 @@ def Set_Index_Subtype_Definition_List(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_element_subtype_indication")
 def Get_Element_Subtype_Indication(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4434,7 +4435,7 @@ def Set_Element_Subtype_Indication(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_element_subtype")
 def Get_Element_Subtype(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4447,7 +4448,7 @@ def Set_Element_Subtype(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_element_subnature_indication")
 def Get_Element_Subnature_Indication(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4460,7 +4461,7 @@ def Set_Element_Subnature_Indication(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_element_subnature")
 def Get_Element_Subnature(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4473,7 +4474,7 @@ def Set_Element_Subnature(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_index_constraint_list")
 def Get_Index_Constraint_List(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4486,7 +4487,7 @@ def Set_Index_Constraint_List(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_array_element_constraint")
 def Get_Array_Element_Constraint(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4499,7 +4500,7 @@ def Set_Array_Element_Constraint(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_has_array_constraint_flag")
 def Get_Has_Array_Constraint_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4512,7 +4513,7 @@ def Set_Has_Array_Constraint_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_has_element_constraint_flag")
 def Get_Has_Element_Constraint_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4525,7 +4526,7 @@ def Set_Has_Element_Constraint_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_elements_declaration_list")
 def Get_Elements_Declaration_List(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4538,7 +4539,7 @@ def Set_Elements_Declaration_List(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_elements_definition_chain")
 def Get_Elements_Definition_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4551,7 +4552,7 @@ def Set_Elements_Definition_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_elements_definition_list")
 def Get_Elements_Definition_List(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4564,7 +4565,7 @@ def Set_Elements_Definition_List(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_owned_elements_chain")
 def Get_Owned_Elements_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4577,7 +4578,7 @@ def Set_Owned_Elements_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_designated_type")
 def Get_Designated_Type(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4590,7 +4591,7 @@ def Set_Designated_Type(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_designated_subtype_indication")
 def Get_Designated_Subtype_Indication(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4603,7 +4604,7 @@ def Set_Designated_Subtype_Indication(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_index_list")
 def Get_Index_List(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4616,7 +4617,7 @@ def Set_Index_List(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_reference")
 def Get_Reference(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4629,7 +4630,7 @@ def Set_Reference(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_nature_declarator")
 def Get_Nature_Declarator(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4642,7 +4643,7 @@ def Set_Nature_Declarator(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_across_type_mark")
 def Get_Across_Type_Mark(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4655,7 +4656,7 @@ def Set_Across_Type_Mark(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_through_type_mark")
 def Get_Through_Type_Mark(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4668,7 +4669,7 @@ def Set_Through_Type_Mark(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_across_type_definition")
 def Get_Across_Type_Definition(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4681,7 +4682,7 @@ def Set_Across_Type_Definition(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_through_type_definition")
 def Get_Through_Type_Definition(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4694,7 +4695,7 @@ def Set_Through_Type_Definition(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_across_type")
 def Get_Across_Type(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4707,7 +4708,7 @@ def Set_Across_Type(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_through_type")
 def Get_Through_Type(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4720,7 +4721,7 @@ def Set_Through_Type(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_target")
 def Get_Target(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4733,7 +4734,7 @@ def Set_Target(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_waveform_chain")
 def Get_Waveform_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4746,7 +4747,7 @@ def Set_Waveform_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_guard")
 def Get_Guard(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4759,7 +4760,7 @@ def Set_Guard(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_delay_mechanism")
 def Get_Delay_Mechanism(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4772,7 +4773,7 @@ def Set_Delay_Mechanism(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_reject_time_expression")
 def Get_Reject_Time_Expression(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4785,7 +4786,7 @@ def Set_Reject_Time_Expression(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_force_mode")
 def Get_Force_Mode(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4798,7 +4799,7 @@ def Set_Force_Mode(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_has_force_mode")
 def Get_Has_Force_Mode(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4811,7 +4812,7 @@ def Set_Has_Force_Mode(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_sensitivity_list")
 def Get_Sensitivity_List(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4824,7 +4825,7 @@ def Set_Sensitivity_List(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_process_origin")
 def Get_Process_Origin(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4837,7 +4838,7 @@ def Set_Process_Origin(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_package_origin")
 def Get_Package_Origin(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4850,7 +4851,7 @@ def Set_Package_Origin(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_condition_clause")
 def Get_Condition_Clause(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4863,7 +4864,7 @@ def Set_Condition_Clause(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_break_element")
 def Get_Break_Element(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4876,7 +4877,7 @@ def Set_Break_Element(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_selector_quantity")
 def Get_Selector_Quantity(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4889,7 +4890,7 @@ def Set_Selector_Quantity(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_break_quantity")
 def Get_Break_Quantity(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4902,7 +4903,7 @@ def Set_Break_Quantity(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_timeout_clause")
 def Get_Timeout_Clause(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4915,7 +4916,7 @@ def Set_Timeout_Clause(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_postponed_flag")
 def Get_Postponed_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4928,7 +4929,7 @@ def Set_Postponed_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_callees_list")
 def Get_Callees_List(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4941,7 +4942,7 @@ def Set_Callees_List(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_passive_flag")
 def Get_Passive_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4954,7 +4955,7 @@ def Set_Passive_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_resolution_function_flag")
 def Get_Resolution_Function_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4967,7 +4968,7 @@ def Set_Resolution_Function_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_wait_state")
 def Get_Wait_State(obj: Iir) -> TriStateType:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4980,7 +4981,7 @@ def Set_Wait_State(obj: Iir, value: TriStateType) -> None:
 @BindToLibGHDL("vhdl__nodes__get_all_sensitized_state")
 def Get_All_Sensitized_State(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -4993,7 +4994,7 @@ def Set_All_Sensitized_State(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_seen_flag")
 def Get_Seen_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5006,7 +5007,7 @@ def Set_Seen_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_pure_flag")
 def Get_Pure_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5019,7 +5020,7 @@ def Set_Pure_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_foreign_flag")
 def Get_Foreign_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5032,7 +5033,7 @@ def Set_Foreign_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_resolved_flag")
 def Get_Resolved_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5045,7 +5046,7 @@ def Set_Resolved_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_signal_type_flag")
 def Get_Signal_Type_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5058,7 +5059,7 @@ def Set_Signal_Type_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_has_signal_flag")
 def Get_Has_Signal_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5071,7 +5072,7 @@ def Set_Has_Signal_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_purity_state")
 def Get_Purity_State(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5084,7 +5085,7 @@ def Set_Purity_State(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_elab_flag")
 def Get_Elab_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5097,7 +5098,7 @@ def Set_Elab_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_vendor_library_flag")
 def Get_Vendor_Library_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5110,7 +5111,7 @@ def Set_Vendor_Library_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_configuration_mark_flag")
 def Get_Configuration_Mark_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5123,7 +5124,7 @@ def Set_Configuration_Mark_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_configuration_done_flag")
 def Get_Configuration_Done_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5136,7 +5137,7 @@ def Set_Configuration_Done_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_index_constraint_flag")
 def Get_Index_Constraint_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5149,7 +5150,7 @@ def Set_Index_Constraint_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_hide_implicit_flag")
 def Get_Hide_Implicit_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5162,7 +5163,7 @@ def Set_Hide_Implicit_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_assertion_condition")
 def Get_Assertion_Condition(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5175,7 +5176,7 @@ def Set_Assertion_Condition(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_report_expression")
 def Get_Report_Expression(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5188,7 +5189,7 @@ def Set_Report_Expression(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_severity_expression")
 def Get_Severity_Expression(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5201,7 +5202,7 @@ def Set_Severity_Expression(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_instantiated_unit")
 def Get_Instantiated_Unit(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5214,7 +5215,7 @@ def Set_Instantiated_Unit(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_instantiated_header")
 def Get_Instantiated_Header(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5227,7 +5228,7 @@ def Set_Instantiated_Header(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_generic_map_aspect_chain")
 def Get_Generic_Map_Aspect_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5240,7 +5241,7 @@ def Set_Generic_Map_Aspect_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_port_map_aspect_chain")
 def Get_Port_Map_Aspect_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5253,7 +5254,7 @@ def Set_Port_Map_Aspect_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_configuration_name")
 def Get_Configuration_Name(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5266,7 +5267,7 @@ def Set_Configuration_Name(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_component_configuration")
 def Get_Component_Configuration(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5279,7 +5280,7 @@ def Set_Component_Configuration(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_configuration_specification")
 def Get_Configuration_Specification(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5292,7 +5293,7 @@ def Set_Configuration_Specification(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_default_binding_indication")
 def Get_Default_Binding_Indication(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5305,7 +5306,7 @@ def Set_Default_Binding_Indication(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_default_configuration_declaration")
 def Get_Default_Configuration_Declaration(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5318,7 +5319,7 @@ def Set_Default_Configuration_Declaration(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_expression")
 def Get_Expression(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5331,7 +5332,7 @@ def Set_Expression(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_conditional_expression_chain")
 def Get_Conditional_Expression_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5344,7 +5345,7 @@ def Set_Conditional_Expression_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_allocator_designated_type")
 def Get_Allocator_Designated_Type(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5357,7 +5358,7 @@ def Set_Allocator_Designated_Type(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_selected_waveform_chain")
 def Get_Selected_Waveform_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5370,7 +5371,7 @@ def Set_Selected_Waveform_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_selected_expressions_chain")
 def Get_Selected_Expressions_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5383,7 +5384,7 @@ def Set_Selected_Expressions_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_conditional_waveform_chain")
 def Get_Conditional_Waveform_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5396,7 +5397,7 @@ def Set_Conditional_Waveform_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_guard_expression")
 def Get_Guard_Expression(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5409,7 +5410,7 @@ def Set_Guard_Expression(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_guard_decl")
 def Get_Guard_Decl(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5422,7 +5423,7 @@ def Set_Guard_Decl(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_guard_sensitivity_list")
 def Get_Guard_Sensitivity_List(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5435,7 +5436,7 @@ def Set_Guard_Sensitivity_List(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_attribute_implicit_chain")
 def Get_Attribute_Implicit_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5448,7 +5449,7 @@ def Set_Attribute_Implicit_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_block_block_configuration")
 def Get_Block_Block_Configuration(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5461,7 +5462,7 @@ def Set_Block_Block_Configuration(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_package_header")
 def Get_Package_Header(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5474,7 +5475,7 @@ def Set_Package_Header(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_block_header")
 def Get_Block_Header(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5487,7 +5488,7 @@ def Set_Block_Header(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_uninstantiated_package_name")
 def Get_Uninstantiated_Package_Name(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5500,7 +5501,7 @@ def Set_Uninstantiated_Package_Name(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_uninstantiated_package_decl")
 def Get_Uninstantiated_Package_Decl(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5513,7 +5514,7 @@ def Set_Uninstantiated_Package_Decl(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_associated_package")
 def Get_Associated_Package(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5526,7 +5527,7 @@ def Set_Associated_Package(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_instance_source_file")
 def Get_Instance_Source_File(obj: Iir) -> SourceFileEntry:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5539,7 +5540,7 @@ def Set_Instance_Source_File(obj: Iir, value: SourceFileEntry) -> None:
 @BindToLibGHDL("vhdl__nodes__get_generate_block_configuration")
 def Get_Generate_Block_Configuration(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5552,7 +5553,7 @@ def Set_Generate_Block_Configuration(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_generate_statement_body")
 def Get_Generate_Statement_Body(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5565,7 +5566,7 @@ def Set_Generate_Statement_Body(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_alternative_label")
 def Get_Alternative_Label(obj: Iir) -> NameId:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5578,7 +5579,7 @@ def Set_Alternative_Label(obj: Iir, value: NameId) -> None:
 @BindToLibGHDL("vhdl__nodes__get_generate_else_clause")
 def Get_Generate_Else_Clause(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5591,7 +5592,7 @@ def Set_Generate_Else_Clause(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_condition")
 def Get_Condition(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5604,7 +5605,7 @@ def Set_Condition(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_else_clause")
 def Get_Else_Clause(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5617,7 +5618,7 @@ def Set_Else_Clause(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_parameter_specification")
 def Get_Parameter_Specification(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5630,7 +5631,7 @@ def Set_Parameter_Specification(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_parent")
 def Get_Parent(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5643,7 +5644,7 @@ def Set_Parent(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_loop_label")
 def Get_Loop_Label(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5656,7 +5657,7 @@ def Set_Loop_Label(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_exit_flag")
 def Get_Exit_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5669,7 +5670,7 @@ def Set_Exit_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_next_flag")
 def Get_Next_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5682,7 +5683,7 @@ def Set_Next_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_component_name")
 def Get_Component_Name(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5695,7 +5696,7 @@ def Set_Component_Name(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_instantiation_list")
 def Get_Instantiation_List(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5708,7 +5709,7 @@ def Set_Instantiation_List(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_entity_aspect")
 def Get_Entity_Aspect(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5721,7 +5722,7 @@ def Set_Entity_Aspect(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_default_entity_aspect")
 def Get_Default_Entity_Aspect(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5734,7 +5735,7 @@ def Set_Default_Entity_Aspect(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_binding_indication")
 def Get_Binding_Indication(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5747,7 +5748,7 @@ def Set_Binding_Indication(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_named_entity")
 def Get_Named_Entity(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5760,7 +5761,7 @@ def Set_Named_Entity(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_referenced_name")
 def Get_Referenced_Name(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5773,7 +5774,7 @@ def Set_Referenced_Name(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_expr_staticness")
 def Get_Expr_Staticness(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5786,7 +5787,7 @@ def Set_Expr_Staticness(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_scalar_size")
 def Get_Scalar_Size(obj: Iir) -> ScalarSize:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5799,7 +5800,7 @@ def Set_Scalar_Size(obj: Iir, value: ScalarSize) -> None:
 @BindToLibGHDL("vhdl__nodes__get_error_origin")
 def Get_Error_Origin(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5812,7 +5813,7 @@ def Set_Error_Origin(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_operand")
 def Get_Operand(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5825,7 +5826,7 @@ def Set_Operand(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_left")
 def Get_Left(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5838,7 +5839,7 @@ def Set_Left(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_right")
 def Get_Right(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5851,7 +5852,7 @@ def Set_Right(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_unit_name")
 def Get_Unit_Name(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5864,7 +5865,7 @@ def Set_Unit_Name(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_name")
 def Get_Name(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5877,7 +5878,7 @@ def Set_Name(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_group_template_name")
 def Get_Group_Template_Name(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5890,7 +5891,7 @@ def Set_Group_Template_Name(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_name_staticness")
 def Get_Name_Staticness(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5903,7 +5904,7 @@ def Set_Name_Staticness(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_prefix")
 def Get_Prefix(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5916,7 +5917,7 @@ def Set_Prefix(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_signature_prefix")
 def Get_Signature_Prefix(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5929,7 +5930,7 @@ def Set_Signature_Prefix(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_external_pathname")
 def Get_External_Pathname(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5942,7 +5943,7 @@ def Set_External_Pathname(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_pathname_suffix")
 def Get_Pathname_Suffix(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5955,7 +5956,7 @@ def Set_Pathname_Suffix(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_pathname_expression")
 def Get_Pathname_Expression(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5968,7 +5969,7 @@ def Set_Pathname_Expression(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_in_formal_flag")
 def Get_In_Formal_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5981,7 +5982,7 @@ def Set_In_Formal_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_inertial_flag")
 def Get_Inertial_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -5994,7 +5995,7 @@ def Set_Inertial_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_slice_subtype")
 def Get_Slice_Subtype(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6007,7 +6008,7 @@ def Set_Slice_Subtype(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_suffix")
 def Get_Suffix(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6020,7 +6021,7 @@ def Set_Suffix(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_index_subtype")
 def Get_Index_Subtype(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6033,7 +6034,7 @@ def Set_Index_Subtype(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_parameter")
 def Get_Parameter(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6046,7 +6047,7 @@ def Set_Parameter(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_parameter_2")
 def Get_Parameter_2(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6059,7 +6060,7 @@ def Set_Parameter_2(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_parameter_3")
 def Get_Parameter_3(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6072,7 +6073,7 @@ def Set_Parameter_3(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_parameter_4")
 def Get_Parameter_4(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6085,7 +6086,7 @@ def Set_Parameter_4(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_attr_chain")
 def Get_Attr_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6098,7 +6099,7 @@ def Set_Attr_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_actual_type")
 def Get_Actual_Type(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6111,7 +6112,7 @@ def Set_Actual_Type(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_actual_type_definition")
 def Get_Actual_Type_Definition(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6124,7 +6125,7 @@ def Set_Actual_Type_Definition(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_association_chain")
 def Get_Association_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6137,7 +6138,7 @@ def Set_Association_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_individual_association_chain")
 def Get_Individual_Association_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6150,7 +6151,7 @@ def Set_Individual_Association_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_subprogram_association_chain")
 def Get_Subprogram_Association_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6163,7 +6164,7 @@ def Set_Subprogram_Association_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_aggregate_info")
 def Get_Aggregate_Info(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6176,7 +6177,7 @@ def Set_Aggregate_Info(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_sub_aggregate_info")
 def Get_Sub_Aggregate_Info(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6189,7 +6190,7 @@ def Set_Sub_Aggregate_Info(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_aggr_dynamic_flag")
 def Get_Aggr_Dynamic_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6202,7 +6203,7 @@ def Set_Aggr_Dynamic_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_aggr_min_length")
 def Get_Aggr_Min_Length(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6215,7 +6216,7 @@ def Set_Aggr_Min_Length(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_aggr_low_limit")
 def Get_Aggr_Low_Limit(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6228,7 +6229,7 @@ def Set_Aggr_Low_Limit(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_aggr_high_limit")
 def Get_Aggr_High_Limit(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6241,7 +6242,7 @@ def Set_Aggr_High_Limit(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_aggr_others_flag")
 def Get_Aggr_Others_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6254,7 +6255,7 @@ def Set_Aggr_Others_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_aggr_named_flag")
 def Get_Aggr_Named_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6267,7 +6268,7 @@ def Set_Aggr_Named_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_aggregate_expand_flag")
 def Get_Aggregate_Expand_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6280,7 +6281,7 @@ def Set_Aggregate_Expand_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_determined_aggregate_flag")
 def Get_Determined_Aggregate_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6293,7 +6294,7 @@ def Set_Determined_Aggregate_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_association_choices_chain")
 def Get_Association_Choices_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6306,7 +6307,7 @@ def Set_Association_Choices_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_case_statement_alternative_chain")
 def Get_Case_Statement_Alternative_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6319,7 +6320,7 @@ def Set_Case_Statement_Alternative_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_matching_flag")
 def Get_Matching_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6332,7 +6333,7 @@ def Set_Matching_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_choice_staticness")
 def Get_Choice_Staticness(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6345,7 +6346,7 @@ def Set_Choice_Staticness(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_procedure_call")
 def Get_Procedure_Call(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6358,7 +6359,7 @@ def Set_Procedure_Call(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_implementation")
 def Get_Implementation(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6371,7 +6372,7 @@ def Set_Implementation(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_parameter_association_chain")
 def Get_Parameter_Association_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6384,7 +6385,7 @@ def Set_Parameter_Association_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_method_object")
 def Get_Method_Object(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6397,7 +6398,7 @@ def Set_Method_Object(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_subtype_type_mark")
 def Get_Subtype_Type_Mark(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6410,7 +6411,7 @@ def Set_Subtype_Type_Mark(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_subnature_nature_mark")
 def Get_Subnature_Nature_Mark(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6423,7 +6424,7 @@ def Set_Subnature_Nature_Mark(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_type_conversion_subtype")
 def Get_Type_Conversion_Subtype(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6436,7 +6437,7 @@ def Set_Type_Conversion_Subtype(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_type_mark")
 def Get_Type_Mark(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6449,7 +6450,7 @@ def Set_Type_Mark(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_file_type_mark")
 def Get_File_Type_Mark(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6462,7 +6463,7 @@ def Set_File_Type_Mark(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_return_type_mark")
 def Get_Return_Type_Mark(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6475,7 +6476,7 @@ def Set_Return_Type_Mark(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_has_disconnect_flag")
 def Get_Has_Disconnect_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6488,7 +6489,7 @@ def Set_Has_Disconnect_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_has_active_flag")
 def Get_Has_Active_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6501,7 +6502,7 @@ def Set_Has_Active_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_is_within_flag")
 def Get_Is_Within_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6514,7 +6515,7 @@ def Set_Is_Within_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_type_marks_list")
 def Get_Type_Marks_List(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6527,7 +6528,7 @@ def Set_Type_Marks_List(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_implicit_alias_flag")
 def Get_Implicit_Alias_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6540,7 +6541,7 @@ def Set_Implicit_Alias_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_alias_signature")
 def Get_Alias_Signature(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6553,7 +6554,7 @@ def Set_Alias_Signature(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_attribute_signature")
 def Get_Attribute_Signature(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6566,7 +6567,7 @@ def Set_Attribute_Signature(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_overload_list")
 def Get_Overload_List(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6579,7 +6580,7 @@ def Set_Overload_List(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_simple_name_identifier")
 def Get_Simple_Name_Identifier(obj: Iir) -> NameId:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6592,7 +6593,7 @@ def Set_Simple_Name_Identifier(obj: Iir, value: NameId) -> None:
 @BindToLibGHDL("vhdl__nodes__get_simple_name_subtype")
 def Get_Simple_Name_Subtype(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6605,7 +6606,7 @@ def Set_Simple_Name_Subtype(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_protected_type_body")
 def Get_Protected_Type_Body(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6618,7 +6619,7 @@ def Set_Protected_Type_Body(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_protected_type_declaration")
 def Get_Protected_Type_Declaration(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6631,7 +6632,7 @@ def Set_Protected_Type_Declaration(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_use_flag")
 def Get_Use_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6644,7 +6645,7 @@ def Set_Use_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_elaborated_flag")
 def Get_Elaborated_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6657,7 +6658,7 @@ def Set_Elaborated_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_end_has_reserved_id")
 def Get_End_Has_Reserved_Id(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6670,7 +6671,7 @@ def Set_End_Has_Reserved_Id(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_end_has_identifier")
 def Get_End_Has_Identifier(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6683,7 +6684,7 @@ def Set_End_Has_Identifier(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_end_has_postponed")
 def Get_End_Has_Postponed(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6696,7 +6697,7 @@ def Set_End_Has_Postponed(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_has_begin")
 def Get_Has_Begin(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6709,7 +6710,7 @@ def Set_Has_Begin(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_has_end")
 def Get_Has_End(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6722,7 +6723,7 @@ def Set_Has_End(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_has_is")
 def Get_Has_Is(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6735,7 +6736,7 @@ def Set_Has_Is(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_has_pure")
 def Get_Has_Pure(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6748,7 +6749,7 @@ def Set_Has_Pure(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_has_body")
 def Get_Has_Body(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6761,7 +6762,7 @@ def Set_Has_Body(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_has_parameter")
 def Get_Has_Parameter(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6774,7 +6775,7 @@ def Set_Has_Parameter(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_has_component")
 def Get_Has_Component(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6787,7 +6788,7 @@ def Set_Has_Component(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_has_identifier_list")
 def Get_Has_Identifier_List(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6800,7 +6801,7 @@ def Set_Has_Identifier_List(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_has_mode")
 def Get_Has_Mode(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6813,7 +6814,7 @@ def Set_Has_Mode(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_has_class")
 def Get_Has_Class(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6826,7 +6827,7 @@ def Set_Has_Class(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_has_delay_mechanism")
 def Get_Has_Delay_Mechanism(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6839,7 +6840,7 @@ def Set_Has_Delay_Mechanism(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_suspend_flag")
 def Get_Suspend_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6852,7 +6853,7 @@ def Set_Suspend_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_covered_flag")
 def Get_Covered_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6865,7 +6866,7 @@ def Set_Covered_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_stop_flag")
 def Get_Stop_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6878,7 +6879,7 @@ def Set_Stop_Flag(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_is_ref")
 def Get_Is_Ref(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6891,7 +6892,7 @@ def Set_Is_Ref(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_is_forward_ref")
 def Get_Is_Forward_Ref(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6904,7 +6905,7 @@ def Set_Is_Forward_Ref(obj: Iir, value: Boolean) -> None:
 @BindToLibGHDL("vhdl__nodes__get_psl_property")
 def Get_Psl_Property(obj: Iir) -> PSLNode:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6917,7 +6918,7 @@ def Set_Psl_Property(obj: Iir, value: PSLNode) -> None:
 @BindToLibGHDL("vhdl__nodes__get_psl_sequence")
 def Get_Psl_Sequence(obj: Iir) -> PSLNode:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6930,7 +6931,7 @@ def Set_Psl_Sequence(obj: Iir, value: PSLNode) -> None:
 @BindToLibGHDL("vhdl__nodes__get_psl_declaration")
 def Get_Psl_Declaration(obj: Iir) -> PSLNode:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6943,7 +6944,7 @@ def Set_Psl_Declaration(obj: Iir, value: PSLNode) -> None:
 @BindToLibGHDL("vhdl__nodes__get_psl_expression")
 def Get_Psl_Expression(obj: Iir) -> PSLNode:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6956,7 +6957,7 @@ def Set_Psl_Expression(obj: Iir, value: PSLNode) -> None:
 @BindToLibGHDL("vhdl__nodes__get_psl_boolean")
 def Get_Psl_Boolean(obj: Iir) -> PSLNode:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6969,7 +6970,7 @@ def Set_Psl_Boolean(obj: Iir, value: PSLNode) -> None:
 @BindToLibGHDL("vhdl__nodes__get_psl_clock")
 def Get_PSL_Clock(obj: Iir) -> PSLNode:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6979,10 +6980,23 @@ def Set_PSL_Clock(obj: Iir, value: PSLNode) -> None:
 
 
 @export
+@BindToLibGHDL("vhdl__nodes__get_psl_abort")
+def Get_PSL_Abort(obj: Iir) -> PSLNode:
+    """"""
+    return 0  # pragma: no cover
+
+
+@export
+@BindToLibGHDL("vhdl__nodes__set_psl_abort")
+def Set_PSL_Abort(obj: Iir, value: PSLNode) -> None:
+    """"""
+
+
+@export
 @BindToLibGHDL("vhdl__nodes__get_psl_nfa")
 def Get_PSL_NFA(obj: Iir) -> PSLNFA:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -6995,7 +7009,7 @@ def Set_PSL_NFA(obj: Iir, value: PSLNFA) -> None:
 @BindToLibGHDL("vhdl__nodes__get_psl_nbr_states")
 def Get_PSL_Nbr_States(obj: Iir) -> Int32:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -7008,7 +7022,7 @@ def Set_PSL_Nbr_States(obj: Iir, value: Int32) -> None:
 @BindToLibGHDL("vhdl__nodes__get_psl_clock_sensitivity")
 def Get_PSL_Clock_Sensitivity(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -7021,7 +7035,7 @@ def Set_PSL_Clock_Sensitivity(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_psl_eos_flag")
 def Get_PSL_EOS_Flag(obj: Iir) -> Boolean:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -7031,23 +7045,10 @@ def Set_PSL_EOS_Flag(obj: Iir, value: Boolean) -> None:
 
 
 @export
-@BindToLibGHDL("vhdl__nodes__get_psl_abort_flag")
-def Get_PSL_Abort_Flag(obj: Iir) -> Boolean:
-    """"""
-    return 0
-
-
-@export
-@BindToLibGHDL("vhdl__nodes__set_psl_abort_flag")
-def Set_PSL_Abort_Flag(obj: Iir, value: Boolean) -> None:
-    """"""
-
-
-@export
 @BindToLibGHDL("vhdl__nodes__get_count_expression")
 def Get_Count_Expression(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -7060,7 +7061,7 @@ def Set_Count_Expression(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_clock_expression")
 def Get_Clock_Expression(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -7071,14 +7072,14 @@ def Set_Clock_Expression(obj: Iir, value: Iir) -> None:
 
 @export
 @BindToLibGHDL("vhdl__nodes__get_default_clock")
-def Get_Default_Clock(obj: Iir) -> Iir:
+def Get_Default_Clock(obj: Iir) -> PSLNode:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
 @BindToLibGHDL("vhdl__nodes__set_default_clock")
-def Set_Default_Clock(obj: Iir, value: Iir) -> None:
+def Set_Default_Clock(obj: Iir, value: PSLNode) -> None:
     """"""
 
 
@@ -7086,7 +7087,7 @@ def Set_Default_Clock(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_foreign_node")
 def Get_Foreign_Node(obj: Iir) -> Int32:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -7099,7 +7100,7 @@ def Set_Foreign_Node(obj: Iir, value: Int32) -> None:
 @BindToLibGHDL("vhdl__nodes__get_suspend_state_index")
 def Get_Suspend_State_Index(obj: Iir) -> Int32:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -7112,7 +7113,7 @@ def Set_Suspend_State_Index(obj: Iir, value: Int32) -> None:
 @BindToLibGHDL("vhdl__nodes__get_suspend_state_chain")
 def Get_Suspend_State_Chain(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -7125,7 +7126,7 @@ def Set_Suspend_State_Chain(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_suspend_state_last")
 def Get_Suspend_State_Last(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export
@@ -7138,7 +7139,7 @@ def Set_Suspend_State_Last(obj: Iir, value: Iir) -> None:
 @BindToLibGHDL("vhdl__nodes__get_suspend_state_decl")
 def Get_Suspend_State_Decl(obj: Iir) -> Iir:
     """"""
-    return 0
+    return 0  # pragma: no cover
 
 
 @export

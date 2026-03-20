@@ -34,6 +34,7 @@ with PSL.Errors; use PSL.Errors;
 
 with Trans_Analyzes;
 with Trans.Chap1;
+with Trans.Chap2;
 with Trans.Chap3;
 with Trans.Chap4;
 with Trans.Chap5;
@@ -661,8 +662,8 @@ package body Trans.Chap9 is
          when Iir_Kind_Psl_Endpoint_Declaration =>
             null;
          when Iir_Kinds_Psl_Property_Directive =>
-            if Get_PSL_Abort_Flag (Stmt) then
-               Abort_Prop := Get_Psl_Property (Stmt);
+            Abort_Prop := Get_PSL_Abort (Stmt);
+            if Abort_Prop /= Null_PSL_Node then
                Has_Async_Abort := Is_Async_Abort (Abort_Prop);
                Has_Sync_Abort := not Has_Async_Abort;
             end if;
@@ -720,7 +721,6 @@ package body Trans.Chap9 is
             New_Assign_Stmt (New_Indexed_Element (Get_Var (Info.Psl_Vect_Var),
                                                   New_Obj_Value (Var_I)),
                              New_Lit (Std_Boolean_True_Node));
-            Inc_Var (Var_I);
          when others =>
             null;
       end case;
@@ -756,10 +756,9 @@ package body Trans.Chap9 is
 
          Start_If_Stmt
            (S_Blk,
-            New_Value
-              (New_Indexed_Element (Get_Var (Info.Psl_Vect_Var),
-               New_Lit (New_Index_Lit
-                 (Unsigned_64 (S_Num))))));
+            New_Value (New_Indexed_Element
+                         (Get_Var (Info.Psl_Vect_Var),
+                          New_Lit (New_Index_Lit (Unsigned_64 (S_Num))))));
 
          -- Get simplified state:
          --  - If in transient state -> In progress.
@@ -779,7 +778,7 @@ package body Trans.Chap9 is
             Cond := New_Monadic_Op
               (ON_Not,
                New_Value (New_Indexed_Element (New_Obj (Var_Nvec),
-                 New_Lit (D_Lit))));
+                                               New_Lit (D_Lit))));
             Cond := New_Dyadic_Op
               (ON_And, Cond, Translate_Psl_Expr (Get_Edge_Expr (E), False));
 
@@ -2127,15 +2126,15 @@ package body Trans.Chap9 is
       Register_Signal_List (List, Ghdl_Process_Add_Sensitivity);
 
       --  Register async sensitivity.
-      if Get_Kind (Stmt) in Iir_Kinds_Psl_Property_Directive
-        and then Get_PSL_Abort_Flag (Stmt)
-      then
+      if Get_Kind (Stmt) in Iir_Kinds_Psl_Property_Directive then
          declare
             use PSL.Nodes;
-            Prop : constant PSL_Node := Get_Psl_Property (Stmt);
+            Prop : constant PSL_Node := Get_PSL_Abort (Stmt);
             List : Iir_List;
          begin
-            if PSL.Subsets.Is_Async_Abort (Prop) then
+            if Prop /= Null_PSL_Node
+              and then PSL.Subsets.Is_Async_Abort (Prop)
+            then
                List := Create_Iir_List;
                Vhdl.Canon_PSL.Canon_Extract_Sensitivity
                  (Get_Boolean (Prop), List);
@@ -2408,10 +2407,32 @@ package body Trans.Chap9 is
       declare
          use Chap5;
          Entity_Map : Map_Env;
+         Inst_Hdr : Iir;
       begin
+         --  If the entity has an instantiated header (because it has generic
+         --  packages), this instantiated header (in fact the instantiated
+         --  entity) needs to be used for the mapping as it has correct types.
+         --  Simply instantiate infos.
+         if Get_Kind (Mapping) = Iir_Kind_Component_Instantiation_Statement
+         then
+            Inst_Hdr := Get_Instantiated_Header (Mapping);
+            if Inst_Hdr = Null_Iir then
+               Inst_Hdr := Entity;
+            else
+               Push_Instantiate_Var_Scope
+                 (Entity_Info.Block_Scope'Access,
+                  Entity_Info.Block_Scope'Access);
+               Chap2.Instantiate_Info_Entity (Inst_Hdr);
+               Pop_Instantiate_Var_Scope
+                 (Entity_Info.Block_Scope'Access);
+            end if;
+         else
+            Inst_Hdr := Entity;
+         end if;
+
          Entity_Map.Scope_Ptr := Entity_Info.Block_Scope'Access;
          Set_Scope_Via_Param_Ptr (Entity_Map.Scope, Var_Sub);
-         Chap5.Elab_Map_Aspect (Entity, Mapping, Entity, Entity_Map);
+         Chap5.Elab_Map_Aspect (Inst_Hdr, Mapping, Inst_Hdr, Entity_Map);
          Clear_Scope (Entity_Map.Scope);
       end;
 

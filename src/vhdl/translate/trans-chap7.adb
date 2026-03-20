@@ -780,6 +780,12 @@ package body Trans.Chap7 is
          when Iir_Kind_Range_Array_Attribute
            | Iir_Kind_Reverse_Range_Array_Attribute =>
             return Chap14.Translate_Length_Array_Attribute (Expr, Null_Iir);
+         when Iir_Kinds_Denoting_Name =>
+            return Translate_Range_Length
+              (Get_Subtype_Indication (Get_Named_Entity (Expr)));
+         when Iir_Kind_Integer_Subtype_Definition
+           | Iir_Kind_Enumeration_Subtype_Definition =>
+            return Translate_Range_Length (Get_Range_Constraint (Expr));
          when others =>
             Error_Kind ("translate_range_length", Expr);
       end case;
@@ -1555,18 +1561,16 @@ package body Trans.Chap7 is
       Static_Length : Int64 := 0;
       Nbr_Dyn_Expr : Natural := 0;
 
-      type Handle_Acc is access procedure (E : Iir; Is_First : Boolean);
-      type Handlers_Type is record
-         Handle_El : Handle_Acc;
-         Handle_Arr : Handle_Acc;
-      end record;
-
       --  Call handlers for each leaf of LEFT CONCAT_IMP RIGHT.
       --  Handlers.Handle_Arr is called for array leaves, and
       --  Handlers.Handle_El for element leaves.
-      procedure Walk (Handlers : Handlers_Type)
+      generic
+         with procedure Handle_El (E : Iir; Is_First : Boolean);
+         with procedure Handle_Arr (E : Iir; Is_First : Boolean);
+      procedure Walk;
+
+      procedure Walk
       is
-         Walk_Handlers : Handlers_Type;
          Is_First : Boolean;
 
          --  Call handlers for each leaf of L IMP R.
@@ -1605,7 +1609,7 @@ package body Trans.Chap7 is
                end if;
             end if;
 
-            Walk_Handlers.Handle_Arr (E, Is_First);
+            Handle_Arr (E, Is_First);
             Is_First := False;
          end Walk_Arr;
 
@@ -1617,21 +1621,20 @@ package body Trans.Chap7 is
                   Walk_Arr (R);
                when Iir_Predefined_Array_Element_Concat =>
                   Walk_Arr (L);
-                  Walk_Handlers.Handle_El (R, False);
+                  Handle_El (R, False);
                when Iir_Predefined_Element_Array_Concat =>
-                  Walk_Handlers.Handle_El (L, Is_First);
+                  Handle_El (L, Is_First);
                   Is_First := False;
                   Walk_Arr (R);
                when Iir_Predefined_Element_Element_Concat =>
-                  Walk_Handlers.Handle_El (L, Is_First);
+                  Handle_El (L, Is_First);
                   Is_First := False;
-                  Walk_Handlers.Handle_El (R, False);
+                  Handle_El (R, False);
                when others =>
                   raise Internal_Error;
             end case;
          end Walk_Concat;
       begin
-         Walk_Handlers := Handlers;
          Is_First := True;
          Walk_Concat (Concat_Imp, Left, Right);
       end Walk;
@@ -1678,11 +1681,14 @@ package body Trans.Chap7 is
          end if;
       end Pre_Walk_Arr;
 
+      procedure Walk_Pre_Walk is new Walk
+        (Handle_El => Pre_Walk_El, Handle_Arr => Pre_Walk_Arr);
+
       --  In order to declare Dyn_Mnodes (below), create a function that can
       --  be called now (not possible with procedures).
       function Call_Pre_Walk return Natural is
       begin
-         Walk ((Pre_Walk_El'Access, Pre_Walk_Arr'Access));
+         Walk_Pre_Walk;
          return Nbr_Dyn_Expr;
       end Call_Pre_Walk;
 
@@ -1983,6 +1989,21 @@ package body Trans.Chap7 is
          end if;
       end Assign_Bounds_Arr_V87;
 
+      procedure Walk_Eval is new Walk
+        (Handle_El => Eval_First_El, Handle_Arr => Eval_Dyn_Arr);
+
+      procedure Walk_Len_Dyn is new Walk
+        (Handle_El => Len_El, Handle_Arr => Len_Dyn_Arr);
+
+      procedure Walk_Assign_Bounds_V87 is new Walk
+        (Handle_El => Assign_Bounds_El_V87,
+         Handle_Arr => Assign_Bounds_Arr_V87);
+
+      procedure Walk_Find_Last is new Walk
+        (Handle_El => Len_El, Handle_Arr => Find_Last_Arr);
+
+      procedure Walk_Assign is new Walk
+        (Handle_El => Assign_El, Handle_Arr => Assign_Arr);
    begin
       --  Bounds
       Var_Bounds := Dv2M
@@ -2005,7 +2026,7 @@ package body Trans.Chap7 is
 
       --  Evaluate all dynamic expressions
       Dyn_I := 0;
-      Walk ((Eval_First_El'Access, Eval_Dyn_Arr'Access));
+      Walk_Eval;
       --  Check that all dynamic expressions have been handled.
       pragma Assert (Dyn_I = Dyn_Mnodes'Last);
 
@@ -2016,7 +2037,7 @@ package body Trans.Chap7 is
          E_Length := O_Enode_Null;
       end if;
       Dyn_I := 0;
-      Walk ((Len_El'Access, Len_Dyn_Arr'Access));
+      Walk_Len_Dyn;
       pragma Assert (Dyn_I = Dyn_Mnodes'Last);
       pragma Assert (E_Length /= O_Enode_Null);
       Var_Length := Create_Temp_Init (Ghdl_Index_Type, E_Length);
@@ -2059,7 +2080,7 @@ package body Trans.Chap7 is
             --  non-null range.
             Dyn_I := 0;
             Assign_Bounds_V87_Done := False;
-            Walk ((Assign_Bounds_El_V87'Access, Assign_Bounds_Arr_V87'Access));
+            Walk_Assign_Bounds_V87;
             for I in reverse 1 .. Dyn_I  loop
                Finish_If_Stmt (Assign_Bounds_Ifs (I));
             end loop;
@@ -2128,7 +2149,7 @@ package body Trans.Chap7 is
             Last_Expr := Null_Iir;
             Last_Dyn_Expr := 0;
             Dyn_I := 0;
-            Walk ((Len_El'Access, Find_Last_Arr'Access));
+            Walk_Find_Last;
             pragma Assert (Dyn_I = Dyn_Mnodes'Last);
 
             if Last_Dyn_Expr = 0 then
@@ -2160,7 +2181,7 @@ package body Trans.Chap7 is
       Open_Temp;
       Var_Off := Create_Temp_Init (Ghdl_Index_Type, New_Lit (Ghdl_Index_0));
       Dyn_I := 0;
-      Walk ((Assign_El'Access, Assign_Arr'Access));
+      Walk_Assign;
       pragma Assert (Dyn_I = Dyn_Mnodes'Last);
       Close_Temp;
 
@@ -3418,6 +3439,7 @@ package body Trans.Chap7 is
       Index_List : Iir_Flist;
       Aggr_El_Type  : Iir;
       Final      : Boolean;
+      Is_Flat    : Boolean;
 
       --  Assign EXPR to current position (defined by index VAR_INDEX), and
       --  update VAR_INDEX.  Handles sub-aggregates.
@@ -3543,7 +3565,13 @@ package body Trans.Chap7 is
             Range_Ptr := Chap3.Bounds_To_Range
               (Chap3.Get_Composite_Bounds (Targ), Aggr_Type, Dim);
             Len_Tmp := M2E (Chap3.Range_To_Length (Range_Ptr));
-            if P /= 0 then
+            if Is_Flat then
+               --  Used in presence of a vector whose length is not locally
+               --  static.  In that case the aggregate is known to have only
+               --  one dimension.
+               Len_Tmp := New_Dyadic_Op
+                 (ON_Sub_Ov, Len_Tmp, New_Obj_Value (Var_Index));
+            elsif P /= 0 then
                Len_Tmp := New_Dyadic_Op
                  (ON_Sub_Ov,
                   Len_Tmp, New_Lit (New_Index_Lit (Unsigned_64 (P))));
@@ -3730,8 +3758,10 @@ package body Trans.Chap7 is
       if Get_Nbr_Elements (Index_List) = Dim then
          Aggr_El_Type := Get_Element_Subtype (Aggr_Type);
          Final:= True;
+         Is_Flat := Dim = 1;
       else
          Final := False;
+         Is_Flat := False;
       end if;
 
       Assocs := Get_Association_Choices_Chain (Aggr);
@@ -4633,7 +4663,7 @@ package body Trans.Chap7 is
             --  1. Copy layout size
             for K in Object_Kind_Type loop
                New_Assign_Stmt (Chap3.Layout_To_Size (Res_El, K),
-                                New_Value (Chap3.Layout_To_Size (Res_El, K)));
+                                New_Value (Chap3.Layout_To_Size (Src_El, K)));
             end loop;
 
             --  2. Recurse on bounds
@@ -5451,7 +5481,7 @@ package body Trans.Chap7 is
          when Iir_Kind_Range_Expression =>
             Translate_Range_Expression (Res, Arange, Range_Type);
          when others =>
-            Error_Kind ("translate_range_ptr", Arange);
+            Error_Kind ("translate_range", Arange);
       end case;
    end Translate_Range;
 

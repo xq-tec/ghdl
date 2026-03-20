@@ -21,7 +21,6 @@
 --  however invalidate any other reasons why the executable file might be
 --  covered by the GNU Public License.
 
-with Ada.Unchecked_Conversion;
 with Interfaces; use Interfaces;
 
 package Grt.Export is

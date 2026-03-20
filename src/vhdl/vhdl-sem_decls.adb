@@ -668,9 +668,13 @@ package body Vhdl.Sem_Decls is
       Set_Type_Declarator (Def, Inter);
       Set_Type (Inter, Def);
       Set_Interface_Type_Definition (Inter, Def);
+
+      --  Default for uninstantiated interface types, modified during
+      --  instantiation.
       Set_Type_Staticness (Def, None);
       Set_Resolved_Flag (Def, False);
       Set_Signal_Type_Flag (Def, True);
+      Set_Constraint_State (Def, Fully_Constrained);
       Set_Has_Signal_Flag (Def, False);
 
       --  Create operations for the interface type.
@@ -694,9 +698,95 @@ package body Vhdl.Sem_Decls is
       Xref_Decl (Inter);
    end Sem_Interface_Type_Declaration;
 
-   procedure Sem_Interface_Subprogram_Declaration (Inter : Iir) is
+   --  LRM 4.10 Conformance rule
+   --  Two subprogram declarations are said to have conforming profiles if
+   --  and only if both are procedures or both are functions, the parameter
+   --  and result type profiles of the subprograms are the same and, at each
+   --  parameter position, the corresponding parameters have the same class
+   --  and mode.
+   function Is_Conforming_Profile (L, R : Iir) return Boolean
+   is
+      Inter_L, Inter_R : Iir;
+   begin
+      --  TODO: Skip aliases ?
+      --  TODO: Handle enumerations ?
+      --  TODO: what about generic subprograms ?
+
+      if Is_Function_Declaration (L) then
+         if not Is_Function_Declaration (R) then
+            return False;
+         end if;
+         if Get_Base_Type (Get_Return_Type (L))
+           /= Get_Base_Type (Get_Return_Type (R))
+         then
+            return False;
+         end if;
+      else
+         pragma Assert (Is_Procedure_Declaration (L));
+         if not Is_Procedure_Declaration (R) then
+            return False;
+         end if;
+      end if;
+
+      Inter_L := Get_Interface_Declaration_Chain (L);
+      Inter_R := Get_Interface_Declaration_Chain (R);
+      loop
+         exit when Inter_L = Null_Iir and Inter_R = Null_Iir;
+         if Inter_L = Null_Iir or Inter_R = Null_Iir then
+            return False;
+         end if;
+         --  Same parameter type profile.
+         if Get_Base_Type (Get_Type (Inter_L))
+           /= Get_Base_Type (Get_Type (Inter_R))
+         then
+            return False;
+         end if;
+
+         --  Same class.
+         if Get_Kind (Inter_L) /= Get_Kind (Inter_R) then
+            return False;
+         end if;
+
+         --  Same mode.
+         if Get_Mode (Inter_L) /= Get_Mode (Inter_R) then
+            return False;
+         end if;
+
+         Inter_L := Get_Chain (Inter_L);
+         Inter_R := Get_Chain (Inter_R);
+      end loop;
+      return True;
+   end Is_Conforming_Profile;
+
+   procedure Sem_Interface_Subprogram_Declaration (Inter : Iir)
+   is
+      Def : Iir;
+      Res : Iir;
    begin
       Sem_Subprogram_Specification (Inter);
+
+      Def := Get_Default_Subprogram (Inter);
+      if Def /= Null_Iir and then Get_Kind (Def) /= Iir_Kind_Box_Name then
+         Sem_Name (Def);
+         Res := Get_Named_Entity (Def);
+         case Get_Kind (Res) is
+            when Iir_Kind_Error =>
+               null;
+            when Iir_Kind_Overload_List =>
+               raise Internal_Error;
+            when Iir_Kinds_Subprogram_Declaration =>
+               if not Is_Conforming_Profile (Res, Inter) then
+                  Error_Msg_Sem (+Def, "different profile for %n", +Res);
+                  Res := Create_Error (Res);
+               end if;
+            when others =>
+               Error_Msg_Sem
+                 (+Def, "name %i doesn't denote a subprogram", +Def);
+               Res := Create_Error (Res);
+         end case;
+         Set_Named_Entity (Def, Res);
+      end if;
+
       Sem_Scopes.Add_Name (Inter);
       Xref_Decl (Inter);
    end Sem_Interface_Subprogram_Declaration;
@@ -1082,6 +1172,46 @@ package body Vhdl.Sem_Decls is
       end case;
    end Is_Global_Object;
 
+   procedure Check_Object_Declaration (Decl : Iir)
+   is
+      Atype : constant Iir := Get_Type (Decl);
+   begin
+      case Get_Kind (Decl) is
+         when Iir_Kind_Constant_Declaration =>
+            null;
+
+         when Iir_Kind_Variable_Declaration
+           | Iir_Kind_Signal_Declaration
+           | Iir_Kind_Free_Quantity_Declaration =>
+            --  LRM93 3.2.1.1 / LRM08 5.3.2.2
+            --  For a variable or signal declared by an object declaration, the
+            --  subtype indication of the corresponding object declaration
+            --  must define a constrained array subtype.
+            declare
+               Ind : constant Iir := Get_Subtype_Indication (Decl);
+            begin
+               if not (Is_Valid (Ind)
+                         and then Kind_In (Ind, Iir_Kind_Subtype_Attribute,
+                                           Iir_Kind_Element_Attribute))
+                 and then not Is_Fully_Constrained_Type (Atype)
+               then
+                  Report_Start_Group;
+                  Error_Msg_Sem
+                    (+Decl,
+                     "declaration of %n with unconstrained %n is not allowed",
+                     (+Decl, +Atype));
+                  if Get_Default_Value (Decl) /= Null_Iir then
+                     Error_Msg_Sem (+Decl, "(even with a default value)");
+                  end if;
+                  Report_End_Group;
+               end if;
+            end;
+
+         when others =>
+            Error_Kind ("sem_object_declaration(2)", Decl);
+      end case;
+   end Check_Object_Declaration;
+
    --  LAST_DECL is set only if DECL is part of a list of declarations (they
    --  share the same type and the same default value).
    procedure Sem_Object_Declaration (Decl: Iir; Last_Decl : Iir)
@@ -1246,6 +1376,15 @@ package body Vhdl.Sem_Decls is
                Set_Expr_Staticness (Decl, Staticness);
             end if;
 
+            --  LRM93 3.2.1.1
+            --  For a constant declared by an object declaration, the index
+            --  ranges are defined by the initial value, if the subtype of the
+            --  constant is unconstrained; otherwise they are defined by this
+            --  subtype.
+            if Default_Value /= Null_Iir then
+               Sem_Object_Type_From_Value (Decl, Default_Value);
+            end if;
+
          when Iir_Kind_Signal_Declaration =>
             --  LRM93 4.3.1.2
             --  It is also an error if a guarded signal of a scalar type is
@@ -1314,47 +1453,7 @@ package body Vhdl.Sem_Decls is
             Error_Kind ("sem_object_declaration", Decl);
       end case;
 
-      case Get_Kind (Decl) is
-         when Iir_Kind_Constant_Declaration =>
-            --  LRM93 3.2.1.1
-            --  For a constant declared by an object declaration, the index
-            --  ranges are defined by the initial value, if the subtype of the
-            --  constant is unconstrained; otherwise they are defined by this
-            --  subtype.
-            if Default_Value /= Null_Iir then
-               Sem_Object_Type_From_Value (Decl, Default_Value);
-            end if;
-
-         when Iir_Kind_Variable_Declaration
-           | Iir_Kind_Signal_Declaration
-           | Iir_Kind_Free_Quantity_Declaration =>
-            --  LRM93 3.2.1.1 / LRM08 5.3.2.2
-            --  For a variable or signal declared by an object declaration, the
-            --  subtype indication of the corresponding object declaration
-            --  must define a constrained array subtype.
-            declare
-               Ind : constant Iir := Get_Subtype_Indication (Decl);
-            begin
-               if not (Is_Valid (Ind)
-                         and then Kind_In (Ind, Iir_Kind_Subtype_Attribute,
-                                           Iir_Kind_Element_Attribute))
-                 and then not Is_Fully_Constrained_Type (Atype)
-               then
-                  Report_Start_Group;
-                  Error_Msg_Sem
-                    (+Decl,
-                     "declaration of %n with unconstrained %n is not allowed",
-                     (+Decl, +Atype));
-                  if Default_Value /= Null_Iir then
-                     Error_Msg_Sem (+Decl, "(even with a default value)");
-                  end if;
-                  Report_End_Group;
-               end if;
-            end;
-
-         when others =>
-            Error_Kind ("sem_object_declaration(2)", Decl);
-      end case;
+      Check_Object_Declaration (Decl);
    end Sem_Object_Declaration;
 
    procedure Sem_File_Declaration (Decl: Iir_File_Declaration; Last_Decl : Iir)

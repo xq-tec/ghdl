@@ -727,6 +727,10 @@ package body Synth.Vhdl_Stmts is
    is
       V : Valtyp;
    begin
+      if Target.Targ_Type = null then
+         return;
+      end if;
+
       V := Synth_Subtype_Conversion
         (Syn_Inst, Val, Target.Targ_Type, False, Loc);
       pragma Unreferenced (Val);
@@ -960,8 +964,12 @@ package body Synth.Vhdl_Stmts is
                Connect (Inp, Get_Net (Ctxt, Val));
             end if;
          end if;
-         Val := Create_Value_Net (First, Targ.Targ_Type);
-         Synth_Assignment (Syn_Inst, Targ, Val, Stmt);
+         if Last /= No_Net then
+            --  Do not assign in case of error.
+            pragma Assert (First /= No_Net);
+            Val := Create_Value_Net (First, Targ.Targ_Type);
+            Synth_Assignment (Syn_Inst, Targ, Val, Stmt);
+         end if;
       end if;
 
       Release_Expr_Pool (Marker);
@@ -2002,7 +2010,8 @@ package body Synth.Vhdl_Stmts is
                   --  But for memory value, do not copy the content, as it is
                   --  a reference.
                   Obj := Create_Value_Memory
-                    (Get_Memtyp (Info.Obj), Instance_Pool);
+                    ((Info.Targ_Type, Get_Memory (Info.Obj)),
+                    Instance_Pool);
                else
                   Obj := Unshare (Info.Obj, Instance_Pool);
                end if;
@@ -2716,7 +2725,9 @@ package body Synth.Vhdl_Stmts is
            and then
            Get_Kind (Assoc) /= Iir_Kind_Association_Element_By_Individual
          then
+            --  Get the saved actual
             Targ := Get_Value (Caller_Inst, Assoc);
+
             Formal := Get_Formal (Assoc);
             Conv := Get_Formal_Conversion (Assoc);
 
@@ -2731,24 +2742,35 @@ package body Synth.Vhdl_Stmts is
                  (Caller_Inst, Conv, Val, Targ.Typ);
             end if;
 
-            if Targ.Val.Kind = Value_Dyn_Alias then
-               Synth_Assignment_Memory
-                 (Caller_Inst, Targ.Val.D_Obj,
-                  Targ.Val.D_Poff, Targ.Val.D_Ptyp,
-                  Get_Value_Dyn_Alias_Voff (Targ.Val), Targ.Val.D_Eoff,
-                  Val, Assoc);
-            else
-               Synth_Assignment_Simple
-                 (Caller_Inst, Targ, No_Value_Offsets, Val, Assoc);
+            if Val /= No_Valtyp
+              and then Val.Typ.Kind in Type_Scalars
+            then
+               Val := Synth_Subtype_Conversion
+                 (Caller_Inst, Val, Targ.Typ, False, Assoc);
+            end if;
+
+            if Val /= No_Valtyp then
+               if Targ.Val.Kind = Value_Dyn_Alias then
+                  Synth_Assignment_Memory
+                    (Caller_Inst, Targ.Val.D_Obj,
+                    Targ.Val.D_Poff, Targ.Val.D_Ptyp,
+                    Get_Value_Dyn_Alias_Voff (Targ.Val), Targ.Val.D_Eoff,
+                    Val, Assoc);
+               else
+                  Synth_Assignment_Simple
+                    (Caller_Inst, Targ, No_Value_Offsets, Val, Assoc);
+               end if;
             end if;
 
             Release_Expr_Pool (Marker);
 
             --  Free wire used for out/inout interface variables.
-            if Val.Val.Kind = Value_Wire then
-               W := Get_Value_Wire (Val.Val);
-               Phi_Discard_Wires (W, No_Wire_Id);
-               Free_Wire (W);
+            if Val /= No_Valtyp then
+               if Val.Val.Kind = Value_Wire then
+                  W := Get_Value_Wire (Val.Val);
+                  Phi_Discard_Wires (W, No_Wire_Id);
+                  Free_Wire (W);
+               end if;
             end if;
 
             Destroy_Object (D, Assoc);
@@ -3045,11 +3067,11 @@ package body Synth.Vhdl_Stmts is
 
    function Synth_Subprogram_Call (Syn_Inst : Synth_Instance_Acc;
                                    Call : Node;
+                                   Imp : Node;
                                    Init : Association_Iterator_Init)
                                   return Valtyp
    is
       Ctxt : constant Context_Acc := Get_Build (Syn_Inst);
-      Imp  : constant Node := Get_Implementation (Call);
       Is_Func : constant Boolean := Is_Function_Declaration (Imp);
       Bod : constant Node := Vhdl.Sem_Inst.Get_Subprogram_Body_Origin (Imp);
       Obj : Node;
@@ -3130,10 +3152,8 @@ package body Synth.Vhdl_Stmts is
    end Synth_Subprogram_Call;
 
    function Synth_Subprogram_Call
-     (Syn_Inst : Synth_Instance_Acc; Call : Node) return Valtyp
+     (Syn_Inst : Synth_Instance_Acc; Call : Node; Imp : Node) return Valtyp
    is
-      Imp : constant Node := Get_Implementation (Call);
-
       --  The corresponding body (for a package instantiation, this could be
       --  the shared body of the uninstantiated package).
       Bod : constant Node := Vhdl.Sem_Inst.Get_Subprogram_Body_Origin (Imp);
@@ -3149,7 +3169,7 @@ package body Synth.Vhdl_Stmts is
       Init : Association_Iterator_Init;
    begin
       Init := Association_Iterator_Build (Inter_Chain, Assoc_Chain);
-      return Synth_Subprogram_Call (Syn_Inst, Call, Init);
+      return Synth_Subprogram_Call (Syn_Inst, Call, Imp, Init);
    end Synth_Subprogram_Call;
 
    function Synth_User_Operator (Syn_Inst : Synth_Instance_Acc;
@@ -3162,7 +3182,7 @@ package body Synth.Vhdl_Stmts is
       Init : Association_Iterator_Init;
    begin
       Init := Association_Iterator_Build (Inter_Chain, Left_Expr, Right_Expr);
-      return Synth_Subprogram_Call (Syn_Inst, Expr, Init);
+      return Synth_Subprogram_Call (Syn_Inst, Expr, Imp, Init);
    end Synth_User_Operator;
 
    procedure Synth_Implicit_Procedure_Call
@@ -3207,7 +3227,7 @@ package body Synth.Vhdl_Stmts is
                Error_Msg_Synth
                  (Syn_Inst, Stmt, "call to foreign %n is not supported", +Imp);
             else
-               Res := Synth_Subprogram_Call (Syn_Inst, Call);
+               Res := Synth_Subprogram_Call (Syn_Inst, Call, Imp);
                pragma Assert (Res = No_Valtyp);
             end if;
          when others =>
@@ -3810,7 +3830,10 @@ package body Synth.Vhdl_Stmts is
             Set_Error (C.Inst);
          else
             if C.Nbr_Ret = 0 then
-               C.Ret_Value := Val;
+               --  Copy a result of the function call.
+               --  The result can be a local variable which will be released.
+               --  It can also be an alias of a local variable.
+               C.Ret_Value := Unshare_Result (Val);
                if not Is_Bounded_Type (C.Ret_Typ) then
                   --  The function was declared with an unconstrained
                   --  return type.  Now that a value has been returned,
@@ -3823,14 +3846,14 @@ package body Synth.Vhdl_Stmts is
                      Set_Width (C.Ret_Init, C.Ret_Typ.W);
                   end if;
                end if;
+            elsif Is_Dyn then
+               --  In case of multiple return, the value is not valid anymore.
+               --  TODO: the value can be kept if it is the same and its type
+               --  is the same.
+               C.Ret_Value := No_Valtyp;
             end if;
             if Is_Dyn then
                Phi_Assign_Net (Ctxt, C.W_Val, Get_Net (Ctxt, Val), 0);
-            else
-               --  Copy a result of the function call.
-               --  The result can be a local variable which will be released.
-               --  It can also be an alias of a local variable.
-               C.Ret_Value := Unshare_Result (C.Ret_Value);
             end if;
          end if;
       end if;
@@ -4395,47 +4418,44 @@ package body Synth.Vhdl_Stmts is
    end Synth_Process_Statement;
 
    function Synth_User_Function_Call
-     (Syn_Inst : Synth_Instance_Acc; Expr : Node) return Valtyp is
-   begin
+     (Syn_Inst : Synth_Instance_Acc; Expr : Node; Imp : Node) return Valtyp
+   is
       --  Is it a call to an ieee function ?
-      declare
-         Imp  : constant Node := Get_Implementation (Expr);
-         Pkg : constant Node := Get_Parent (Imp);
-         Unit : Node;
-         Lib : Node;
-      begin
-         if Get_Kind (Pkg) = Iir_Kind_Package_Declaration
-           and then not Is_Uninstantiated_Package (Pkg)
-         then
-            Unit := Get_Parent (Pkg);
-            if Get_Kind (Unit) = Iir_Kind_Design_Unit then
-               Lib := Get_Library (Get_Design_File (Unit));
-               if Get_Identifier (Lib) = Std_Names.Name_Ieee then
-                  case Get_Identifier (Pkg) is
-                     when Std_Names.Name_Std_Logic_1164
-                        | Std_Names.Name_Numeric_Std
-                        | Std_Names.Name_Numeric_Bit
-                        | Std_Names.Name_Numeric_Std_Unsigned
-                        | Std_Names.Name_Math_Real
-                        | Std_Names.Name_Std_Logic_Unsigned
-                        | Std_Names.Name_Std_Logic_Signed
-                        | Std_Names.Name_Std_Logic_Misc
-                        | Std_Names.Name_Std_Logic_Arith =>
-                        Error_Msg_Synth
-                          (Syn_Inst, Expr,
-                           "unhandled call to ieee function %i", +Imp);
-                        Set_Error (Syn_Inst);
-                        return No_Valtyp;
-                     when others =>
-                        --  Other ieee packages are handled as normal packages.
-                        null;
-                  end case;
-               end if;
+      Pkg : constant Node := Get_Parent (Imp);
+      Unit : Node;
+      Lib : Node;
+   begin
+      if Get_Kind (Pkg) = Iir_Kind_Package_Declaration
+        and then not Is_Uninstantiated_Package (Pkg)
+      then
+         Unit := Get_Parent (Pkg);
+         if Get_Kind (Unit) = Iir_Kind_Design_Unit then
+            Lib := Get_Library (Get_Design_File (Unit));
+            if Get_Identifier (Lib) = Std_Names.Name_Ieee then
+               case Get_Identifier (Pkg) is
+                  when Std_Names.Name_Std_Logic_1164
+                    | Std_Names.Name_Numeric_Std
+                    | Std_Names.Name_Numeric_Bit
+                    | Std_Names.Name_Numeric_Std_Unsigned
+                    | Std_Names.Name_Math_Real
+                    | Std_Names.Name_Std_Logic_Unsigned
+                    | Std_Names.Name_Std_Logic_Signed
+                    | Std_Names.Name_Std_Logic_Misc
+                    | Std_Names.Name_Std_Logic_Arith =>
+                     Error_Msg_Synth
+                       (Syn_Inst, Expr,
+                        "unhandled call to ieee function %i", +Imp);
+                     Set_Error (Syn_Inst);
+                     return No_Valtyp;
+                  when others =>
+                     --  Other ieee packages are handled as normal packages.
+                     null;
+               end case;
             end if;
          end if;
-      end;
+      end if;
 
-      return Synth_Subprogram_Call (Syn_Inst, Expr);
+      return Synth_Subprogram_Call (Syn_Inst, Expr, Imp);
    end Synth_User_Function_Call;
 
    procedure Synth_Concurrent_Assertion_Statement
@@ -4501,8 +4521,9 @@ package body Synth.Vhdl_Stmts is
                            Loc : Source.Syn_Src) return Net
    is
       use PSL.NFAs;
+      use PSL.Nodes;
       Ctxt : constant Context_Acc := Get_Build (Syn_Inst);
-      S : NFA_State;
+      S, First : NFA_State;
       S_Num : Int32;
       D_Num : Int32;
       I : Net;
@@ -4514,8 +4535,25 @@ package body Synth.Vhdl_Stmts is
    begin
       D_Arr := new Net_Array'(0 .. Nbr_States - 1 => No_Net);
 
-      --  For each state:
+      --  First state
       S := Get_First_State (NFA);
+
+      --  Check if there is a loop-back with TRUE.
+      --  If so, keep the state to optimize the expression.
+      --  This is necessary for BMC, which assume every dff can be 0 or 1.
+      First := No_State;
+      E := Get_First_Src_Edge (S);
+      while E /= No_Edge loop
+         if Get_Edge_Dest (E) = S
+           and then Get_Kind (Get_Edge_Expr (E)) = N_True
+         then
+            First := S;
+            exit;
+         end if;
+         E := Get_Next_Src_Edge (E);
+      end loop;
+
+      --  For each state:
       while S /= No_State loop
          S_Num := Get_State_Label (S);
          I := Build_Extract_Bit (Ctxt, States, Uns32 (S_Num));
@@ -4529,6 +4567,9 @@ package body Synth.Vhdl_Stmts is
             if N = No_Net then
                --  Anything ?
                Cond := I;
+            elsif S = First then
+               --  Optimize when the first state is always 1.
+               Cond := N;
             else
                Cond := Build_Dyadic (Ctxt, Id_And, I, N);
                Set_Location (Cond, Loc);
@@ -4599,17 +4640,18 @@ package body Synth.Vhdl_Stmts is
 
       Rst := No_Net;
       Has_Async_Abort := False;
-      if Get_Kind (Stmt) in Iir_Kinds_Psl_Property_Directive
-        and then Get_PSL_Abort_Flag (Stmt)
-      then
+      if Get_Kind (Stmt) in Iir_Kinds_Psl_Property_Directive then
          declare
             use PSL.Types;
             use PSL.Subsets;
             use PSL.Nodes;
-            Abort_Prop : constant PSL_Node := Get_Psl_Property (Stmt);
+            Abort_Prop : constant PSL_Node := Get_PSL_Abort (Stmt);
          begin
-            Rst := Synth_PSL_Expression (Syn_Inst, Get_Boolean (Abort_Prop));
-            Has_Async_Abort := Is_Async_Abort (Abort_Prop);
+            if Abort_Prop /= Null_PSL_Node then
+               Rst := Synth_PSL_Expression
+                 (Syn_Inst, Get_Boolean (Abort_Prop));
+               Has_Async_Abort := Is_Async_Abort (Abort_Prop);
+            end if;
          end;
       end if;
 
@@ -4896,7 +4938,8 @@ package body Synth.Vhdl_Stmts is
             Areapools.Release (Areapools.Empty_Marker, Wireval_Pool);
          when Iir_Kinds_Process_Statement =>
             Synth_Process_Statement (Syn_Inst, Stmt);
-         when Iir_Kind_If_Generate_Statement =>
+         when Iir_Kind_If_Generate_Statement
+            | Iir_Kind_Case_Generate_Statement =>
             Synth_If_Generate_Statement (Syn_Inst, Stmt);
          when Iir_Kind_For_Generate_Statement =>
             Synth_For_Generate_Statement (Syn_Inst, Stmt);
@@ -5071,7 +5114,7 @@ package body Synth.Vhdl_Stmts is
       Item : Node;
    begin
       Unit_Sname := New_Sname_User (Get_Identifier (Unit),
-                                    Get_Sname (Syn_Inst));
+                                    Get_Sname (Parent_Inst));
       Set_Extra (Syn_Inst, Parent_Inst, Unit_Sname);
       Mark (M, Proc_Pool);
 

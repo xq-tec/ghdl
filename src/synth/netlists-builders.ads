@@ -221,6 +221,12 @@ package Netlists.Builders is
    function Build_Resolver (Ctxt : Context_Acc; L, R : Net) return Net;
 
    function Build_Nop (Ctxt : Context_Acc; I : Net) return Net;
+
+   --  Insert an Id_Nop between Drv (the driver) and the sinks of Drv.
+   --  This is used by netlists.rename to handle escaped identifiers in
+   --  sub instances.
+   procedure Insert_Nop (Ctxt : Context_Acc; Drv : Net);
+
 private
    type Module_Arr is array (Module_Id range <>) of Module;
 
@@ -233,7 +239,6 @@ private
       M_Monadic : Module_Arr (Monadic_Module_Id);
       M_Compare : Module_Arr (Compare_Module_Id);
       M_Concat : Module_Arr (Concat_Module_Id);
-      M_Concatn : Module;
       M_Const_UB32 : Module;
       M_Const_SB32 : Module;
       M_Const_UL32 : Module;

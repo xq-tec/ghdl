@@ -2053,7 +2053,8 @@ package body Synth.Vhdl_Oper is
             return Create_Value_Net (Get_Net (Ctxt, L), Res_Typ);
 
          when Iir_Predefined_Ieee_Numeric_Std_Touns_Nat_Nat_Uns
-            | Iir_Predefined_Ieee_Std_Logic_Arith_Conv_Unsigned_Int =>
+            | Iir_Predefined_Ieee_Std_Logic_Arith_Conv_Unsigned_Int
+            | Iir_Predefined_Ieee_Numeric_Std_Unsigned_To_Slv_Nat_Nat =>
             return Synth_Conv_Vector (False);
          when Iir_Predefined_Ieee_Numeric_Std_Touns_Nat_Uns_Uns =>
             declare
@@ -2139,15 +2140,20 @@ package body Synth.Vhdl_Oper is
             | Iir_Predefined_Ieee_Std_Logic_Arith_Shl_Uns
             | Iir_Predefined_Ieee_Std_Logic_Arith_Shl_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Shl
-            | Iir_Predefined_Ieee_Std_Logic_Signed_Shl =>
+            | Iir_Predefined_Ieee_Std_Logic_Signed_Shl
+            | Iir_Predefined_Ieee_Numeric_Std_Unsigned_Shift_Left =>
+            --  Shift left (with unsigned count)
             return Synth_Shift_Rotate (Ctxt, Id_Lsl, L, R, Expr);
          when Iir_Predefined_Ieee_Numeric_Std_Shf_Right_Uns_Nat
             | Iir_Predefined_Ieee_Std_Logic_Arith_Shr_Uns
-            | Iir_Predefined_Ieee_Std_Logic_Unsigned_Shr =>
+            | Iir_Predefined_Ieee_Std_Logic_Unsigned_Shr
+            | Iir_Predefined_Ieee_Numeric_Std_Unsigned_Shift_Right =>
+            --  Logical shift right (with unsigned count)
             return Synth_Shift_Rotate (Ctxt, Id_Lsr, L, R, Expr);
          when Iir_Predefined_Ieee_Numeric_Std_Shf_Right_Sgn_Nat
             | Iir_Predefined_Ieee_Std_Logic_Arith_Shr_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Signed_Shr =>
+            --  Arithmetic shift right (with unsigned count)
             return Synth_Shift_Rotate (Ctxt, Id_Asr, L, R, Expr);
          when Iir_Predefined_Ieee_Numeric_Std_Rot_Left_Uns_Nat =>
             return Synth_Shift_Rotate (Ctxt, Id_Rol, L, R, Expr);

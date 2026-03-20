@@ -234,7 +234,7 @@ package body Grt.Export is
                   Append (Buffer, "}}");
                end if;
 
-            when Obj_None | Obj_Subtype | Obj_Marker =>
+            when Obj_None | Obj_Subtype | Obj_Marker | Obj_Subprg =>
                null;
          end case;
       end loop;

@@ -526,6 +526,8 @@ package body Vhdl.Sem_Stmts is
          Error_Msg_Sem (+Stmt, "signal name must be static");
       end if;
 
+      Sem_Check_Pure (Target, Target_Object);
+
       --  LRM93 2.1.1.2
       --  A formal signal parameter is a guarded signal if and only if
       --  it is associated with an actual signal that is a guarded
@@ -610,6 +612,8 @@ package body Vhdl.Sem_Stmts is
          Error_Msg_Sem
            (+Target, "element of a target aggregate must be a static name");
       end if;
+
+      Sem_Check_Pure (Target, Target_Object);
    end Check_Simple_Variable_Target;
 
    procedure Check_Target (Stmt : Iir; Target : Iir)
@@ -621,6 +625,11 @@ package body Vhdl.Sem_Stmts is
          Check_Aggregate_Target (Stmt, Target, Nbr);
          Check_Uniq_Aggregate_Associated (Target, Nbr);
       else
+         if Is_Error (Get_Type (Target)) then
+            --  Was already reported.
+            return;
+         end if;
+
          case Get_Kind (Stmt) is
             when Iir_Kind_Variable_Assignment_Statement
               | Iir_Kind_Conditional_Variable_Assignment_Statement
@@ -1648,7 +1657,8 @@ package body Vhdl.Sem_Stmts is
                when Iir_Kind_Signal_Declaration
                  | Iir_Kind_Guard_Signal_Declaration
                  | Iir_Kinds_Signal_Attribute
-                 | Iir_Kind_Above_Attribute =>
+                 | Iir_Kind_Above_Attribute
+                 | Iir_Kind_External_Signal_Name =>
                   null;
                when Iir_Kind_Interface_Signal_Declaration =>
                   if not Is_Interface_Signal_Readable (Prefix) then

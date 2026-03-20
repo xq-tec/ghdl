@@ -1693,6 +1693,10 @@ package body Vhdl.Parse is
          end case;
 
          Actual := Get_Actual (Assoc);
+         if Actual = Null_Iir then
+            return Create_Error (Assoc);
+         end if;
+
          case Get_Kind (Actual) is
             when Iir_Kinds_Denoting_Name =>
                Assoc_Index := Actual;
@@ -1712,16 +1716,12 @@ package body Vhdl.Parse is
                   end if;
                end;
             when Iir_Kind_Error =>
-               Res := Create_Iir (Iir_Kind_Array_Subtype_Definition);
-               Location_Copy (Res, Assoc);
-               return Res;
+               return Create_Error (Assoc);
             when others =>
                --  TODO: improve message ?
                Error_Msg_Parse
                  (+Actual, "incorrect constraint for a subtype indication");
-               Res := Create_Iir (Iir_Kind_Array_Subtype_Definition);
-               Location_Copy (Res, Assoc);
-               return Res;
+               return Create_Error (Assoc);
          end case;
 
          Assoc := Next_Assoc;
@@ -1842,7 +1842,7 @@ package body Vhdl.Parse is
             --  For O'Subtype.
             return Name;
          when Iir_Kind_Parenthesis_Name =>
-            --  A constraint.
+            --  A constraint (maybe parsed as a slice).
             declare
                Chain : Iir;
                Prefix : Iir;
@@ -1850,6 +1850,9 @@ package body Vhdl.Parse is
                Chain := Rechain_Parenthesis_Name_For_Subtype (Name);
                Prefix := Get_Prefix (Chain);
                Res := Parenthesis_Name_To_Subtype (Chain);
+               if Is_Error (Res) then
+                  return Res;
+               end if;
                Set_Subtype_Type_Mark (Res, Prefix);
                return Res;
             end;
@@ -2541,7 +2544,9 @@ package body Vhdl.Parse is
                end if;
                Ret := Create_Iir (Iir_Kind_Subtype_Declaration);
                Location_Copy (Ret, Tm);
-               Set_Identifier (Ret, Get_Identifier (Tm));
+               if not Is_Error (Tm) then
+                  Set_Identifier (Ret, Get_Identifier (Tm));
+               end if;
                if Get_Kind (Subprg) = Iir_Kind_Interface_Function_Declaration
                then
                   Error_Msg_Parse
@@ -2647,7 +2652,7 @@ package body Vhdl.Parse is
          Scan;
 
          if Current_Token = Tok_Box then
-            Def := Create_Iir (Iir_Kind_Reference_Name);
+            Def := Create_Iir (Iir_Kind_Box_Name);
             Set_Location (Def);
 
             --  Skip '<>'.
@@ -6577,6 +6582,10 @@ package body Vhdl.Parse is
       then
          -- This is a subtype_indication.
          Res := Create_Iir (Iir_Kind_Allocator_By_Subtype);
+         if Get_Kind (Expr) in Iir_Kinds_Denoting_Name then
+            --  Complete the name.
+            Expr := Parse_Name_Suffix (Expr);
+         end if;
          Expr := Parse_Subtype_Indication (Expr);
          Set_Subtype_Indication (Res, Expr);
       else
@@ -10631,6 +10640,9 @@ package body Vhdl.Parse is
             when others =>
                --  FIXME: improve message:
                Unexpected ("simultaneous statement list");
+
+               --  Be sure to make progress...
+               Scan;
                Resync_To_End_Of_Statement;
                if Current_Token = Tok_Semi_Colon then
                   Scan;

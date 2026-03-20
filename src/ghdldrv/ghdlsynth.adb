@@ -26,6 +26,7 @@ with Errorout;
 with Errorout.Console;
 with Bug;
 with Simple_IO;
+with Outputs;
 
 with Libraries;
 with Flags;
@@ -52,6 +53,7 @@ with Elab.Vhdl_Insts;
 with Elab.Vhdl_Objtypes;
 
 with Synthesis;
+with Synth.Context; use Synth.Context;
 with Synth.Disp_Vhdl;
 with Synth.Vhdl_Context;
 with Synth.Flags; use Synth.Flags;
@@ -73,6 +75,7 @@ package body Ghdlsynth is
       Disp_Inline : Boolean := True;
       Disp_Id : Boolean := True;
       Oformat     : Out_Format := Format_Default;
+      Ofile       : String_Acc := null;
 
       Flag_Stats : Boolean := False;
 
@@ -213,6 +216,8 @@ package body Ghdlsynth is
          Cmd.Disp_Inline := False;
       elsif Option = "--disp-noid" then
          Cmd.Disp_Id := False;
+      elsif Option'Length > 3 and then Option (1 .. 3) = "-o=" then
+         Cmd.Ofile := new String'(Option (4 .. Option'Last));
       elsif Option'Length > 6 and then Option (1 .. 6) = "--out=" then
          if Option (7 .. Option'Last) = "raw" then
             Cmd.Oformat := Format_Raw;
@@ -248,6 +253,8 @@ package body Ghdlsynth is
          Flag_Debug_Noexpand := True;
       elsif Option = "-dn" then
          Flag_Debug_Nonull := True;
+      elsif Option = "-ds" then
+         Flag_Debug_Stats := True;
       elsif Option = "-t" then
          Flag_Trace_Statements := True;
       elsif Option = "-i" then
@@ -447,16 +454,26 @@ package body Ghdlsynth is
 
    procedure Disp_Design (Cmd : Command_Synth;
                           Default : Out_Format;
-                          Res : Module;
+                          Res : Base_Instance_Acc;
                           Config : Iir;
                           Inst : Synth_Instance_Acc)
    is
+      Top : constant Module := Res.Top_Module;
       Format : Out_Format;
       Ent : Iir;
    begin
       Format := Cmd.Oformat;
       if Format = Format_Default then
          Format := Default;
+      end if;
+
+      if Format = Format_None then
+         return;
+      end if;
+
+      if not Outputs.Open_File (Cmd.Ofile) then
+         Errorout.Error_Msg_Option ("cannot open '" & Cmd.Ofile.all & "'");
+         return;
       end if;
 
       case Format is
@@ -467,27 +484,33 @@ package body Ghdlsynth is
          when Format_Raw =>
             Netlists.Dump.Flag_Disp_Inline := Cmd.Disp_Inline;
             Netlists.Dump.Flag_Disp_Id := Cmd.Disp_Id;
-            Netlists.Dump.Disp_Module (Res);
+            Netlists.Dump.Disp_Module (Top);
          when Format_Dump =>
             Netlists.Dump.Flag_Disp_Inline := Cmd.Disp_Inline;
-            Netlists.Dump.Dump_Module (Res);
+            Netlists.Dump.Dump_Module (Top);
          when Format_Dot =>
-            Netlists.Disp_Dot.Disp_Dot_Top_Module (Res);
+            Netlists.Disp_Dot.Disp_Dot_Top_Module (Top);
          when Format_Vhdl =>
+            Netlists.Rename.Rename_Module
+              (Res.Builder, Top, Language_Vhdl);
+
             if Get_Kind (Get_Library_Unit (Config)) = Iir_Kind_Foreign_Module
             then
                --  Not a VHDL design.
-               Netlists.Disp_Vhdl.Disp_Vhdl (Res);
+               Netlists.Disp_Vhdl.Disp_Vhdl (Top);
             else
                Ent := Vhdl.Utils.Get_Entity_From_Configuration (Config);
-               Synth.Disp_Vhdl.Disp_Vhdl_Wrapper (Ent, Res, Inst);
+               Synth.Disp_Vhdl.Disp_Vhdl_Wrapper (Ent, Top, Inst);
             end if;
          when Format_Raw_Vhdl =>
-            Netlists.Disp_Vhdl.Disp_Vhdl (Res);
+            Netlists.Disp_Vhdl.Disp_Vhdl (Top);
          when Format_Verilog =>
-            Netlists.Rename.Rename_Module (Res, Language_Verilog);
-            Netlists.Disp_Verilog.Disp_Verilog (Res);
+            Netlists.Rename.Rename_Module
+              (Res.Builder, Top, Language_Verilog);
+            Netlists.Disp_Verilog.Disp_Verilog (Top);
       end case;
+
+      Outputs.Close;
    end Disp_Design;
 
    function Ghdl_Synth
@@ -497,7 +520,7 @@ package body Ghdlsynth is
       use Vhdl.Configuration;
       use Elab.Vhdl_Objtypes;
       Args : String_Acc_Array (1 .. Argc);
-      Res : Module;
+      Res : Base_Instance_Acc;
       Cmd : Command_Synth;
       First_Arg : Natural;
       Config : Node;
@@ -533,7 +556,7 @@ package body Ghdlsynth is
       pragma Assert (Is_Expr_Pool_Empty);
 
       Res := Synthesis.Synth_Design (Config, Inst, Cmd.Top_Encoding);
-      if Res = No_Module then
+      if Res = null then
          return No_Module;
       end if;
 
@@ -553,7 +576,7 @@ package body Ghdlsynth is
 
       Elab.Vhdl_Annotations.Finalize_Annotate;
       Synth.Vhdl_Context.Free_Base_Instance;
-      return Res;
+      return Res.Top_Module;
 
    exception
       when Option_Error
@@ -569,7 +592,7 @@ package body Ghdlsynth is
                              Args : String_Acc_Array;
                              Success : out Boolean)
    is
-      Res : Module;
+      Res : Base_Instance_Acc;
       Inst : Synth_Instance_Acc;
       Config : Iir;
       Lib_Unit : Iir;
@@ -591,14 +614,14 @@ package body Ghdlsynth is
       end if;
 
       if Errorout.Nbr_Errors > 0 then
-         Res := No_Module;
+         Res := null;
       else
          Netlists.Errors.Initialize;
          Synth.Vhdl_Foreign.Initialize;
          Res := Synthesis.Synth_Design (Config, Inst, Cmd.Top_Encoding);
       end if;
 
-      if Res = No_Module then
+      if Res = null then
          Success := Cmd.Expect_Failure;
          return;
       elsif Cmd.Expect_Failure then

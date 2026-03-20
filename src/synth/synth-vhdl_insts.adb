@@ -591,7 +591,7 @@ package body Synth.Vhdl_Insts is
    end Build;
 
    package Insts_Interning is new Interning
-     (Params_Type => Inst_Params,
+     (Key_Type => Inst_Params,
       Object_Type => Inst_Object,
       Hash => Hash,
       Build => Build,
@@ -605,9 +605,15 @@ package body Synth.Vhdl_Insts is
       Value : Node;
       Spec : Node;
       Attr_Decl : Node;
+      Lib : Node;
       Val : Node;
    begin
       if Arch = Null_Node then
+         return True;
+      end if;
+
+      Lib := Get_Library (Get_Design_File (Get_Design_Unit (Arch)));
+      if Get_Vendor_Library_Flag (Lib) then
          return True;
       end if;
 
@@ -1340,8 +1346,6 @@ package body Synth.Vhdl_Insts is
 
       Set_Extra (Comp_Inst, Syn_Inst, Inst_Name);
 
-      Current_Pool := Process_Pool'Access;
-
       --  Create objects for the inputs and the outputs of the component,
       --  assign inputs (that's nets) and create wires for outputs.
       declare
@@ -1364,7 +1368,7 @@ package body Synth.Vhdl_Insts is
                   when Port_In =>
                      N := Synth_Input_Assoc
                        (Syn_Inst, Assoc, Comp_Inst, Inter, Inter_Typ);
-                     Val := Create_Value_Net (N, Inter_Typ);
+                     Val := Create_Value_Net (N, Inter_Typ, Instance_Pool);
                   when Port_Out
                     | Port_Inout =>
                      Val := Create_Value_Wire
@@ -1378,8 +1382,6 @@ package body Synth.Vhdl_Insts is
             Next_Association_Interface (Assoc, Assoc_Inter);
          end loop;
       end;
-
-      Current_Pool := Expr_Pool'Access;
 
       Sub_Inst := Get_Component_Instance (Comp_Inst);
       Arch := Get_Source_Scope (Sub_Inst);

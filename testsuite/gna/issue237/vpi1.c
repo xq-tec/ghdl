@@ -106,6 +106,8 @@ endofcompile_proc (struct t_cb_data *compile_cb)
   cb.cb_rtn = &vpi_clk_proc;
   cb.user_data = NULL;
   cb.obj = clk;
+  cb.time = NULL;
+  cb.value = NULL;
   if (vpi_register_cb (&cb) == NULL)
     vpi_printf ("cannot register ValueChange call back\n");
 

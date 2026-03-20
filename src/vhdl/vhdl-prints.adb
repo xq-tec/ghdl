@@ -21,6 +21,7 @@
 with Ada.Unchecked_Deallocation;
 
 with Types; use Types;
+with Outputs;
 with Simple_IO;
 with Flags; use Flags;
 with Name_Table;
@@ -1738,7 +1739,7 @@ package body Vhdl.Prints is
          Default := Get_Default_Subprogram (Subprg);
          if Default /= Null_Iir then
             Disp_Token (Ctxt, Tok_Is);
-            if Get_Kind (Default) = Iir_Kind_Reference_Name then
+            if Get_Kind (Default) = Iir_Kind_Box_Name then
                Disp_Token (Ctxt, Tok_Box);
             else
                Print (Ctxt, Default);
@@ -2407,7 +2408,8 @@ package body Vhdl.Prints is
          when N_Booleans
            | N_Name_Decl =>
             Print_Expr (Ctxt, Prop);
-         when N_Sequences =>
+         when N_Sequences
+           | N_Sequence_Instance =>
             Print_Sequence (Ctxt, Prop, Parent_Prio);
          when N_Property_Instance =>
             Disp_Ident (Ctxt, Get_Identifier (Get_Declaration (Prop)));
@@ -5417,7 +5419,7 @@ package body Vhdl.Prints is
       is
          pragma Unreferenced (Ctxt);
       begin
-         Simple_IO.Put (C);
+         Outputs.Wr (C);
       end Put;
 
       procedure Start_Hbox (Ctxt : in out Simple_Ctxt) is
@@ -5649,6 +5651,8 @@ package body Vhdl.Prints is
             Disp_Name_Of (Ctxt, N);
             --  FIXME: need first interface.
             Disp_Interface_Mode_And_Type (Ctxt, N);
+         when Iir_Kind_Iterator_Declaration =>
+            Disp_Parameter_Specification (Ctxt, N);
          when Iir_Kind_Function_Declaration
            | Iir_Kind_Procedure_Declaration =>
             Disp_Subprogram_Declaration (Ctxt, N, False);

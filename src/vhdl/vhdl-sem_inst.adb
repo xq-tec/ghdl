@@ -19,6 +19,8 @@ with Vhdl.Nodes_Priv;
 with Vhdl.Nodes_Meta;
 with Types; use Types;
 with Files_Map;
+with Vhdl.Sem_Types;
+with Vhdl.Sem_Decls;
 with Vhdl.Utils; use Vhdl.Utils;
 with Vhdl.Errors; use Vhdl.Errors;
 with Vhdl.Sem_Utils;
@@ -259,32 +261,36 @@ package body Vhdl.Sem_Inst is
                S : constant Iir := Get_Iir (N, F);
                R : Iir;
             begin
-               case Get_Field_Attribute (F) is
-                  when Attr_None =>
-                     R := Instantiate_Iir (S, False);
-                  when Attr_Ref =>
-                     R := Instantiate_Iir (S, True);
-                  when Attr_Maybe_Ref =>
-                     R := Instantiate_Iir (S, Get_Is_Ref (N));
-                  when Attr_Forward_Ref =>
-                     --  Must be explicitly handled in Instantiate_Iir, as it
-                     --  requires special handling.
-                     raise Internal_Error;
-                  when Attr_Maybe_Forward_Ref =>
-                     if Get_Is_Forward_Ref (N) then
-                        --  Likewise: must be explicitly handled.
-                        raise Internal_Error;
-                     else
+               if S = Null_Iir then
+                  R := Null_Iir;
+               else
+                  case Get_Field_Attribute (F) is
+                     when Attr_None =>
+                        R := Instantiate_Iir (S, False);
+                     when Attr_Ref =>
                         R := Instantiate_Iir (S, True);
-                     end if;
-                  when Attr_Chain =>
-                     R := Instantiate_Iir_Chain (S);
-                  when Attr_Chain_Next =>
-                     R := Null_Iir;
-                  when Attr_Of_Ref | Attr_Of_Maybe_Ref =>
-                     --  Can only appear in list.
-                     raise Internal_Error;
-               end case;
+                     when Attr_Maybe_Ref =>
+                        R := Instantiate_Iir (S, Get_Is_Ref (N));
+                     when Attr_Forward_Ref =>
+                        --  Must be explicitly handled in Instantiate_Iir, as
+                        --  it requires special handling.
+                        raise Internal_Error;
+                     when Attr_Maybe_Forward_Ref =>
+                        if Get_Is_Forward_Ref (N) then
+                           --  Likewise: must be explicitly handled.
+                           raise Internal_Error;
+                        else
+                           R := Instantiate_Iir (S, True);
+                        end if;
+                     when Attr_Chain =>
+                        R := Instantiate_Iir_Chain (S);
+                     when Attr_Chain_Next =>
+                        R := Null_Iir;
+                     when Attr_Of_Ref | Attr_Of_Maybe_Ref =>
+                        --  Can only appear in list.
+                        raise Internal_Error;
+                  end case;
+               end if;
                Set_Iir (Res, F, R);
             end;
          when Type_Iir_List =>
@@ -762,11 +768,12 @@ package body Vhdl.Sem_Inst is
             when Iir_Kind_Interface_Constant_Declaration =>
                declare
                   Is_Ref : constant Boolean := Get_Is_Ref (Inter);
+                  Ind : Iir;
                begin
-                  Set_Type (Res, Get_Type (Inter));
-                  Set_Subtype_Indication
-                    (Res,
-                     Instantiate_Iir (Get_Subtype_Indication (Inter), Is_Ref));
+                  Ind := Instantiate_Iir (Get_Subtype_Indication (Inter),
+                                          Is_Ref);
+                  Set_Subtype_Indication (Res, Ind);
+                  Set_Type (Res, Get_Type_Of_Subtype_Indication (Ind));
                   Set_Mode (Res, Get_Mode (Inter));
                   Set_Has_Mode (Res, Get_Has_Mode (Inter));
                   Set_Has_Class (Res, Get_Has_Class (Inter));
@@ -1045,9 +1052,9 @@ package body Vhdl.Sem_Inst is
                   --  Check if the interface type was declared in the same
                   --  interface list: must have the same parent.
                   if Get_Parent (Get_Type_Declarator (Formal_Type))
-                    = Get_Parent (Orig_Inter)
+                    = Get_Parent (Inter)
                   then
-                     Set_Type (Inter, Get_Instance (Formal_Type));
+                     Set_Type (Inter, Get_Associated_Type (Formal_Type));
                   end if;
                end if;
             end;
@@ -1075,18 +1082,23 @@ package body Vhdl.Sem_Inst is
             --  Replace the incomplete interface type by the actual subtype
             --  indication.
             declare
-               Inter_Type_Def : constant Iir := Get_Type (Orig_Inter);
+               Orig_Inter_Def : constant Iir := Get_Type (Orig_Inter);
+               Inter_Def : constant Iir :=
+                 Get_Interface_Type_Definition (Inter);
                Actual_Type : constant Iir := Get_Actual_Type (Assoc);
                Assoc_Subprg_Chain : Iir;
                Inter_Subprg_Chain : Iir;
             begin
-               Set_Instance (Inter_Type_Def, Actual_Type);
+               Set_Instance (Orig_Inter_Def, Actual_Type);
                --  The associated type is a forward reference, so it can
                --  be set to the actual type (which can be defined later,
                --  as an anonymous typ in the association).
                --  Let the type be an interface type definition.
-               Set_Associated_Type (Get_Interface_Type_Definition (Inter),
-                                    Actual_Type);
+               Set_Associated_Type (Inter_Def, Actual_Type);
+
+               Set_Constraint_State
+                 (Inter_Def,
+                  Sem_Types.Get_Subtype_Indication_Constraint (Actual_Type));
 
                --  Also associate subprograms.
                Assoc_Subprg_Chain := Get_Subprogram_Association_Chain (Assoc);
@@ -1277,9 +1289,61 @@ package body Vhdl.Sem_Inst is
       Instantiate_Package (Inter, Pkg, True);
    end Instantiate_Interface_Package_Declaration;
 
+   function Has_Unbounded_Type_Interface (Header : Iir) return Boolean
+   is
+      Inter : Iir;
+      Def : Iir;
+   begin
+      Inter := Get_Generic_Chain (Header);
+      while Inter /= Null_Iir loop
+         if Get_Kind (Inter) = Iir_Kind_Interface_Type_Declaration then
+            Def := Get_Interface_Type_Definition (Inter);
+            Def := Get_Associated_Type (Def);
+            if Get_Kind (Def) in Iir_Kinds_Composite_Type_Definition
+              and then Get_Constraint_State (Def) /= Fully_Constrained
+            then
+               return True;
+            end if;
+         end if;
+         Inter := Get_Chain (Inter);
+      end loop;
+      return False;
+   end Has_Unbounded_Type_Interface;
+
+   procedure Reanalyze_Instantiated_Declarations (Chain : Iir)
+   is
+      Decl : Iir;
+   begin
+      Decl := Chain;
+      while Decl /= Null_Iir loop
+         case Get_Kind (Decl) is
+            when Iir_Kind_Type_Declaration =>
+               --  Adjust constraints, staticness...
+               Sem_Types.Reanalyze_Type_Definition
+                 (Get_Type_Definition (Decl));
+            when Iir_Kinds_Subprogram_Declaration =>
+               --  TODO: check no access type in interfaces ?
+               null;
+            when Iir_Kind_Protected_Type_Body =>
+               Reanalyze_Instantiated_Declarations
+                 (Get_Declaration_Chain (Decl));
+            when Iir_Kind_Variable_Declaration =>
+               Sem_Decls.Check_Object_Declaration (Decl);
+            when others =>
+               --  Error_Kind ("reanalyze_instantiated_declarations", Decl);
+               null;
+         end case;
+         Decl := Get_Chain (Decl);
+      end loop;
+   end Reanalyze_Instantiated_Declarations;
+
    procedure Instantiate_Package_Declaration (Inst : Iir; Pkg : Iir) is
    begin
       Instantiate_Package (Inst, Pkg, False);
+
+      if Has_Unbounded_Type_Interface (Inst) then
+         Reanalyze_Instantiated_Declarations (Get_Declaration_Chain (Inst));
+      end if;
    end Instantiate_Package_Declaration;
 
    --  Adjust references to interfaces:
@@ -1366,6 +1430,7 @@ package body Vhdl.Sem_Inst is
    function Instantiate_Package_Body (Inst : Iir) return Iir
    is
       Pkg : constant Iir := Get_Uninstantiated_Package_Decl (Inst);
+      Hdr : constant Iir := Get_Package_Header (Pkg);
       Prev_Instance_File : constant Source_File_Entry := Instance_File;
       Mark : constant Instance_Index_Type := Prev_Instance_Table.Last;
       Bod : constant Iir := Get_Package_Body (Pkg);
@@ -1381,7 +1446,7 @@ package body Vhdl.Sem_Inst is
       Set_Instance (Pkg, Inst);
 
       --  Redirect references to interfaces.
-      Instantiate_Interface_References (Get_Package_Header (Pkg), Inst, Inst);
+      Instantiate_Interface_References (Hdr, Inst, Inst);
 
       Set_Instance_On_Chain
         (Get_Declaration_Chain (Pkg), Get_Declaration_Chain (Inst));
@@ -1403,6 +1468,10 @@ package body Vhdl.Sem_Inst is
       --  Restore.
       Instance_File := Prev_Instance_File;
       Restore_Origin (Mark);
+
+      if Has_Unbounded_Type_Interface (Inst) then
+         Reanalyze_Instantiated_Declarations (Get_Declaration_Chain (Res));
+      end if;
 
       return Res;
    end Instantiate_Package_Body;

@@ -60,6 +60,13 @@ package body Grt.Options is
       Time_Phys_To_Real := 1.0 / Time_Real_To_Phys;
    end Set_Time_Resolution;
 
+   function Time_Scale_Unit return Long_Float is
+      Units : constant array (Natural_Time_Scale) of Long_Float :=
+         ( 1.0, 1.0e-3, 1.0e-6, 1.0e-9, 1.0e-12, 1.0e-15 );
+   begin
+      return Units (Options.Time_Resolution_Scale);
+   end Time_Scale_Unit;
+
    procedure Help
    is
       use Grt.Astdio;
@@ -210,6 +217,12 @@ package body Grt.Options is
          return -1;
       end if;
       while Scale < Time_Resolution_Scale loop
+         if Time >= Integer_64'Last / 1000 then
+            Error_S ("time value '");
+            Diag_C (Str);
+            Error_E ("' is too large");
+            return -1;
+         end if;
          Time := Time * 1000;
          Scale := Scale + 1;
       end loop;

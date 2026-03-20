@@ -774,8 +774,17 @@ package body Synth.Environment is
             --  We don't know, so assume yes.
             return True;
          when Id_Signal
-            | Id_Isignal =>
-            return Is_Tribuf_Net (Get_Input_Net (Inst, 0));
+           | Id_Isignal =>
+            declare
+               Inp : constant Net := Get_Input_Net (Inst, 0);
+            begin
+               if Inp = No_Net then
+                  return False;
+               else
+                  --  Testcase ?
+                  return Is_Tribuf_Net (Inp);
+               end if;
+            end;
          when others =>
             return False;
       end case;
@@ -905,6 +914,7 @@ package body Synth.Environment is
                                           Wire_Rec : Wire_Id_Record;
                                           Value : out Net)
    is
+      Gate : constant Instance := Get_Net_Parent (Wire_Rec.Gate);
       Inp : Conc_Assign;
       Inp_Off : Uns32;
       Inp_Wd : Width;
@@ -1029,11 +1039,25 @@ package body Synth.Environment is
                end;
             else
                --  There is a hole.
-               pragma Assert (Inp_Off > Data.Res_Off);
-               Warning_No_Assignment
-                 (Wire_Rec.Decl, Data.Res_Off, Inp_Off - 1);
-               Finalize_Assignment_Append
-                 (Data, Build_Const_Z (Ctxt, Inp_Off - Data.Res_Off));
+               declare
+                  Unk : Net;
+               begin
+                  pragma Assert (Inp_Off > Data.Res_Off);
+                  case Get_Id (Gate) is
+                     when Gates.Id_Isignal
+                       | Gates.Id_Ioutput =>
+                        --  Note: as the init value is a const, it might be
+                        --  more efficient to recreate a const gate.
+                        Unk := Build2_Extract
+                          (Ctxt, Get_Input_Net (Gate, 1),
+                           Data.Res_Off, Inp_Off - Data.Res_Off);
+                     when others =>
+                        Warning_No_Assignment
+                          (Wire_Rec.Decl, Data.Res_Off, Inp_Off - 1);
+                        Unk := Build_Const_Z (Ctxt, Inp_Off - Data.Res_Off);
+                  end case;
+                  Finalize_Assignment_Append (Data, Unk);
+               end;
             end if;
          else
             --  Overlap: multiple inputs at this offset.
@@ -1343,7 +1367,7 @@ package body Synth.Environment is
 
       --  If no seq assign, return current value.
       if First_Seq = No_Seq_Assign then
-         return Build2_Extract_Push (Ctxt, Wire_Rec.Gate, Off, Wd);
+         return Build2_Extract (Ctxt, Wire_Rec.Gate, Off, Wd);
       end if;
 
       --  If the current value is static, just return it.
@@ -1404,8 +1428,8 @@ package body Synth.Environment is
                           (Cur_Wd, Pw - (Cur_Off - Pr.Offset));
                         Append
                           (Vec,
-                           Build2_Extract_Push (Ctxt, Pr.Value,
-                                                Cur_Off - Pr.Offset, Cur_Wd));
+                           Build2_Extract (Ctxt, Pr.Value,
+                                           Cur_Off - Pr.Offset, Cur_Wd));
                      end if;
                      exit;
                   end if;
@@ -1430,8 +1454,8 @@ package body Synth.Environment is
                      Seq := Get_Assign_Prev (Seq);
                      if Seq = No_Seq_Assign then
                         --  Extract from gate.
-                        Append (Vec, Build2_Extract_Push (Ctxt, Wire_Rec.Gate,
-                                                          Cur_Off, Cur_Wd));
+                        Append (Vec, Build2_Extract (Ctxt, Wire_Rec.Gate,
+                                                     Cur_Off, Cur_Wd));
                         exit;
                      end if;
                      if Get_Assign_Is_Static (Seq) then
@@ -2014,9 +2038,9 @@ package body Synth.Environment is
                   --           |----------||
                   --          P.Off        P.Next
                   --  Shrink EL.
-                  P.Value := Build2_Extract_Push (Ctxt, P.Value,
-                                                  Off => V_Next - P.Offset,
-                                                  W => P_Next - V_Next);
+                  P.Value := Build2_Extract (Ctxt, P.Value,
+                                             Off => V_Next - P.Offset,
+                                             W => P_Next - V_Next);
                   P.Offset := V_Next;
                   if not Inserted then
                      if Last_El /= No_Partial_Assign then
@@ -2036,9 +2060,9 @@ package body Synth.Environment is
                   --           |----------||
                   --          P.Off        P.Next
                   --  Shrink EL.
-                  P.Value := Build2_Extract_Push (Ctxt, P.Value,
-                                                  Off => 0,
-                                                  W => V.Offset - P.Offset);
+                  P.Value := Build2_Extract (Ctxt, P.Value,
+                                             Off => 0,
+                                             W => V.Offset - P.Offset);
                   pragma Assert (not Inserted);
                   V.Next := P.Next;
                   P.Next := Asgn;
@@ -2054,14 +2078,14 @@ package body Synth.Environment is
                   pragma Assert (not Inserted);
                   Partial_Assign_Table.Append
                     ((Next => P.Next,
-                      Value => Build2_Extract_Push (Ctxt, P.Value,
-                                                    Off => V_Next - P.Offset,
-                                                    W => P_Next - V_Next),
+                      Value => Build2_Extract (Ctxt, P.Value,
+                                               Off => V_Next - P.Offset,
+                                               W => P_Next - V_Next),
                       Offset => V_Next));
                   V.Next := Partial_Assign_Table.Last;
-                  P.Value := Build2_Extract_Push (Ctxt, P.Value,
-                                                  Off => 0,
-                                                  W => V.Offset - P.Offset);
+                  P.Value := Build2_Extract (Ctxt, P.Value,
+                                             Off => 0,
+                                             W => V.Offset - P.Offset);
                   P.Next := Asgn;
                   Inserted := True;
                   --  No more possible overlaps.

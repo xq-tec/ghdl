@@ -129,35 +129,8 @@ package body Ghdlrun is
       end case;
    end Compile_Init;
 
-   procedure Compile_Elab
-     (Cmd_Name : String; Args : String_Acc_Array; Opt_Arg : out Natural)
-   is
-      Config : Iir;
+   procedure Compile_Elab_Setup (Config : Iir) is
    begin
-      Common_Compile_Elab (Cmd_Name, Args, True, Opt_Arg, Config);
-
-      if Run_Mode /= Run_Elab_Jit then
-         --  For compatibility, also handle '-gGEN=VAL' options after the
-         --  top-level unit.
-         --  Handle --expect-failure
-         for I in Opt_Arg .. Args'Last loop
-            declare
-               Arg : String renames Args (I).all;
-               Res : Options.Option_State;
-               pragma Unreferenced (Res);
-            begin
-               if Arg'Length > 3
-                 and then Arg (Arg'First + 1) = 'g'
-                 and then Is_Generic_Override_Option (Arg)
-               then
-                  Res := Decode_Generic_Override_Option (Arg);
-               elsif Arg = "--expect-failure" then
-                  Flag_Expect_Failure := True;
-               end if;
-            end;
-         end loop;
-      end if;
-
       if Time_Resolution = 'a' then
          Time_Resolution := Vhdl.Std_Package.Get_Minimal_Time_Resolution;
          if Time_Resolution = '?' then
@@ -257,6 +230,38 @@ package body Ghdlrun is
       if Flags.Check_Ast_Level > 0 then
          Vhdl.Nodes_GC.Report_Unreferenced;
       end if;
+   end Compile_Elab_Setup;
+
+   procedure Compile_Elab
+     (Cmd_Name : String; Args : String_Acc_Array; Opt_Arg : out Natural)
+   is
+      Config : Iir;
+   begin
+      Common_Compile_Elab (Cmd_Name, Args, True, Opt_Arg, Config);
+
+      if Run_Mode /= Run_Elab_Jit then
+         --  For compatibility, also handle '-gGEN=VAL' options after the
+         --  top-level unit.
+         --  Handle --expect-failure
+         for I in Opt_Arg .. Args'Last loop
+            declare
+               Arg : String renames Args (I).all;
+               Res : Options.Option_State;
+               pragma Unreferenced (Res);
+            begin
+               if Arg'Length > 3
+                 and then Arg (Arg'First + 1) = 'g'
+                 and then Is_Generic_Override_Option (Arg)
+               then
+                  Res := Decode_Generic_Override_Option (Arg);
+               elsif Arg = "--expect-failure" then
+                  Flag_Expect_Failure := True;
+               end if;
+            end;
+         end loop;
+      end if;
+
+      Compile_Elab_Setup (Config);
    end Compile_Elab;
 
    --  Set options.
@@ -279,6 +284,7 @@ package body Ghdlrun is
 --           return To_Ghdl_C_String (T.all'Address);
 --        end Strdup;
    begin
+      --  Argc, Argv and Progname are from Grt.Options.
       Argc := 1 + Args'Length;
       Argv := Malloc
         (size_t (Argc * (Ghdl_C_String'Size / System.Storage_Unit)));
@@ -347,6 +353,8 @@ package body Ghdlrun is
 
             Trans_Link.Link;
 
+            Trans.Coverage.Cover_Finalize;
+
             Def (Trans_Decls.Ghdl_Allocate,
                  Grt.Heap.Ghdl_Allocate'Address);
             Def (Trans_Decls.Ghdl_Deallocate,
@@ -375,10 +383,16 @@ package body Ghdlrun is
             Elaborate_Proc :=
               Conv (Ortho_Jit.Get_Address (Trans_Decls.Ghdl_Elaborate));
 
-            Ortho_Jit.Finish;
+            declare
+               use Trans.Coverage;
+            begin
+               if Coverage_Level = Coverage_None then
+                  Ortho_Jit.Finish;
 
-            Translation.Finalize;
-            Options.Finalize;
+                  Translation.Finalize;
+                  Options.Finalize;
+               end if;
+            end;
 
             if Flag_Verbose then
                Put_Line ("Starting simulation");
@@ -437,7 +451,9 @@ package body Ghdlrun is
    is
       pragma Unreferenced (Cmd);
    begin
-      return Name = "run-help"
+      return Name = "help-run"
+        or else Name = "--help-run"
+        or else Name = "run-help"
         or else Name = "--run-help";
    end Decode_Command;
 
@@ -445,9 +461,9 @@ package body Ghdlrun is
    is
       pragma Unreferenced (Cmd);
    begin
-      return "run-help"
+      return "help-run"
         & ASCII.LF & "  Display help for RUNOPTS options"
-        & ASCII.LF & "  alias: --run-help";
+        & ASCII.LF & "  alias: --help-run, --run-help, run-help";
    end Get_Short_Help;
 
    procedure Perform_Action (Cmd : in out Command_Run_Help;
@@ -547,6 +563,10 @@ package body Ghdlrun is
                          Disp_Help'Access);
       Ghdlcomp.Register_Commands;
       Translation.Register_Translation_Back_End;
-      Register_Command (new Command_Run_Help);
    end Register_Commands;
+
+   procedure Register_Help_Commands is
+   begin
+      Register_Command (new Command_Run_Help);
+   end Register_Help_Commands;
 end Ghdlrun;

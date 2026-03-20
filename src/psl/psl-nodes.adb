@@ -685,6 +685,22 @@ package body PSL.Nodes is
       Set_Field3 (N, S);
    end Set_Sequence;
 
+   function Get_Skip_Flag (N : Node) return Boolean is
+   begin
+      pragma Assert (N /= Null_Node);
+      pragma Assert (Has_Skip_Flag (Get_Kind (N)),
+                     "no field Skip_Flag");
+      return Get_Flag1 (N);
+   end Get_Skip_Flag;
+
+   procedure Set_Skip_Flag (N : Node; B : Boolean) is
+   begin
+      pragma Assert (N /= Null_Node);
+      pragma Assert (Has_Skip_Flag (Get_Kind (N)),
+                     "no field Skip_Flag");
+      Set_Flag1 (N, B);
+   end Set_Skip_Flag;
+
    function Get_Strong_Flag (N : Node) return Boolean is
    begin
       pragma Assert (N /= Null_Node);
@@ -796,6 +812,22 @@ package body PSL.Nodes is
                      "no field Value");
       Set_Field1 (N, Uns32_To_Node (Val));
    end Set_Value;
+
+   function Get_Origin (N : Node) return Node is
+   begin
+      pragma Assert (N /= Null_Node);
+      pragma Assert (Has_Origin (Get_Kind (N)),
+                     "no field Origin");
+      return Get_Field2 (N);
+   end Get_Origin;
+
+   procedure Set_Origin (N : Node; Val : Node) is
+   begin
+      pragma Assert (N /= Null_Node);
+      pragma Assert (Has_Origin (Get_Kind (N)),
+                     "no field Origin");
+      Set_Field2 (N, Val);
+   end Set_Origin;
 
    function Get_Boolean (N : Node) return Node is
    begin

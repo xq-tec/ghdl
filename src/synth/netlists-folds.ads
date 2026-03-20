@@ -36,7 +36,7 @@ package Netlists.Folds is
                              return Net;
 
    --  Concatenate nets of ELS in reverse order.  So if ELS(L .. R), then
-   --  ELS(L) will be at offset 0.
+   --  ELS(L) will be at offset 0 (so the last input).
    function Build2_Concat (Ctxt : Context_Acc; Els : Net_Array) return Net;
 
    --  If L or R has a null width, return the other.
@@ -74,12 +74,6 @@ package Netlists.Folds is
 
    --  Same as Build_Extract, but return I iff extract all the bits.
    function Build2_Extract
-     (Ctxt : Context_Acc; I : Net; Off, W : Width) return Net;
-
-   --  Likewise, but if I is an output of a mux2, build the extract gates
-   --  on the input of the mux2 (recursively).
-   --  The purpose is to keep the control flow of the mux2 tree.
-   function Build2_Extract_Push
      (Ctxt : Context_Acc; I : Net; Off, W : Width) return Net;
 
    --  Return A -> B  ==  !A || B

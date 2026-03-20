@@ -263,6 +263,8 @@ package PSL.Nodes is
    -- N_Number (Short)
    --
    --   Get/Set_Value (Field1)
+   --
+   --   Get/Set_Origin (Field2)
 
    -- N_Braced_SERE (Short)
    --
@@ -392,7 +394,9 @@ package PSL.Nodes is
    --   Get/Set_Property (Field4)
    --
    --   Get/Set_Boolean (Field3)
-
+   --
+   --  If set, the abort is handled outside the property.
+   --   Get/Set_Skip_Flag (Flag1)
 
    -- N_HDL_Bool (Short)
    --  An HDL expression of boolean type, that could be hashed.
@@ -559,6 +563,10 @@ package PSL.Nodes is
    procedure Set_Sequence (N : Node; S : Node);
 
    --  Field: Flag1
+   function Get_Skip_Flag (N : Node) return Boolean;
+   procedure Set_Skip_Flag (N : Node; B : Boolean);
+
+   --  Field: Flag1
    function Get_Strong_Flag (N : Node) return Boolean;
    procedure Set_Strong_Flag (N : Node; B : Boolean);
 
@@ -585,6 +593,10 @@ package PSL.Nodes is
    --  Field: Field1 (uc)
    function Get_Value (N : Node) return Uns32;
    procedure Set_Value (N : Node; Val : Uns32);
+
+   --  Field: Field2
+   function Get_Origin (N : Node) return Node;
+   procedure Set_Origin (N : Node; Val : Node);
 
    --  Field: Field3
    function Get_Boolean (N : Node) return Node;

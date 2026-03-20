@@ -29,6 +29,7 @@ package body PSL.Nodes_Meta is
       Field_Left => Type_Node,
       Field_Right => Type_Node,
       Field_Sequence => Type_Node,
+      Field_Skip_Flag => Type_Boolean,
       Field_Strong_Flag => Type_Boolean,
       Field_Inclusive_Flag => Type_Boolean,
       Field_Has_Identifier_List => Type_Boolean,
@@ -36,6 +37,7 @@ package body PSL.Nodes_Meta is
       Field_High_Bound => Type_Node,
       Field_Number => Type_Node,
       Field_Value => Type_Uns32,
+      Field_Origin => Type_Node,
       Field_Boolean => Type_Node,
       Field_Decl => Type_Node,
       Field_HDL_Node => Type_HDL_Node,
@@ -85,6 +87,8 @@ package body PSL.Nodes_Meta is
             return "right";
          when Field_Sequence =>
             return "sequence";
+         when Field_Skip_Flag =>
+            return "skip_flag";
          when Field_Strong_Flag =>
             return "strong_flag";
          when Field_Inclusive_Flag =>
@@ -99,6 +103,8 @@ package body PSL.Nodes_Meta is
             return "number";
          when Field_Value =>
             return "value";
+         when Field_Origin =>
+            return "origin";
          when Field_Boolean =>
             return "boolean";
          when Field_Decl =>
@@ -299,6 +305,8 @@ package body PSL.Nodes_Meta is
             return Attr_None;
          when Field_Sequence =>
             return Attr_None;
+         when Field_Skip_Flag =>
+            return Attr_None;
          when Field_Strong_Flag =>
             return Attr_None;
          when Field_Inclusive_Flag =>
@@ -312,6 +320,8 @@ package body PSL.Nodes_Meta is
          when Field_Number =>
             return Attr_None;
          when Field_Value =>
+            return Attr_None;
+         when Field_Origin =>
             return Attr_None;
          when Field_Boolean =>
             return Attr_None;
@@ -477,12 +487,15 @@ package body PSL.Nodes_Meta is
       Field_Property,
       Field_Boolean,
       --  N_Abort
+      Field_Skip_Flag,
       Field_Property,
       Field_Boolean,
       --  N_Async_Abort
+      Field_Skip_Flag,
       Field_Property,
       Field_Boolean,
       --  N_Sync_Abort
+      Field_Skip_Flag,
       Field_Property,
       Field_Boolean,
       --  N_Until
@@ -597,7 +610,8 @@ package body PSL.Nodes_Meta is
       Field_Chain,
       --  N_Inf
       --  N_Number
-      Field_Value
+      Field_Value,
+      Field_Origin
      );
 
    Fields_Of_Nodes_Last : constant array (Nkind) of Integer :=
@@ -634,41 +648,41 @@ package body PSL.Nodes_Meta is
       N_Next_Event => 85,
       N_Next_Event_A => 90,
       N_Next_Event_E => 95,
-      N_Abort => 97,
-      N_Async_Abort => 99,
-      N_Sync_Abort => 101,
-      N_Until => 105,
-      N_Before => 109,
-      N_Or_Prop => 111,
-      N_And_Prop => 113,
-      N_Paren_Prop => 114,
-      N_Braced_SERE => 115,
-      N_Concat_SERE => 117,
-      N_Fusion_SERE => 119,
-      N_Within_SERE => 121,
-      N_Clocked_SERE => 123,
-      N_Match_And_Seq => 125,
-      N_And_Seq => 127,
-      N_Or_Seq => 129,
-      N_Star_Repeat_Seq => 132,
-      N_Goto_Repeat_Seq => 135,
-      N_Plus_Repeat_Seq => 136,
-      N_Equal_Repeat_Seq => 139,
-      N_Paren_Bool => 143,
-      N_Not_Bool => 147,
-      N_And_Bool => 152,
-      N_Or_Bool => 157,
-      N_Imp_Bool => 162,
-      N_Equiv_Bool => 167,
-      N_HDL_Expr => 169,
-      N_HDL_Bool => 174,
-      N_False => 174,
-      N_True => 174,
-      N_EOS => 177,
-      N_Name => 179,
-      N_Name_Decl => 181,
-      N_Inf => 181,
-      N_Number => 182
+      N_Abort => 98,
+      N_Async_Abort => 101,
+      N_Sync_Abort => 104,
+      N_Until => 108,
+      N_Before => 112,
+      N_Or_Prop => 114,
+      N_And_Prop => 116,
+      N_Paren_Prop => 117,
+      N_Braced_SERE => 118,
+      N_Concat_SERE => 120,
+      N_Fusion_SERE => 122,
+      N_Within_SERE => 124,
+      N_Clocked_SERE => 126,
+      N_Match_And_Seq => 128,
+      N_And_Seq => 130,
+      N_Or_Seq => 132,
+      N_Star_Repeat_Seq => 135,
+      N_Goto_Repeat_Seq => 138,
+      N_Plus_Repeat_Seq => 139,
+      N_Equal_Repeat_Seq => 142,
+      N_Paren_Bool => 146,
+      N_Not_Bool => 150,
+      N_And_Bool => 155,
+      N_Or_Bool => 160,
+      N_Imp_Bool => 165,
+      N_Equiv_Bool => 170,
+      N_HDL_Expr => 172,
+      N_HDL_Bool => 177,
+      N_False => 177,
+      N_True => 177,
+      N_EOS => 180,
+      N_Name => 182,
+      N_Name_Decl => 184,
+      N_Inf => 184,
+      N_Number => 186
      );
 
    function Get_Fields (K : Nkind) return Fields_Array
@@ -690,6 +704,8 @@ package body PSL.Nodes_Meta is
    begin
       pragma Assert (Fields_Type (F) = Type_Boolean);
       case F is
+         when Field_Skip_Flag =>
+            return Get_Skip_Flag (N);
          when Field_Strong_Flag =>
             return Get_Strong_Flag (N);
          when Field_Inclusive_Flag =>
@@ -706,6 +722,8 @@ package body PSL.Nodes_Meta is
    begin
       pragma Assert (Fields_Type (F) = Type_Boolean);
       case F is
+         when Field_Skip_Flag =>
+            Set_Skip_Flag (N, V);
          when Field_Strong_Flag =>
             Set_Strong_Flag (N, V);
          when Field_Inclusive_Flag =>
@@ -848,6 +866,8 @@ package body PSL.Nodes_Meta is
             return Get_High_Bound (N);
          when Field_Number =>
             return Get_Number (N);
+         when Field_Origin =>
+            return Get_Origin (N);
          when Field_Boolean =>
             return Get_Boolean (N);
          when Field_Decl =>
@@ -904,6 +924,8 @@ package body PSL.Nodes_Meta is
             Set_High_Bound (N, V);
          when Field_Number =>
             Set_Number (N, V);
+         when Field_Origin =>
+            Set_Origin (N, V);
          when Field_Boolean =>
             Set_Boolean (N, V);
          when Field_Decl =>
@@ -1168,6 +1190,18 @@ package body PSL.Nodes_Meta is
       end case;
    end Has_Sequence;
 
+   function Has_Skip_Flag (K : Nkind) return Boolean is
+   begin
+      case K is
+         when N_Abort
+           | N_Async_Abort
+           | N_Sync_Abort =>
+            return True;
+         when others =>
+            return False;
+      end case;
+   end Has_Skip_Flag;
+
    function Has_Strong_Flag (K : Nkind) return Boolean is
    begin
       case K is
@@ -1256,6 +1290,11 @@ package body PSL.Nodes_Meta is
    begin
       return K = N_Number;
    end Has_Value;
+
+   function Has_Origin (K : Nkind) return Boolean is
+   begin
+      return K = N_Number;
+   end Has_Origin;
 
    function Has_Boolean (K : Nkind) return Boolean is
    begin

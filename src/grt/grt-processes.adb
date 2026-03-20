@@ -37,7 +37,6 @@ with Grt.Disp_Signals;
 with Grt.Stats;
 with Grt.Threads; use Grt.Threads;
 pragma Elaborate_All (Grt.Table);
-with Grt.Stdio;
 with Grt.Analog_Solver;
 
 package body Grt.Processes is
@@ -411,6 +410,10 @@ package body Grt.Processes is
       if Time < 0 then
          --  LRM93 8.1
          Error ("negative timeout clause", Filename, Line);
+      end if;
+      if Current_Time > Std_Time'Last - Time then
+         --  Timeout beyond the end of simulation
+         return;
       end if;
       Proc.Timeout := Current_Time + Time;
       Update_Process_First_Timeout (Proc);

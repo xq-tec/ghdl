@@ -2793,6 +2793,7 @@ package body Vhdl.Evaluation is
       Prefix : Iir;
       Prefix_Type : Iir;
       Dim : Natural;
+      Indexes : Iir_Flist;
    begin
       Prefix := Get_Prefix (Attr);
       case Get_Kind (Prefix) is
@@ -2821,7 +2822,12 @@ package body Vhdl.Evaluation is
       end if;
 
       Dim := Eval_Attribute_Parameter_Or_1 (Attr);
-      return Get_Nth_Element (Get_Index_Subtype_List (Prefix_Type), Dim - 1);
+      Indexes := Get_Index_Subtype_List (Prefix_Type);
+      if Dim < 1 or else Dim > Get_Nbr_Elements (Indexes) then
+         --  Error already displayed in sem_name.
+         Dim := 1;
+      end if;
+      return Get_Nth_Element (Indexes, Dim - 1);
    end Eval_Array_Attribute;
 
    function Eval_Integer_Image (Val : Int64; Orig : Iir) return Iir
@@ -3283,7 +3289,7 @@ package body Vhdl.Evaluation is
                      return Build_Discrete (Int64 (Res.Val), Orig);
                   else
                      Warning_Msg_Sem
-                       (Warnid_Runtime_Error, +Get_Parameter (Orig),
+                       (Warnid_Runtime_Error, +Orig,
                         "incorrect parameter for value attribute");
                      return Build_Overflow (Orig);
                   end if;
@@ -5341,7 +5347,8 @@ package body Vhdl.Evaluation is
                                  Is_Instance);
             when Iir_Kind_For_Generate_Statement =>
                Path_Instance := El;
-            when Iir_Kind_If_Generate_Statement =>
+            when Iir_Kind_If_Generate_Statement
+              | Iir_Kind_Component_Instantiation_Statement =>
                Path_Add_Element (Get_Parent (El), Is_Instance);
                Path_Add_Name (El);
                Path_Add (":");

@@ -16,6 +16,7 @@
 
 with Vhdl.Errors; use Vhdl.Errors;
 with Vhdl.Utils; use Vhdl.Utils;
+with Vhdl.Sem_Inst;
 with Trans.Chap2;
 with Trans.Chap3;
 with Trans.Chap4;
@@ -825,20 +826,20 @@ package body Trans.Chap5 is
 
             --  Allocate storage of ports.
             --  (Only once for each port, individual association are ignored).
-            Open_Temp;
-            case Iir_Kinds_Association_Element_Parameters (Get_Kind (Assoc)) is
-               when Iir_Kind_Association_Element_By_Individual
-                 | Iir_Kind_Association_Element_Open =>
-                  pragma Assert (Get_Whole_Association_Flag (Assoc));
-                  Chap4.Elab_Signal_Declaration_Storage (Formal, False);
-               when Iir_Kind_Association_Element_By_Expression
-                  | Iir_Kind_Association_Element_By_Name =>
-                  if Get_Whole_Association_Flag (Assoc) then
+            if Get_Whole_Association_Flag (Assoc) then
+               Open_Temp;
+               case Iir_Kinds_Association_Element_Parameters (Get_Kind (Assoc))
+               is
+                  when Iir_Kind_Association_Element_By_Individual
+                    | Iir_Kind_Association_Element_Open =>
+                     Chap4.Elab_Signal_Declaration_Storage (Formal, False);
+                  when Iir_Kind_Association_Element_By_Expression
+                    | Iir_Kind_Association_Element_By_Name =>
                      Chap4.Elab_Signal_Declaration_Storage
                        (Formal, Get_Collapse_Signal_Flag (Assoc));
-                  end if;
-            end case;
-            Close_Temp;
+               end case;
+               Close_Temp;
+            end if;
 
             --  Create or copy signals.
             Open_Temp;
@@ -884,9 +885,10 @@ package body Trans.Chap5 is
                when Iir_Kind_Association_Element_Open
                  | Iir_Kind_Association_Element_By_Individual =>
                   --  Create non-collapsed signals.
-                  pragma Assert (Get_Whole_Association_Flag (Assoc));
-                  Chap4.Elab_Signal_Declaration_Object
-                    (Formal, Block_Parent, False);
+                  if Get_Whole_Association_Flag (Assoc) then
+                     Chap4.Elab_Signal_Declaration_Object
+                       (Formal, Block_Parent, False);
+                  end if;
             end case;
             Close_Temp;
          end;
@@ -946,10 +948,15 @@ package body Trans.Chap5 is
                   when Iir_Kind_Interface_Package_Declaration =>
                      --  The package interface have generics and implicitly
                      --  defines an instantiated package.
-                     pragma Assert
-                       (Get_Generic_Map_Aspect_Chain (Formal) /= Null_Iir);
                      Set_Map_Env (Formal_Env);
-                     Chap2.Elab_Package_Instantiation_Declaration (Formal);
+                     if Get_Generic_Map_Aspect_Chain (Formal) /= Null_Iir then
+                        Chap2.Elab_Package_Instantiation_Declaration (Formal);
+                     else
+                        --  Incompletly instantiated formal.
+                        --  TODO: fix in canon ?
+                        Chap2.Elab_Package_Instantiation_Declaration
+                          (Vhdl.Sem_Inst.Get_Origin (Formal));
+                     end if;
                      Set_Map_Env (Actual_Env);
                   when Iir_Kinds_Interface_Subprogram_Declaration =>
                      --  Expanded.

@@ -13,6 +13,18 @@
 --
 --  You should have received a copy of the GNU General Public License
 --  along with this program.  If not, see <gnu.org/licenses>.
+with Vhdl.Nodes;
+
 package Ghdlrun is
    procedure Register_Commands;
+   procedure Register_Help_Commands;
+
+private
+   --  For Rust:
+   --  To be called before any compilation.
+   procedure Compile_Init (Analyze_Only : Boolean);
+
+   procedure Compile_Elab_Setup (Config : Vhdl.Nodes.Iir);
+
+   procedure Run;
 end Ghdlrun;

@@ -46,6 +46,7 @@ package PSL.Nodes_Meta is
       Field_Left,
       Field_Right,
       Field_Sequence,
+      Field_Skip_Flag,
       Field_Strong_Flag,
       Field_Inclusive_Flag,
       Field_Has_Identifier_List,
@@ -53,6 +54,7 @@ package PSL.Nodes_Meta is
       Field_High_Bound,
       Field_Number,
       Field_Value,
+      Field_Origin,
       Field_Boolean,
       Field_Decl,
       Field_HDL_Node,
@@ -151,6 +153,7 @@ package PSL.Nodes_Meta is
    function Has_Left (K : Nkind) return Boolean;
    function Has_Right (K : Nkind) return Boolean;
    function Has_Sequence (K : Nkind) return Boolean;
+   function Has_Skip_Flag (K : Nkind) return Boolean;
    function Has_Strong_Flag (K : Nkind) return Boolean;
    function Has_Inclusive_Flag (K : Nkind) return Boolean;
    function Has_Has_Identifier_List (K : Nkind) return Boolean;
@@ -158,6 +161,7 @@ package PSL.Nodes_Meta is
    function Has_High_Bound (K : Nkind) return Boolean;
    function Has_Number (K : Nkind) return Boolean;
    function Has_Value (K : Nkind) return Boolean;
+   function Has_Origin (K : Nkind) return Boolean;
    function Has_Boolean (K : Nkind) return Boolean;
    function Has_Decl (K : Nkind) return Boolean;
    function Has_HDL_Node (K : Nkind) return Boolean;

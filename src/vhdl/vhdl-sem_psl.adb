@@ -25,6 +25,7 @@ with PSL.Hash;
 with PSL.Rewrites;
 with PSL.Errors; use PSL.Errors;
 
+with Vhdl.Sem;
 with Vhdl.Sem_Expr;
 with Vhdl.Sem_Stmts; use Vhdl.Sem_Stmts;
 with Vhdl.Sem_Scopes;
@@ -40,6 +41,11 @@ with Vhdl.Xrefs; use Vhdl.Xrefs;
 
 package body Vhdl.Sem_Psl is
    procedure Sem_Psl_Directive_Clock (Stmt : Iir; Prop : in out PSL_Node);
+
+   --  Current clock (either the default one or explicit one).
+   --  Used to check by inner expressions (like builtin prev()) the presence
+   --  of a clock.
+   Current_Clock : PSL_Node;
 
    --  Return TRUE iff Atype is a PSL boolean type.
    --  See PSL1.1 5.1.2  Boolean expressions
@@ -121,10 +127,10 @@ package body Vhdl.Sem_Psl is
             Clock := Sem_Expression_Wildcard (Clock, Wildcard_Psl_Bit_Type);
             Set_Clock_Expression (Call, Clock);
          else
-            if Current_Psl_Default_Clock = Null_Iir then
-               Error_Msg_Sem (+Call, "no clock for PSL prev builtin");
+            if Current_Clock /= Null_PSL_Node then
+               Set_Default_Clock (Call, Current_Clock);
             else
-               Set_Default_Clock (Call, Current_Psl_Default_Clock);
+               Error_Msg_Sem (+Call, "no clock for PSL prev builtin");
             end if;
          end if;
       end if;
@@ -156,10 +162,10 @@ package body Vhdl.Sem_Psl is
             Clock := Sem_Expression_Wildcard (Clock, Wildcard_Psl_Bit_Type);
             Set_Clock_Expression (Call, Clock);
          else
-            if Current_Psl_Default_Clock = Null_Iir then
+            if Current_Clock = Null_PSL_Node then
                Error_Msg_Sem (+Call, "no clock for %n", +Call);
             else
-               Set_Default_Clock (Call, Current_Psl_Default_Clock);
+               Set_Default_Clock (Call, Current_Clock);
             end if;
          end if;
       end if;
@@ -338,6 +344,8 @@ package body Vhdl.Sem_Psl is
                end if;
                return Res;
             when Iir_Kind_Function_Call
+              | Iir_Kind_Type_Conversion
+              | Iir_Kind_Qualified_Expression
               | Iir_Kind_Indexed_Name
               | Iir_Kind_Selected_Element
               | Iir_Kinds_Expression_Attribute =>
@@ -426,20 +434,40 @@ package body Vhdl.Sem_Psl is
    is
       use Vhdl.Sem_Expr;
       use Vhdl.Std_Package;
-      Expr : Iir;
    begin
       case Get_Kind (N) is
          when N_Inf
            | N_Number =>
             return N;
          when N_HDL_Expr =>
-            Expr := Get_HDL_Node (N);
-            Expr := Sem_Expression_Wildcard
-              (Expr, Wildcard_Any_Integer_Type);
-            Expr := Eval_Expr (Expr);
-            Set_HDL_Node (N, Expr);
+            declare
+               N2 : PSL_Node;
+               Expr : Iir;
+               Val : Int64;
+            begin
+               Expr := Get_HDL_Node (N);
+               Expr := Sem_Expression_Wildcard
+                 (Expr, Wildcard_Any_Integer_Type);
+               Expr := Eval_Expr (Expr);
+               Set_HDL_Node (N, Expr);
 
-            return N;
+               if Get_Expr_Staticness (Expr) = Locally then
+                  N2 := Create_Node (N_Number);
+                  Set_Location (N2, Get_Location (Expr));
+                  Set_Origin (N2, N);
+                  Val := Get_Value (Expr);
+                  if Val < 0 or else Val > Int64 (Uns32'Last) then
+                     Error_Msg_Sem (+N, "number is too large");
+                     Val := 0;
+                  end if;
+                  Set_Value (N2, Uns32 (Val));
+
+                  return N2;
+               else
+                  return N;
+               end if;
+            end;
+
          when others =>
             raise Internal_Error;
       end case;
@@ -487,10 +515,16 @@ package body Vhdl.Sem_Psl is
             Set_SERE (Seq, Res);
             return Seq;
          when N_Clocked_SERE =>
-            Res := Sem_Sequence (Get_SERE (Seq));
-            Set_SERE (Seq, Res);
-            Sem_Boolean (Seq);
-            return Seq;
+            declare
+               Prev_Clock : constant PSL_Node := Current_Clock;
+            begin
+               Current_Clock := Get_Boolean (Seq);
+               Res := Sem_Sequence (Get_SERE (Seq));
+               Set_SERE (Seq, Res);
+               Sem_Boolean (Seq);
+               Current_Clock := Prev_Clock;
+               return Seq;
+            end;
          when N_Concat_SERE
            | N_Fusion_SERE
            | N_Within_SERE
@@ -604,12 +638,18 @@ package body Vhdl.Sem_Psl is
             Sem_Property (Prop);
             return Prop;
          when N_Clock_Event =>
-            Sem_Property (Prop);
-            Sem_Boolean (Prop);
-            if not Top then
-               Error_Msg_Sem (+Prop, "inner clock event not supported");
-            end if;
-            return Prop;
+            declare
+               Prev_Clock : constant PSL_Node := Current_Clock;
+            begin
+               Current_Clock := Get_Boolean (Prop);
+               Sem_Property (Prop);
+               Sem_Boolean (Prop);
+               if not Top then
+                  Error_Msg_Sem (+Prop, "inner clock event not supported");
+               end if;
+               Current_Clock := Prev_Clock;
+               return Prop;
+            end;
          when N_Abort
             | N_Async_Abort
             | N_Sync_Abort =>
@@ -741,6 +781,19 @@ package body Vhdl.Sem_Psl is
       end case;
    end Extract_Clock;
 
+   --  Assign Current_Clock, so that inner expression can check if the are
+   --  clocked.
+   --  This is different from Sem_Psl_Directive_Clock which is called after
+   --  analysis of the expression.
+   procedure Set_Current_Clock is
+   begin
+      if Current_Psl_Default_Clock /= Null_Iir then
+         Current_Clock := Get_Psl_Boolean (Current_Psl_Default_Clock);
+      else
+         Current_Clock := Null_PSL_Node;
+      end if;
+   end Set_Current_Clock;
+
    --  Sem a property/sequence/endpoint declaration.
    procedure Sem_Psl_Declaration (Stmt : Iir)
    is
@@ -755,6 +808,8 @@ package body Vhdl.Sem_Psl is
       Xref_Decl (Stmt);
 
       Open_Declarative_Region;
+
+      Set_Current_Clock;
 
       --  Make formal parameters visible.
       Formal := Get_Parameter_List (Decl);
@@ -799,6 +854,8 @@ package body Vhdl.Sem_Psl is
       Set_Visible_Flag (Stmt, True);
 
       Close_Declarative_Region;
+
+      Current_Clock := Null_PSL_Node;
    end Sem_Psl_Declaration;
 
    procedure Sem_Psl_Endpoint_Declaration (Stmt : Iir)
@@ -808,6 +865,8 @@ package body Vhdl.Sem_Psl is
    begin
       Sem_Scopes.Add_Name (Stmt);
       Xref_Decl (Stmt);
+
+      Set_Current_Clock;
 
       pragma Assert (Get_Parameter_List (Decl) = Null_PSL_Node);
       pragma Assert (Get_Kind (Decl) = N_Endpoint_Declaration);
@@ -825,6 +884,8 @@ package body Vhdl.Sem_Psl is
       Set_Expr_Staticness (Stmt, None);
 
       Set_Visible_Flag (Stmt, True);
+
+      Current_Clock := Null_PSL_Node;
    end Sem_Psl_Endpoint_Declaration;
 
    function Rewrite_As_Boolean_Expression (Prop : PSL_Node) return Iir
@@ -938,7 +999,7 @@ package body Vhdl.Sem_Psl is
             Error_Msg_Sem (+Stmt, "no clock for PSL directive");
             Clk := Null_PSL_Node;
          else
-            Clk := Get_Psl_Boolean (Current_Psl_Default_Clock);
+            Clk := Current_Clock;
          end if;
       end if;
       Set_PSL_Clock (Stmt, Clk);
@@ -954,6 +1015,8 @@ package body Vhdl.Sem_Psl is
 
       --  Sem report and severity expressions.
       Sem_Report_Statement (Stmt);
+
+      Set_Current_Clock;
 
       Prop := Get_Psl_Property (Stmt);
       Prop := Sem_Property (Prop, True);
@@ -979,6 +1042,8 @@ package body Vhdl.Sem_Psl is
       --  Check simple subset restrictions.
       PSL.Subsets.Check_Simple (Prop);
 
+      Current_Clock := Null_PSL_Node;
+
       return Stmt;
    end Sem_Psl_Assert_Directive;
 
@@ -986,6 +1051,8 @@ package body Vhdl.Sem_Psl is
    is
       Prop : PSL_Node;
    begin
+      Set_Current_Clock;
+
       Prop := Get_Psl_Property (Stmt);
       Prop := Sem_Property (Prop, True);
       Set_Psl_Property (Stmt, Prop);
@@ -996,6 +1063,8 @@ package body Vhdl.Sem_Psl is
 
       --  Check simple subset restrictions.
       PSL.Subsets.Check_Simple (Prop);
+
+      Current_Clock := Null_PSL_Node;
    end Sem_Psl_Assume_Directive;
 
    procedure Sem_Psl_Sequence (Stmt : Iir)
@@ -1031,12 +1100,20 @@ package body Vhdl.Sem_Psl is
    begin
       Sem_Report_Expression (Stmt);
 
+      Set_Current_Clock;
+
       Sem_Psl_Sequence (Stmt);
+
+      Current_Clock := Null_PSL_Node;
    end Sem_Psl_Cover_Directive;
 
    procedure Sem_Psl_Restrict_Directive (Stmt : Iir) is
    begin
+      Set_Current_Clock;
+
       Sem_Psl_Sequence (Stmt);
+
+      Current_Clock := Null_PSL_Node;
    end Sem_Psl_Restrict_Directive;
 
    procedure Sem_Psl_Default_Clock (Stmt : Iir)
@@ -1271,11 +1348,60 @@ package body Vhdl.Sem_Psl is
          end if;
       end if;
 
+      Item := Get_Vunit_Item_Chain (Unit);
+      while Item /= Null_Iir loop
+         case Get_Kind (Item) is
+            when Iir_Kind_Psl_Assert_Directive
+               | Iir_Kind_Psl_Assume_Directive
+               | Iir_Kind_Psl_Restrict_Directive
+               | Iir_Kind_Psl_Cover_Directive
+               | Iir_Kinds_Concurrent_Signal_Assignment
+               | Iir_Kinds_Process_Statement
+               | Iir_Kinds_Generate_Statement
+               | Iir_Kind_Block_Statement
+               | Iir_Kind_Concurrent_Procedure_Call_Statement
+               | Iir_Kind_Component_Instantiation_Statement =>
+               declare
+                  Label : constant Name_Id := Get_Label (Item);
+               begin
+                  if Label /= Null_Identifier then
+                     Sem_Scopes.Add_Name (Item);
+                     Sem_Scopes.Name_Visible (Item);
+                     Xref_Decl (Item);
+                  end if;
+               end;
+            when Iir_Kind_PSL_Inherit_Spec =>
+               null;
+            when Iir_Kind_Psl_Declaration
+               | Iir_Kind_Psl_Default_Clock =>
+               null;
+            when Iir_Kind_Signal_Declaration
+               | Iir_Kind_Constant_Declaration
+               | Iir_Kind_Type_Declaration
+               | Iir_Kind_Subtype_Declaration
+               | Iir_Kind_Anonymous_Type_Declaration
+               | Iir_Kind_Function_Declaration
+               | Iir_Kind_Procedure_Declaration
+               | Iir_Kind_Function_Body
+               | Iir_Kind_Procedure_Body
+               | Iir_Kind_Attribute_Declaration
+               | Iir_Kind_Attribute_Specification
+               | Iir_Kind_Object_Alias_Declaration
+               | Iir_Kind_Non_Object_Alias_Declaration =>
+               null;
+            when others =>
+               Error_Kind ("sem_psl_verification_unit(1)", Item);
+         end case;
+         Item := Get_Chain (Item);
+      end loop;
+
       Attr_Spec_Chain := Null_Iir;
       Prev_Item := Null_Iir;
       Item := Get_Vunit_Item_Chain (Unit);
       while Item /= Null_Iir loop
          case Get_Kind (Item) is
+            when Iir_Kind_Use_Clause =>
+               Sem.Sem_Use_Clause (Item);
             when Iir_Kind_PSL_Inherit_Spec =>
                Sem_Psl_Inherit_Spec (Item);
             when Iir_Kind_Psl_Default_Clock =>

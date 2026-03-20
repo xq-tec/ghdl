@@ -112,4 +112,17 @@ package Ghdlcomp is
 
    --  Hook for verilog.
    Init_Verilog_Options : Compile_Init_Acc;
+
+private
+   --  For Rust:
+   --  Analyze one file, return False on error.
+   function Analyze_File (Id : Name_Id) return Boolean;
+
+   --  For Rust:
+   --  Get (and check) the top unit from identifiers.
+   --  Return Null_Iir in case of error.
+   function Compile_Elab_Top (Lib_Id : Name_Id;
+                              Prim_Id : Name_Id;
+                              Sec_Id : Name_Id;
+                              Allow_Undef_Generic : Boolean) return Iir;
 end Ghdlcomp;

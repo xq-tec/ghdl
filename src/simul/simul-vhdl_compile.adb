@@ -1092,10 +1092,6 @@ package body Simul.Vhdl_Compile is
             if Get_Deferred_Declaration_Flag (Decl)
               or else Get_Deferred_Declaration (Decl) = Null_Node
             then
-               if Trans.Chap7.Is_Static_Constant (Decl) then
-                  return;
-               end if;
-
                declare
                   Ind : constant Node := Get_Subtype_Indication (Decl);
                   Ind_Type : constant Node :=
@@ -1103,17 +1099,23 @@ package body Simul.Vhdl_Compile is
                   Def : constant Node := Get_Type (Decl);
                   Val : constant Valtyp := Get_Value (Inst, Decl);
                begin
+                  if Ind /= Null_Iir
+                    and then Is_Proper_Subtype_Indication (Ind)
+                  then
+                     Build_Subtype_Definition (Mem, Ind_Type, Val.Typ);
+                  end if;
+
                   --  For unbounded subtype indication, the real type is
                   --  defined by the value.
                   if Def /= Ind_Type
                     and then Is_Anonymous_Type_Definition (Def)
                   then
                      Build_Subtype_Definition (Mem, Def, Val.Typ);
-                  else
-                     Build_Subtype_Definition (Mem, Ind, Val.Typ);
                   end if;
-                  Build_Object_Value (Mem, Inst, Decl);
                end;
+               if not Trans.Chap7.Is_Static_Constant (Decl) then
+                  Build_Object_Value (Mem, Inst, Decl);
+               end if;
             end if;
          when Iir_Kind_Object_Alias_Declaration =>
             declare
@@ -1220,18 +1222,7 @@ package body Simul.Vhdl_Compile is
            | Iir_Kind_Procedure_Body =>
             null;
          when Iir_Kind_Protected_Type_Body =>
-            --  Only subprograms spec.
-            declare
-               El : Node;
-            begin
-               El := Get_Declaration_Chain (Decl);
-               while El /= Null_Node loop
-                  if Get_Kind (El) in Iir_Kinds_Subprogram_Declaration then
-                     Build_Decl_Instance (Mem, Inst, El);
-                  end if;
-                  El := Get_Chain (El);
-               end loop;
-            end;
+            null;
          when Iir_Kind_Attribute_Declaration =>
             null;
          when Iir_Kind_Attribute_Specification =>

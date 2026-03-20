@@ -36,6 +36,9 @@ package body Vhdl.Sem_Assocs is
       N_Assoc : Iir;
       Actual : Iir;
    begin
+      if Get_Kind (Assoc) = Iir_Kind_Association_Element_Open then
+         return Assoc;
+      end if;
       Actual := Get_Actual (Assoc);
       case Get_Kind (Inter) is
          when Iir_Kind_Interface_Package_Declaration =>
@@ -959,6 +962,8 @@ package body Vhdl.Sem_Assocs is
          declare
             Index_Constraint : Iir;
             Index_Subtype_Constraint : Iir;
+            Indiv_Assoc : Iir;
+            Dir : Direction_Type;
          begin
             --  Create an index subtype.
             case Get_Kind (Base_Index) is
@@ -980,8 +985,23 @@ package body Vhdl.Sem_Assocs is
             Location_Copy (Index_Subtype_Constraint, Actual);
             Set_Range_Constraint (Actual_Index, Index_Subtype_Constraint);
             Set_Type_Staticness (Actual_Index, Locally);
-            Set_Direction (Index_Subtype_Constraint,
-                           Get_Direction (Index_Constraint));
+
+            --  LRM08 5.3.2.2 Index constraints and discrete ranges
+            --  e) 2) If the subtype index range is undefed, and the interface
+            --  object or subelement [...] is associated by a single
+            --  association element in which the formal designator is a slice
+            --  name, then the direction of the index range of the object is
+            --  that of the corresponding index subtype of the interface
+            --  object.
+            Indiv_Assoc := Get_Individual_Association_Chain (Assoc);
+            if Get_Chain (Indiv_Assoc) = Null_Iir
+              and then Get_Kind (Indiv_Assoc) = Iir_Kind_Choice_By_Range
+            then
+               Dir := Get_Direction (Get_Choice_Range (Indiv_Assoc));
+            else
+               Dir := Get_Direction (Index_Constraint);
+            end if;
+            Set_Direction (Index_Subtype_Constraint, Dir);
 
             --  For ownership purpose, the bounds must be copied otherwise
             --  they would be referenced before being defined.  This is non
@@ -989,7 +1009,7 @@ package body Vhdl.Sem_Assocs is
             Low := Copy_Constant (Low);
             High := Copy_Constant (High);
 
-            case Get_Direction (Index_Constraint) is
+            case Dir is
                when Dir_To =>
                   Set_Left_Limit (Index_Subtype_Constraint, Low);
                   Set_Left_Limit_Expr (Index_Subtype_Constraint, Low);
@@ -1521,8 +1541,9 @@ package body Vhdl.Sem_Assocs is
          --  It is an error if an actual of open is associated with a
          --  formal that is associated individually.
          if Get_Whole_Association_Flag (Assoc) = False then
-            Error_Msg_Sem
-              (+Assoc, "cannot associate individually with open");
+            --  TODO: check with resolved signals
+            Error_Msg_Sem_Relaxed
+              (Assoc, Warnid_Open_Assoc, "individual association with open");
          end if;
 
          Formal := Get_Formal (Assoc);
@@ -1928,10 +1949,15 @@ package body Vhdl.Sem_Assocs is
    function Sem_Association_Subprogram_Open (Inter : Iir; Loc : Iir)
                                             return Iir
    is
+      Default : constant Iir := Get_Default_Subprogram (Inter);
       Res : Iir;
    begin
-      Res := Sem_Identifier_Name
-        (Get_Identifier (Inter), Loc, False, False);
+      if Get_Kind (Default) = Iir_Kind_Box_Name then
+         Res := Sem_Identifier_Name
+           (Get_Identifier (Inter), Loc, False, False);
+      else
+         Res := Get_Named_Entity (Default);
+      end if;
       if Is_Error (Res) then
          return Null_Iir;
       end if;
@@ -2828,9 +2854,7 @@ package body Vhdl.Sem_Assocs is
                   Res : Iir;
                   Ref : Iir;
                begin
-                  if Finish
-                    and then Get_Kind (Def) = Iir_Kind_Reference_Name
-                  then
+                  if Finish and then Get_Kind (Def) = Iir_Kind_Box_Name then
                      --  Resolve now the default subprogram (as we have the
                      --  context for that).
                      Res := Sem_Association_Subprogram_Open (Inter, Loc);

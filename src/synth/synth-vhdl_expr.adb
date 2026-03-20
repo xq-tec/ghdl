@@ -1089,7 +1089,7 @@ package body Synth.Vhdl_Expr is
 
    procedure Synth_Indexed_Name (Syn_Inst : Synth_Instance_Acc;
                                  Name : Node;
-                                 Pfx_Type : Type_Acc;
+                                 Pfx_Typ : Type_Acc;
                                  El_Typ : out Type_Acc;
                                  Voff : out Net;
                                  Off : out Value_Offsets;
@@ -1098,7 +1098,16 @@ package body Synth.Vhdl_Expr is
       Indexes : constant Iir_Flist := Get_Index_List (Name);
       Stride : Uns32;
    begin
-      Synth_Indexes (Syn_Inst, Indexes, Flist_First, Pfx_Type,
+      if Pfx_Typ.Abound.Len = 0 then
+         Error_Msg_Synth (Syn_Inst, Name, "indexing a null array");
+         El_Typ := null;
+         Voff := No_Net;
+         Off := No_Value_Offsets;
+         Error := True;
+         return;
+      end if;
+
+      Synth_Indexes (Syn_Inst, Indexes, Flist_First, Pfx_Typ,
                      El_Typ, Voff, Off, Stride, Error);
    end Synth_Indexed_Name;
 
@@ -1989,11 +1998,13 @@ package body Synth.Vhdl_Expr is
       return Res;
    end Synth_PSL_Expression;
 
-   function Synth_Psl_Function_Clock
-     (Syn_Inst : Synth_Instance_Acc; Call : Node; Ctxt : Context_Acc)
-     return Net
+   function Synth_Psl_Function_Clock (Syn_Inst : Synth_Instance_Acc;
+                                      Call : Node;
+                                      Ctxt : Context_Acc) return Net
    is
+      use PSL.Types;
       Clock   : Node;
+      Iclock  : PSL_Node;
       Clk     : Valtyp;
       Clk_Net : Net;
    begin
@@ -2002,9 +2013,9 @@ package body Synth.Vhdl_Expr is
          Clk := Synth_Expression (Syn_Inst, Clock);
          Clk_Net := Get_Net (Ctxt, Clk);
       else
-         Clock := Get_Default_Clock (Call);
-         pragma Assert (Clock /= Null_Node);
-         Clk_Net := Synth_PSL_Expression (Syn_Inst, Get_Psl_Boolean (Clock));
+         Iclock := Get_Default_Clock (Call);
+         pragma Assert (Iclock /= Null_PSL_Node);
+         Clk_Net := Synth_PSL_Expression (Syn_Inst, Iclock);
       end if;
       return Clk_Net;
    end Synth_Psl_Function_Clock;
@@ -2521,11 +2532,28 @@ package body Synth.Vhdl_Expr is
                   --  Propagate error.
                   return No_Valtyp;
                end if;
-               if Hook_Signal_Expr /= null
-                 and then (Base.Val.Kind = Value_Signal
-                             or else Base.Val.Kind = Value_Sig_Val)
+
+               if Base.Val.Kind = Value_Signal
+                 or else Base.Val.Kind = Value_Sig_Val
                then
-                  Base := Hook_Signal_Expr (Base);
+                  if Hook_Signal_Expr /= null then
+                     Base := Hook_Signal_Expr (Base);
+                  elsif Flags.Flag_Relaxed_Rules then
+                     Warning_Msg_Synth
+                       (Warnid_Elaboration, +Expr,
+                        "cannot use signal value during elaboration");
+                     pragma Assert (Dyn.Voff = No_Net);
+                     if Base.Val.Init = null then
+                        --  No default value
+                        Res := Create_Value_Memory
+                          (Typ, Current_Pool);
+                        Write_Value_Default (Res.Val.Mem, Typ);
+                     else
+                        Res := Create_Value_Memtyp
+                          ((Typ, Base.Val.Init.Mem + Off.Mem_Off));
+                     end if;
+                     return Res;
+                  end if;
                end if;
                if Dyn.Voff = No_Net and then Is_Static (Base.Val) then
                   Res := Create_Value_Memtyp
@@ -2611,15 +2639,22 @@ package body Synth.Vhdl_Expr is
                Get_Subtype_Object (Syn_Inst, Get_Type (Get_Type_Mark (Expr))));
          when Iir_Kind_Function_Call =>
             declare
-               Imp : constant Node := Get_Implementation (Expr);
+               Imp : Node;
             begin
+               Imp := Get_Implementation (Expr);
+               --  Handle interface function.
+               while Get_Kind (Imp) = Iir_Kind_Interface_Function_Declaration
+               loop
+                  Imp := Get_Interface_Subprogram (Syn_Inst, Imp);
+               end loop;
+
                case Get_Implicit_Definition (Imp) is
                   when Iir_Predefined_Operators
                      | Iir_Predefined_Ieee_Numeric_Std_Binary_Operators
                      | Iir_Predefined_Ieee_Numeric_Std_Unsigned_Operators =>
                      return Synth_Operator_Function_Call (Syn_Inst, Expr);
                   when Iir_Predefined_None =>
-                     return Synth_User_Function_Call (Syn_Inst, Expr);
+                     return Synth_User_Function_Call (Syn_Inst, Expr, Imp);
                   when others =>
                      return Synth_Predefined_Function_Call (Syn_Inst, Expr);
                end case;

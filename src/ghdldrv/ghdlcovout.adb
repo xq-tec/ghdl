@@ -23,8 +23,6 @@ with Simple_IO;
 with Errorout;
 with Name_Table;
 
-with Vhdl.Nodes; use Vhdl.Nodes;
-
 with Grt.Algos;
 with Grt.Types;
 with Grt.Stdio;
@@ -39,9 +37,6 @@ package body Ghdlcovout is
    type Coverage_Entry is record
       --  Location of the coverage point (without instantiation).
       Loc : Location_Type;
-
-      --  Original statement/decision.
-      N : Node;
 
       --  Coverage result.
       Res_T : Boolean;
@@ -88,29 +83,21 @@ package body Ghdlcovout is
          return;
       end if;
 
+      --  Read counters after execution
       Counters := To_Byte_Array_Thin_Ptr
         (Ortho_Jit.Get_Address (Trans_Decls.Ghdl_Cov_Counters));
 
+      --  Fill from entries in Trans.Coverage
       Cov_Tables.Reserve (Last + 1);
       for I in Cover_Tables.First .. Cover_Tables.Last (Cover_Table) loop
          declare
             use Grt.Types;
             Ce : Trans.Coverage.Coverage_Entry renames Cover_Table.Table (I);
          begin
-            Loc := Get_Location (Ce.N);
-            loop
-               N_Loc := Files_Map.Location_Instance_To_Location (Loc);
-               exit when N_Loc = No_Location;
-               Loc := N_Loc;
-            end loop;
+            Loc := Ce.Loc;
 
-            E := (N => Ce.N,
-                  Loc => Loc,
-                  Res_T => Counters (I) /= 0);
-
-            if Get_Covered_Flag (Ce.N) then
-               E.Res_T := True;
-            end if;
+            E := (Loc => Loc,
+                  Res_T => Counters (I) /= 0 or Ce.Covered);
 
             Cov_Tables.Append (E);
          end;
@@ -178,14 +165,16 @@ package body Ghdlcovout is
       end if;
 
       Put_Line (F, "{");
-      Put_Line (F, " 'app': 'GHDL coverage output file',");
-      Put_Line (F, " 'version': '1.0.0',");
-      Put_Line (F, " 'testcase': 'unknown',");
-      Put_Line (F, " 'timestamp': '" & Now_Ts & "',");
-      Put_Line (F, " [");
+      Put_Line (F, " ""app"": ""GHDL coverage output file"",");
+      Put_Line (F, " ""version"": ""1.0.0"",");
+      Put_Line (F, " ""testcase"": ""unknown"",");
+      Put_Line (F, " ""timestamp"": """ & Now_Ts & """,");
+      Put_Line (F, " ""outputs"": [");
 
       Idx := Cov_Tables.First;
-      while Idx < Cov_Tables.Last loop
+      loop
+         exit when Idx > Cov_Tables.Last;
+
          --  Gather per file.
          declare
             use Grt.Types;
@@ -200,46 +189,43 @@ package body Ghdlcovout is
             Nidx : Natural;
          begin
             Put_Line (F, "  {");
-            Put (F, "   'file': '");
+            Put (F, "   ""file"": """);
             Put (F, Name_Table.Image (Get_File_Name (Sfe)));
-            Put_Line (F, "',");
-            Put (F, "   'dir': '");
+            Put_Line (F, """,");
+            Put (F, "   ""dir"": """);
             if Dir = Files_Map.Get_Home_Directory then
                Put (F, ".");
             else
                Put (F, Name_Table.Image (Get_Directory_Name (Sfe)));
             end if;
-            Put_Line (F, "',");
-            Put (F, "   'sha1': '");
+            Put_Line (F, """,");
+            Put (F, "   ""sha1"": """);
             Put (F, Get_File_Checksum_String (Get_File_Checksum (Sfe)));
-            Put_Line (F, "',");
-            Put_Line (F, "   'mode': 'stmt',");
+            Put_Line (F, """,");
+            Put_Line (F, "   ""mode"": ""stmt"",");
 
-            --  Find the max line.
-            Nidx := Idx + 1;
+            --  Find the last line that belongs to this file.
+            Nidx := Idx;
             loop
                exit when Nidx = Cov_Tables.Last;
-               if Cov_Tables.Table (Nidx).Loc >= Last_Loc then
-                  Nidx := Nidx - 1;
-                  exit;
-               end if;
+               exit when Cov_Tables.Table (Nidx + 1).Loc >= Last_Loc;
                Nidx := Nidx + 1;
             end loop;
             Line := Ghdl_I32 (Location_File_To_Line
                                 (Cov_Tables.Table (Nidx).Loc, Sfe));
-            Put (F, "   'max-line': ");
+            Put (F, "   ""max-line"": ");
             Put_I32 (F, Line);
             Put (F, ",");
             New_Line (F);
 
-            Put_Line (F, "   'result': [");
+            Put_Line (F, "   ""result"": {");
 
             Nloc := Loc;
             Line := Ghdl_I32 (Location_File_To_Line (Nloc, Sfe));
             loop
-               Put (F, "    '");
+               Put (F, "    """);
                Put_I32 (F, Line);
-               Put (F, "': ");
+               Put (F, """: ");
 
                --  Merge results for the same line.
                Res := Cov_Tables.Table (Idx).Res_T;
@@ -262,7 +248,7 @@ package body Ghdlcovout is
                Line := Nline;
                Put_Line (F, ",");
             end loop;
-            Put_Line (F, "   ]");
+            Put_Line (F, "   }");
             Put (F, "  }");
             if Idx < Cov_Tables.Last then
                Put (F, ",");

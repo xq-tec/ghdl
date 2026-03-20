@@ -1097,6 +1097,7 @@ package body Vhdl.Canon is
       Assoc_El, Prev_Assoc_El, Next_Assoc_El : Iir;
       Formal : Iir;
       Assoc_Chain : Iir;
+      Default : Iir;
 
       Found : Boolean;
    begin
@@ -1180,6 +1181,19 @@ package body Vhdl.Canon is
          Set_Artificial_Flag (Assoc_El, True);
          Set_Whole_Association_Flag (Assoc_El, True);
          Location_Copy (Assoc_El, Loc);
+
+         if Get_Kind (Inter) in Iir_Kinds_Interface_Subprogram_Declaration then
+            Default := Get_Default_Subprogram (Inter);
+            if Default /= Null_Iir then
+               if Get_Kind (Default) /= Iir_Kind_Box_Name then
+                  Default := Get_Named_Entity (Default);
+                  if not Is_Error (Default) then
+                     Set_Use_Flag (Default, True);
+                  end if;
+               end if;
+               Set_Open_Actual (Assoc_El, Default);
+            end if;
+         end if;
 
          if Canon_Flag_Set_Assoc_Formals then
             Set_Formal (Assoc_El, Inter);
@@ -1808,7 +1822,9 @@ package body Vhdl.Canon is
       --  when generating code at once for the whole design, otherwise this
       --  may create discrepencies in translate structures due to states.
       Is_Sensitized :=
-        (Get_Wait_State (Imp) = False) and Flags.Flag_Whole_Analyze;
+        Get_Kind (Imp) /= Iir_Kind_Interface_Procedure_Declaration
+        and then Get_Wait_State (Imp) = False
+        and then Flags.Flag_Whole_Analyze;
 
       --  LRM93 9.3
       --  The equivalent process statement has also no sensitivity list, an
@@ -2169,7 +2185,7 @@ package body Vhdl.Canon is
    is
       use PSL.Nodes;
       use PSL.NFAs;
-      Prop : PSL_Node;
+      Prop, Prop1 : PSL_Node;
       Fa : PSL_NFA;
       Final : NFA_State;
    begin
@@ -2179,15 +2195,19 @@ package body Vhdl.Canon is
       Set_Psl_Property (Stmt, Prop);
 
       --  Generate the NFA.
-      case Get_Kind (Prop) is
-         when N_Async_Abort
-            | N_Sync_Abort
-            | N_Abort =>
-            Prop := Get_Property (Prop);
-            Set_PSL_Abort_Flag (Stmt, True);
-         when others =>
-            null;
-      end case;
+      if Get_Kind (Prop) = N_Always then
+         Prop1 := Get_Property (Prop);
+         case Get_Kind (Prop1) is
+            when N_Async_Abort
+              | N_Sync_Abort
+              | N_Abort =>
+               Set_PSL_Abort (Stmt, Prop1);
+               --  Abort will be handled directly
+               Set_Skip_Flag (Prop1, True);
+            when others =>
+               null;
+         end case;
+      end if;
       Fa := PSL.Build.Build_FA (Prop);
       Set_PSL_NFA (Stmt, Fa);
 

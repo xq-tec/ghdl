@@ -7,7 +7,7 @@ Package managers
 ****************
 
 Package managers of many popular distributions provide pre-built packages of GHDL. This is the case for `apt`
-(Debian/Ubuntu), `dnf` (Fedora), `pacman` (Arch Linux, MSYS2) or `brew` (macOS). Since GHDL supports three different backends
+(Debian/Ubuntu), `dnf` (Fedora), `pacman` (Arch Linux, MSYS2), `brew` (macOS) or `guix`. Since GHDL supports three different backends
 and two library sets (*regular* or *GPL-compatible*), at least six packages with different features might be available in
 each package manager.
 
@@ -39,7 +39,7 @@ these vendor libraries, if the vendor tool is present in the environment. There
 are also popular simulation and verification libraries like OSVVM [#f1]_ or
 UVVM [#f2]_, which can be pre-compiled, too.
 
-The compilation scripts are writen in the shell languages: *PowerShell* for
+The compilation scripts are written in the shell languages: *PowerShell* for
 *Windows™* and *Bash* for *GNU/Linux*, *MacOS* and *MSYS2*/*MinGW*. The
 compile scripts can colorize the GHDL warning and error lines with the help
 of ``grc/grcat`` [#f4]_.

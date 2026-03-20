@@ -48,7 +48,7 @@ this is provided from a ``pyGHDL`` packages with four sub-packages:
   written in Python. The implementation offers an HTTPS service that can be used e.g. by editors and IDEs supporting LSP.
 """
 
-__version__ = "4.1.0"
+__version__ = "5.0.0-dev"
 
 __author__ = "Tristan Gingold and contributors"
 __email__ = "tgingold@free.fr"
@@ -56,11 +56,26 @@ __copyright__ = "2002-2024, Tristan Gingold and contributors"
 __license__ = "GNU General Public License v2"
 __keywords__ = ["vhdl", "parser", "compiler", "simulator", "ghdl"]
 
+from sys import version_info
+from typing import List
+
 from pyTooling.Decorators import export
 
 
 @export
 class GHDLBaseException(Exception):
+    # WORKAROUND: for Python <3.11
+    # Implementing a dummy method for Python versions before
+    if version_info < (3, 11):  # pragma: no cover
+        __notes__: List[str]
+
+        def __init__(self, *args):
+            super().__init__(*args)
+            self.__notes__ = []
+
+        def add_note(self, message: str) -> None:
+            self.__notes__.append(message)
+
     @property
     def message(self) -> str:
         return str(self)
