@@ -5,16 +5,19 @@ use std::num::NonZeroU32;
 use std::ops::Deref;
 
 use compact_str::CompactString;
+use compact_str::format_compact;
 use ghdl_ast as ast;
+use ghdl_ast::GenericNodeId;
 use hdl_simulation_protocol::design_hierarchy as hierarchy;
 use hdl_simulation_protocol::design_hierarchy::SignalInstanceId;
+use rustc_hash::FxHashMap;
 use serde::Deserialize;
 use tracing::info;
 use tracing::instrument;
 
 #[derive(Debug, Deserialize)]
 pub struct Signal {
-    decl: u32,
+    decl: Option<ast::GenericNodeId>,
     #[serde(skip_deserializing)]
     name: CompactString,
     #[serde(rename = "type")]
@@ -131,7 +134,7 @@ impl From<&Type> for hierarchy::SignalType {
                     element_type,
                 }
             },
-            Type::Other => todo!(),
+            Type::Other => hierarchy::SignalType::Unsupported,
         }
     }
 }
@@ -196,11 +199,62 @@ extern "C" fn adapter_register_design(
     info!("design hierarchy built successfully");
 }
 
+struct DecodingError {
+    json_error: serde_json::Error,
+    encoded: String,
+}
+
+impl fmt::Debug for DecodingError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "DecodingError({}, '{}')", self.json_error, self.encoded)
+    }
+}
+
+fn retrieve_signal(signal_id: u32) -> Result<Signal, DecodingError> {
+    let mut buffer = Vec::with_capacity(4096);
+    adapter_encode_signal(&mut buffer, signal_id);
+    serde_json::from_slice::<Signal>(&buffer).map_err(|e| DecodingError {
+        json_error: e,
+        encoded: String::from_utf8_lossy(&buffer).to_string(),
+    })
+}
+
+fn get_signal_name(decl_id: ast::GenericNodeId) -> Option<CompactString> {
+    let node = retrieve_ast_node(decl_id).ok()?;
+    match node {
+        ast::Node::SignalDeclaration(signal) => Some(signal.identifier.normalized.0),
+        ast::Node::InterfaceSignalDeclaration(signal) => Some(signal.identifier.normalized.0),
+        ast::Node::Attribute(attribute) => {
+            let prefix = retrieve_ast_node(attribute.prefix).ok()?;
+            let prefix: ast::Prefix<'_> = (&prefix).try_into().ok()?;
+            let name = match prefix {
+                ast::Prefix::SimpleName(simple_name) => simple_name.identifier.original(),
+                _ => return None,
+            };
+            Some(format_compact!("{name}'{kind}", kind = attribute.kind))
+        },
+        _ => panic!("Expected signal declaration, got {node:?}"),
+    }
+}
+
+fn retrieve_ast_node(node_id: impl ast::AstNodeId) -> Result<ast::Node, DecodingError> {
+    fn inner(node_id: NonZeroU32) -> Result<ast::Node, DecodingError> {
+        let mut buffer = Vec::with_capacity(4096);
+        adapter_encode_ast_node(&mut buffer, node_id);
+        serde_json::from_slice::<ast::Node>(&buffer).map_err(|e| DecodingError {
+            json_error: e,
+            encoded: String::from_utf8_lossy(&buffer).to_string(),
+        })
+    }
+
+    inner(node_id.to_raw())
+}
+
 fn collect_signals(signal_count: u32) -> Vec<Signal> {
     // Signal IDs start at 1, so we put a dummy at index 0
     let mut signals: Vec<Signal> = Vec::with_capacity(1 + signal_count as usize);
     signals.push(Signal {
-        decl: 0,
+        decl: None,
         name: CompactString::new(""),
         typ: Type::Bit {
             left: 0,
@@ -209,27 +263,21 @@ fn collect_signals(signal_count: u32) -> Vec<Signal> {
         },
     });
 
-    let mut buffer = Vec::with_capacity(4096);
     for signal_id in 1..=signal_count {
-        buffer.clear();
-        adapter_encode_signal(&mut buffer, signal_id);
-        match serde_json::from_slice::<Signal>(&buffer) {
+        match retrieve_signal(signal_id) {
             Ok(mut signal) => {
-                if let Some(node_id) = NonZeroU32::new(signal.decl) {
-                    buffer.clear();
-                    adapter_encode_ast_node(&mut buffer, node_id);
-                    let node = serde_json::from_slice::<ast::Node>(&buffer).unwrap();
-                    if let ast::Node::SignalDeclaration(signal_declaration) = node {
-                        signal.name = signal_declaration.identifier.normalized.0;
-                    } else {
-                        panic!("Expected signal declaration, got {node:?}");
-                    }
+                if let Some(node_id) = signal.decl
+                    && let Some(name) = get_signal_name(node_id)
+                {
+                    signal.name = name;
+                } else {
+                    signal.name = CompactString::new("?")
                 }
                 signals.push(signal);
             },
 
             Err(e) => {
-                panic!("Error deserializing signal {signal_id}: {e}");
+                panic!("Error deserializing signal {signal_id}: {e:?}");
             },
         }
     }
