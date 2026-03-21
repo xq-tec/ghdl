@@ -152,6 +152,16 @@ LIBVHDL_FLAGS_TO_PASS=\
  enable_gplcompat="$(enable_gplcompat)" \
  LN="$(LN)" CP="$(CP)" MKDIR="$(MKDIR)"
 
+# Pre-reqs for copying VHDL libs into $(DESTDIR): in-tree backends populate
+# $(LIBDST_DIR) via libs.vhdl.$(backend).  The gcc backend uses libs.vhdl.gcc with
+# $(DESTDIR)$(bindir)/ghdl and is built by `make ghdllib` after installing the
+# GCC-built driver, so install does not invoke it here.
+ifeq ($(backend),gcc)
+install_vhdllib_build_deps=
+else
+install_vhdllib_build_deps=libs.vhdl.$(backend)
+endif
+
 # Object files from grt for the synthesis.
 GRT_SYNTH_OBJS=grt-cstdio.o grt-cdynload.o
 
@@ -596,7 +606,7 @@ libghw.o: $(srcdir)/ghw/libghw.c $(srcdir)/ghw/libghw.h
 
 all.ghw: ghwdump$(EXEEXT) lib/libghw$(SOEXT)
 
-install.ghw:
+install.ghw: all.ghw
 	$(INSTALL_PROGRAM) -p ghwdump$(EXEEXT) "$(DESTDIR)$(bindir)/"
 	$(INSTALL_PROGRAM) -p lib/libghw$(SOEXT) "$(DESTDIR)$(libdir)/"
 	$(INSTALL_DATA) -p $(srcdir)/ghw/libghw.h "$(DESTDIR)$(incdir)/"
@@ -693,7 +703,7 @@ install.dirs:
 	$(MKDIR) -p "$(DESTDIR)$(libghdldir)"
 	$(MKDIR) -p "$(DESTDIR)$(incdir)"
 
-install.vhdllib: install.dirs
+install.vhdllib: install.dirs $(install_vhdllib_build_deps)
 #	Libraries (only if not empty)
 	for d in $(VHDLLIB_SUBDIRS); do \
 	  $(MKDIR) -p "$(DESTDIR)$(VHDL_LIB_DIR)/$$d"; \
