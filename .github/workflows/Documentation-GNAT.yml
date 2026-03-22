@@ -24,6 +24,11 @@ jobs:
           # Full make builds adapter/ via Cargo (path crates are git submodules).
           submodules: recursive
 
+      - name: 🦀 Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.91.0
+
       - name: 🔧 Install dependencies
         run: |
           sudo apt-get update

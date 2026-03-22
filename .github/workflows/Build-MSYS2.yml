@@ -101,6 +101,12 @@ jobs:
           # adapter/ is built with Cargo and depends on path crates (git submodules).
           submodules: recursive
 
+      # GNU target matches MinGW GNAT when linking the static adapter library.
+      - name: 🦀 Install Rust toolchain (x86_64-pc-windows-gnu)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.91.0-x86_64-pc-windows-gnu
+
       - name: 🖉 Compute pacboy packages
         id: pacboy
         shell: bash

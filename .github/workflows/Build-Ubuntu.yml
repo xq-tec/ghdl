@@ -78,6 +78,11 @@ jobs:
           # adapter/ is built with Cargo and depends on path crates (git submodules).
           submodules: recursive
 
+      - name: 🦀 Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.91.0
+
       - name: 🖉 Assemble artifact name
         id: artifact_name
         run: |
@@ -111,7 +116,8 @@ jobs:
       - name: 📋 Install GHDL
         run: |
           cd build/mcode
-          sudo make -j$(nproc) install
+          # sudo resets PATH (secure_path); install may rebuild the Rust adapter, so keep cargo on PATH.
+          sudo env "PATH=$PATH" make -j$(nproc) install
 
       - name: 📋 Write requirements file
         id: requirements

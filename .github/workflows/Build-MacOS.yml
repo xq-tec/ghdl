@@ -80,6 +80,11 @@ jobs:
           # adapter/ is built with Cargo and depends on path crates (git submodules).
           submodules: recursive
 
+      - name: 🦀 Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.91.0
+
       - name: 🖉 Assemble artifact name
         id: artifact_name
         run: |
@@ -161,7 +166,8 @@ jobs:
       - name: 📋 Install
         run: |
           cd build/mcode
-          sudo make install
+          # sudo resets PATH; install may rebuild the Rust adapter, so keep cargo on PATH.
+          sudo env "PATH=$PATH" make install
           sudo install -m 755 -p ${GNAT_BINARY_PATH}/../lib/libgcc_s.*.*.dylib ../../install/bin/
           sudo install -m 755 -p ${GNAT_BINARY_PATH}/../lib/libgcc_s.*.*.dylib ../../install/lib/
           sudo install -m 755 -p ${GNAT_BINARY_PATH}/../lib/gcc/*-apple-darwin*/${{ steps.gnat.outputs.GNAT_MAJOR_VERSION }}.*/adalib/libgnat-${{ steps.gnat.outputs.GNAT_MAJOR_VERSION }}.dylib ../../install/lib/
