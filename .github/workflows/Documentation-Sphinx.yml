@@ -72,8 +72,8 @@ jobs:
 
       - name: Version check
         run: |
-          echo "which ghdl: $(which ghdl)"
-          ghdl version
+          echo "which risim-ghdl: $(command -v risim-ghdl)"
+          risim-ghdl version
 
       - name: '🐍 Setup Python'
         uses: actions/setup-python@v5
@@ -123,8 +123,8 @@ jobs:
 
       - name: Version check
         run: |
-          echo "which ghdl: $(which ghdl)"
-          ghdl version
+          echo "which risim-ghdl: $(command -v risim-ghdl)"
+          risim-ghdl version
 
       - name: '🐍 Setup Python'
         uses: actions/setup-python@v5

@@ -185,7 +185,7 @@ jobs:
 
       - name: "🚦 Run testsuite: 'sanity'"
         run: |
-          export GHDL=$(pwd)/install/bin/ghdl
+          export GHDL=$(pwd)/install/bin/risim-ghdl.exe
           cd testsuite
 
           # no pyunit
@@ -475,8 +475,8 @@ jobs:
 
       - name: Verify installation
         run: |
-          echo "which ghdl: $(which ghdl)"
-          ghdl version
+          echo "which risim-ghdl: $(command -v risim-ghdl)"
+          risim-ghdl version
 
       - name: Run tests
         if: inputs.testsuites != 'none'
@@ -512,8 +512,8 @@ jobs:
         run: |
           $env:PATH="$($pwd.Path)\install\bin;${env:PATH}"
 
-          echo "which ghdl: $(which ghdl)"
-          ghdl version
+          echo "Get-Command risim-ghdl: $(Get-Command risim-ghdl | Select-Object -ExpandProperty Source)"
+          risim-ghdl version
 
 #      - name: Run tests
 #        if: inputs.testsuites != 'none'

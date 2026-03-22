@@ -79,9 +79,9 @@ _vests () {
 
 if [ "x$GHDL" = "x" ]; then
   if [ "x$prefix" != "x" ]; then
-    export GHDL="$prefix/bin/ghdl"
+    export GHDL="$prefix/bin/risim-ghdl"
   elif [ "x$(command -v which)" != "x" ]; then
-    export GHDL="$(which ghdl)"
+    export GHDL="$(which risim-ghdl)"
   else
     die "error: GHDL environment variable is not defined"
   fi

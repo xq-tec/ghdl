@@ -39,7 +39,7 @@ ENV PATH=/opt/ghdl/bin:$PATH
 
 # Check GHDL installation
 RUN echo "PATH=${PATH}" \
- && echo "which ghdl: $(which ghdl)" \
- && ghdl version
+ && echo "which risim-ghdl: $(which risim-ghdl)" \
+ && risim-ghdl version
 
 ENTRYPOINT ["/bin/bash", "-c"]

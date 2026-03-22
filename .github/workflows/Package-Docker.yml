@@ -82,7 +82,7 @@ jobs:
 
       - name: ☑ Checking GHDL image 'ghdl:current'
         run: |
-          docker container run --rm ghdl:current 'echo "which ghdl: $(which ghdl)"; ghdl version'
+          docker container run --rm ghdl:current 'echo "which risim-ghdl: $(command -v risim-ghdl)"; risim-ghdl version'
 
       - name: 🔑 Login and push to Docker Hub
         if: inputs.publish

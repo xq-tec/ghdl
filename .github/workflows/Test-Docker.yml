@@ -31,8 +31,8 @@ jobs:
 
       - name: Version check
         run: |
-          echo "which ghdl: $(which ghdl)"
-          ghdl version
+          echo "which risim-ghdl: $(command -v risim-ghdl)"
+          risim-ghdl version
 
       - name: Run tests in testsuite
         run: |

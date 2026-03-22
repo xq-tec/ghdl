@@ -79,7 +79,7 @@ jobs:
       - name: Dependency check (Linux, MSYS2)
         if: startsWith(inputs.os_image, 'ubuntu') || startsWith(inputs.os_image, 'windows')
         run: |
-          ldd ./install/bin/ghdl*
+          ldd ./install/bin/risim-ghdl*
           ldd ./install/lib/libghdl-*
           ldd ./install/lib/libghdlvpi*
 
@@ -93,7 +93,7 @@ jobs:
           ls -lAh ./install/lib
           echo ""
 
-          otool -L ./install/bin/ghdl*
+          otool -L ./install/bin/risim-ghdl*
           otool -L ./install/lib/libghdl-*
           otool -L ./install/lib/libghdlvpi*
 
@@ -101,10 +101,10 @@ jobs:
         run: |
           echo "PATH=$PATH"
           [ '${{ inputs.runtime }}' != '' ] && export PATH=$(pwd)/install/bin:$PATH
-          echo "which ghdl: $(which ghdl)"
-          ghdl version
+          echo "which risim-ghdl: $(command -v risim-ghdl)"
+          risim-ghdl version
           echo "disp-config:"
-          ghdl --disp-config
+          risim-ghdl --disp-config
 
       - name: Run tests in testsuite
         run: |

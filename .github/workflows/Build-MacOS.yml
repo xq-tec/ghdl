@@ -179,7 +179,7 @@ jobs:
 
       - name: "🚦 Run testsuite: 'sanity'"
         run: |
-          export GHDL=$(pwd)/install/bin/ghdl
+          export GHDL=$(pwd)/install/bin/risim-ghdl
           cd testsuite
 
           # no pyunit
