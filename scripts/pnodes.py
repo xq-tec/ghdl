@@ -748,7 +748,16 @@ def do_meta_body():
         elif l == "         --  FIELD_IMAGE":
             for f in funcs:
                 print("         when Field_" + f.name + " =>")
-                print('            return "' + f.name.lower() + '";')
+                field_name = f.name.lower()
+                if field_name.startswith("first_"):
+                    field_name = field_name[6:] + "s"
+                elif field_name.endswith("y_chain"):
+                    field_name = field_name[:-7] + "ies"
+                elif field_name.endswith("s_chain"):
+                    field_name = field_name[:-6]
+                elif field_name.endswith("_chain"):
+                    field_name = field_name[:-6] + "s"
+                print('            return "' + field_name + '";')
         elif l == "         --  IIR_IMAGE":
             for k in kinds:
                 print("         when " + prefix_name + k + " =>")

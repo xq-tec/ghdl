@@ -459,7 +459,7 @@ package body Vhdl.Nodes_Meta is
          when Field_Library_Unit =>
             return "library_unit";
          when Field_Hash_Chain =>
-            return "hashes";
+            return "hashs";
          when Field_Design_Unit_Source_Pos =>
             return "design_unit_source_pos";
          when Field_Design_Unit_Source_Line =>
@@ -713,7 +713,7 @@ package body Vhdl.Nodes_Meta is
          when Field_Enumeration_Literal_List =>
             return "enumeration_literal_list";
          when Field_Entity_Class_Entry_Chain =>
-            return "entity_class_entrys";
+            return "entity_class_entries";
          when Field_Group_Constituent_List =>
             return "group_constituent_list";
          when Field_Unit_Chain =>

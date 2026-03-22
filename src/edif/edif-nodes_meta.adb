@@ -95,21 +95,21 @@ package body Edif.Nodes_Meta is
          when Field_Chain =>
             return "chain";
          when Field_External_Chain =>
-            return "external_chain";
+            return "externals";
          when Field_Library_Chain =>
-            return "library_chain";
+            return "libraries";
          when Field_Cells_Chain =>
-            return "cells_chain";
+            return "cells";
          when Field_Ports_Chain =>
-            return "ports_chain";
+            return "ports";
          when Field_Contents_Chain =>
-            return "contents_chain";
+            return "contents";
          when Field_Properties_Chain =>
-            return "properties_chain";
+            return "properties";
          when Field_Port_Instances_Chain =>
-            return "port_instances_chain";
+            return "port_instances";
          when Field_Joined_Chain =>
-            return "joined_chain";
+            return "joineds";
          when Field_Design =>
             return "design";
          when Field_Designator =>

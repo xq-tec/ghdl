@@ -74,7 +74,7 @@ package body PSL.Nodes_Meta is
          when Field_Prefix =>
             return "prefix";
          when Field_Item_Chain =>
-            return "item_chain";
+            return "items";
          when Field_Property =>
             return "property";
          when Field_String =>
@@ -132,7 +132,7 @@ package body PSL.Nodes_Meta is
          when Field_Declaration =>
             return "declaration";
          when Field_Association_Chain =>
-            return "association_chain";
+            return "associations";
          when Field_Global_Clock =>
             return "global_clock";
       end case;
