@@ -12,5 +12,5 @@ package Version is
 
    Ghdl_Release : constant String :=
      "(@DESC@)" &
-     " [Dunoon edition]";
+     " [simulation adapter]";
 end Version;

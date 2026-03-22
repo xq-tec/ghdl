@@ -65,7 +65,7 @@ jobs:
 
           image_ns="${{ vars.DOCKERHUB_NAMESPACE }}"
           image_name="${{ inputs.dockerhub_image }}"
-          image_tag="5.0.0-dev-${{ inputs.backend }}-${base_image}-${base_image_tag}"
+          image_tag="6.0.0-risim-${{ inputs.backend }}-${base_image}-${base_image_tag}"
           image="${image_ns}/${image_name}:${image_tag}"
 
           echo "ghdl_image_ns=${image_ns}" >> $GITHUB_OUTPUT

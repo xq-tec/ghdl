@@ -69,6 +69,9 @@ PYTHON=python3
 PWD=$(CURDIR)
 DESTDIR=
 bindir=$(prefix)/bin
+# Filename of the installed GHDL driver in $(bindir); build-tree binaries stay ghdl_mcode, etc.
+GHDL_INSTALL_NAME=risim-ghdl
+GHDL_INSTALL_EXE=$(GHDL_INSTALL_NAME)$(EXEEXT)
 libdir=$(prefix)/$(libdirsuffix)
 libghdldir=$(prefix)/$(libghdldirsuffix)
 incdir=$(prefix)/$(incdirsuffix)/ghdl
@@ -154,7 +157,7 @@ LIBVHDL_FLAGS_TO_PASS=\
 
 # Pre-reqs for copying VHDL libs into $(DESTDIR): in-tree backends populate
 # $(LIBDST_DIR) via libs.vhdl.$(backend).  The gcc backend uses libs.vhdl.gcc with
-# $(DESTDIR)$(bindir)/ghdl and is built by `make ghdllib` after installing the
+# $(DESTDIR)$(bindir)/$(GHDL_INSTALL_EXE) and is built by `make ghdllib` after installing the
 # GCC-built driver, so install does not invoke it here.
 ifeq ($(backend),gcc)
 install_vhdllib_build_deps=
@@ -169,9 +172,9 @@ all: Makefile default_paths.ads all.$(backend) all.libghdl all.ghw
 
 install: install.$(backend) install.vhdllib install.vpi install.libghdl install.ghw
 #       Generate std.standard package VHDL source
-	"$(DESTDIR)$(bindir)/ghdl$(EXEEXT)" --disp-standard --std=87 > "$(DESTDIR)$(VHDL_LIB_DIR)/src/std/v87/standard.vhdl"
-	"$(DESTDIR)$(bindir)/ghdl$(EXEEXT)" --disp-standard --std=93 > "$(DESTDIR)$(VHDL_LIB_DIR)/src/std/v93/standard.vhdl"
-	"$(DESTDIR)$(bindir)/ghdl$(EXEEXT)" --disp-standard --std=08 > "$(DESTDIR)$(VHDL_LIB_DIR)/src/std/v08/standard.vhdl"
+	"$(DESTDIR)$(bindir)/$(GHDL_INSTALL_EXE)" --disp-standard --std=87 > "$(DESTDIR)$(VHDL_LIB_DIR)/src/std/v87/standard.vhdl"
+	"$(DESTDIR)$(bindir)/$(GHDL_INSTALL_EXE)" --disp-standard --std=93 > "$(DESTDIR)$(VHDL_LIB_DIR)/src/std/v93/standard.vhdl"
+	"$(DESTDIR)$(bindir)/$(GHDL_INSTALL_EXE)" --disp-standard --std=08 > "$(DESTDIR)$(VHDL_LIB_DIR)/src/std/v08/standard.vhdl"
 
 uninstall: uninstall.$(backend) uninstall.vhdllib uninstall.vpi uninstall.libghdl uninstall.ghw
 
@@ -254,10 +257,10 @@ libs.vhdl.mcode: ghdl_mcode$(EXEEXT)
 	$(MAKE) -f $(srcdir)/libraries/Makefile.inc $(LIBVHDL_FLAGS_TO_PASS) GHDL="$(PWD)/ghdl_mcode$(EXEEXT)" XRUN=$(XRUN) GHDL_FLAGS="" VHDL_COPY_OBJS=no vhdl.libs.all
 
 install.mcode.program: install.dirs ghdl_mcode$(EXEEXT)
-	$(INSTALL_PROGRAM) ghdl_mcode$(EXEEXT) "$(DESTDIR)$(bindir)/ghdl$(EXEEXT)"
+	$(INSTALL_PROGRAM) ghdl_mcode$(EXEEXT) "$(DESTDIR)$(bindir)/$(GHDL_INSTALL_EXE)"
 
 uninstall.mcode.program:
-	$(RM) "$(DESTDIR)$(bindir)/ghdl$(EXEEXT)"
+	$(RM) "$(DESTDIR)$(bindir)/$(GHDL_INSTALL_EXE)"
 
 install.mcode: install.mcode.program install
 
@@ -355,7 +358,7 @@ copy-sources.gcc: version.ads scripts/gcc/Make-lang.in
 
 # To build vhdl libs using a non-installed ghdl, define GHDL_GCC_BIN to the
 # path of ghdl and GHDL1_GCC_BIN to path of ghdl1
-GHDL_GCC_BIN=$(DESTDIR)$(bindir)/ghdl$(EXEEXT)
+GHDL_GCC_BIN=$(DESTDIR)$(bindir)/$(GHDL_INSTALL_EXE)
 GHDL1_GCC_BIN=  # --GHDL1=/path/to/ghdl1
 
 libs.vhdl.gcc:
@@ -456,21 +459,21 @@ oread-llvm$(EXEEXT): force
 	 LLVM_CONFIG="$(LLVM_CONFIG)" CXX="$(CXX)"
 
 install.llvm.program: install.dirs ghdl1-llvm$(EXEEXT) ghdl_llvm$(EXEEXT)
-	$(INSTALL_PROGRAM) ghdl_llvm$(EXEEXT) $(DESTDIR)$(bindir)/ghdl$(EXEEXT)
+	$(INSTALL_PROGRAM) ghdl_llvm$(EXEEXT) $(DESTDIR)$(bindir)/$(GHDL_INSTALL_EXE)
 	$(INSTALL_PROGRAM) ghdl1-llvm$(EXEEXT) $(DESTDIR)$(bindir)/ghdl1-llvm$(EXEEXT)
 
 install.llvm_jit.program: install.dirs ghdl_llvm_jit$(EXEEXT)
-	$(INSTALL_PROGRAM) ghdl_llvm_jit$(EXEEXT) $(DESTDIR)$(bindir)/ghdl$(EXEEXT)
+	$(INSTALL_PROGRAM) ghdl_llvm_jit$(EXEEXT) $(DESTDIR)$(bindir)/$(GHDL_INSTALL_EXE)
 
 uninstall.llvm_jit.program:
-	$(RM) $(DESTDIR)$(bindir)/ghdl$(EXEEXT)
+	$(RM) $(DESTDIR)$(bindir)/$(GHDL_INSTALL_EXE)
 
 test.llvm: ghdl_llvm$(EXEEXT)
 	cd $(srcdir)/testsuite; GHDL=$(CURDIR)/ghdl_llvm$(EXEEXT) ./testsuite.sh
 
 uninstall.llvm.program:
 	$(RM) $(DESTDIR)$(bindir)/ghdl1-llvm$(EXEEXT)
-	$(RM) $(DESTDIR)$(bindir)/ghdl$(EXEEXT)
+	$(RM) $(DESTDIR)$(bindir)/$(GHDL_INSTALL_EXE)
 
 install.llvm: install.llvm.program install.grt
 
@@ -495,10 +498,10 @@ libs.vhdl.simul: ghdl_simul$(EXEEXT)
 	$(MAKE) -f $(srcdir)/libraries/Makefile.inc $(LIBVHDL_FLAGS_TO_PASS) GHDL=$(PWD)/ghdl_simul$(EXEEXT) GHDL_FLAGS="" VHDLLIBS_COPY_OBJS=no vhdl.libs.all
 
 install.simul.program: install.dirs ghdl_simul$(EXEEXT)
-	$(INSTALL_PROGRAM) ghdl_simul$(EXEEXT) $(DESTDIR)$(bindir)/ghdl$(EXEEXT)
+	$(INSTALL_PROGRAM) ghdl_simul$(EXEEXT) $(DESTDIR)$(bindir)/$(GHDL_INSTALL_EXE)
 
 uninstall.simul.program:
-	$(RM) $(DESTDIR)$(bindir)/ghdl$(EXEEXT)
+	$(RM) $(DESTDIR)$(bindir)/$(GHDL_INSTALL_EXE)
 
 install.simul: install.simul.program
 
