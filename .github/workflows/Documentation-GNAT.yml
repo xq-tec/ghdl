@@ -20,6 +20,9 @@ jobs:
     steps:
       - name: '⏬ Checkout'
         uses: actions/checkout@v4
+        with:
+          # Full make builds adapter/ via Cargo (path crates are git submodules).
+          submodules: recursive
 
       - name: 🔧 Install dependencies
         run: |
