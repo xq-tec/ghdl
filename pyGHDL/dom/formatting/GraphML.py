@@ -43,9 +43,7 @@ class DependencyGraphFormatter:
 
     def WriteGraphML(self, path: Path):
         with path.open("w") as file:
-            file.write(
-                dedent(
-                    f"""\
+            file.write(dedent(f"""\
             <graphml xmlns="http://graphml.graphdrawing.org/xmlns"
                      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                      xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd">
@@ -61,9 +59,7 @@ class DependencyGraphFormatter:
                      parse.nodes="{len(self._graph._verticesWithID)}"
                      parse.edges="{len(self._graph._edgesWithoutID)}"
                      parse.order="nodesfirst">
-            """
-                )
-            )
+            """))
             groups: Dict[str, List[Vertex]] = {}
             for vertex in self._graph._verticesWithID.values():
                 if isinstance(vertex.Value, VHDLModel_Library):
@@ -79,15 +75,11 @@ class DependencyGraphFormatter:
                     groups[identifier] = [vertex]
 
             for group, vertices in groups.items():
-                file.write(
-                    dedent(
-                        """\
+                file.write(dedent("""\
                     {prefix}<node id="grp_{id}">
                     {prefix}  <data key="nd2">{value}</data>
                     {prefix}  <graph id="{id}" edgedefault="directed">
-                """
-                    ).format(prefix="    ", id=group, value=group)
-                )
+                """).format(prefix="    ", id=group, value=group))
 
                 for vertex in vertices:
                     if vertex["kind"] is DependencyGraphVertexKind.Architecture:
@@ -96,50 +88,34 @@ class DependencyGraphFormatter:
                         value = f"{vertex.ID}"
                     else:
                         value = f"{vertex.Value.Identifier}"
-                    file.write(
-                        dedent(
-                            """\
+                    file.write(dedent("""\
                         {prefix}<node id="{vertex.ID}">
                         {prefix}  <data key="nd1">{vertex.ID}</data>
                         {prefix}  <data key="nd2">{value}</data>
                         {prefix}  <data key="nd3">{vertex[kind].name}</data>
                         {prefix}  <data key="nd4">{color}</data>
                         {prefix}</node>
-                    """
-                        ).format(prefix="        ", vertex=vertex, value=value, color=self.NODE_COLORS[vertex["kind"]])
-                    )
+                    """).format(prefix="        ", vertex=vertex, value=value, color=self.NODE_COLORS[vertex["kind"]]))
 
-                file.write(
-                    dedent(
-                        """\
+                file.write(dedent("""\
                     {prefix}  </graph>
                     {prefix}</node>
-                """
-                    ).format(prefix="    ")
-                )
+                """).format(prefix="    "))
 
             edgeCount = 1
             for edge in self._graph._edgesWithoutID:
-                file.write(
-                    dedent(
-                        """\
+                file.write(dedent("""\
                     {prefix}<edge id="e{edgeCount}" source="{edge.Source.ID}" target="{edge.Destination.ID}">
                     {prefix}  <data key="ed3">{edge[kind].name}</data>
                     {prefix}  <data key="ed4">{color}</data>
                     {prefix}</edge>
-                """
-                    ).format(prefix="    ", edgeCount=edgeCount, edge=edge, color=self.EDGE_COLORS[edge["kind"]])
-                )
+                """).format(prefix="    ", edgeCount=edgeCount, edge=edge, color=self.EDGE_COLORS[edge["kind"]]))
                 edgeCount += 1
 
-            file.write(
-                dedent(
-                    """\
+            file.write(dedent("""\
               </graph>
             </graphml>
-            """
-                )
-            )
+            """))
 
 
 class HierarchyGraphFormatter:
@@ -173,9 +149,7 @@ class HierarchyGraphFormatter:
 
     def WriteGraphML(self, path: Path):
         with path.open("w") as file:
-            file.write(
-                dedent(
-                    f"""\
+            file.write(dedent(f"""\
             <graphml xmlns="http://graphml.graphdrawing.org/xmlns"
                      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                      xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd">
@@ -191,60 +165,42 @@ class HierarchyGraphFormatter:
                      parse.nodes="{len(self._graph._verticesWithID)}"
                      parse.edges="{len(self._graph._edgesWithoutID)}"
                      parse.order="nodesfirst">
-            """
-                )
-            )
+            """))
 
             for vertex in self._graph._verticesWithID.values():
                 if vertex["kind"] is DependencyGraphVertexKind.Entity:
-                    file.write(
-                        dedent(
-                            """\
+                    file.write(dedent("""\
                         {prefix}<node id="{vertex.ID}">
                         {prefix}  <data key="nd1">{vertex.ID}</data>
                         {prefix}  <data key="nd2">{vertex.Value.Identifier}</data>
                         {prefix}  <data key="nd3">{vertex[kind].name}</data>
                         {prefix}  <data key="nd4">{color}</data>
                         {prefix}</node>
-                    """
-                        ).format(prefix="    ", vertex=vertex, color=self.NODE_COLORS[vertex["kind"]])
-                    )
+                    """).format(prefix="    ", vertex=vertex, color=self.NODE_COLORS[vertex["kind"]]))
                 elif vertex["kind"] is DependencyGraphVertexKind.Architecture:
-                    file.write(
-                        dedent(
-                            """\
+                    file.write(dedent("""\
                         {prefix}<node id="{vertex.ID}">
                         {prefix}  <data key="nd1">{vertex.ID}</data>
                         {prefix}  <data key="nd2">{vertex.Value.Identifier}</data>
                         {prefix}  <data key="nd3">{vertex[kind].name}</data>
                         {prefix}  <data key="nd4">{color}</data>
                         {prefix}</node>
-                    """
-                        ).format(prefix="    ", vertex=vertex, color=self.NODE_COLORS[vertex["kind"]])
-                    )
+                    """).format(prefix="    ", vertex=vertex, color=self.NODE_COLORS[vertex["kind"]]))
 
             edgeCount = 1
             for edge in self._graph._edgesWithoutID:
-                file.write(
-                    dedent(
-                        """\
+                file.write(dedent("""\
                     {prefix}<edge id="e{edgeCount}" source="{edge.Source.ID}" target="{edge.Destination.ID}">
                     {prefix}  <data key="ed3">{edge[kind].name}</data>
                     {prefix}  <data key="ed4">{color}</data>
                     {prefix}</edge>
-                """
-                    ).format(prefix="    ", edgeCount=edgeCount, edge=edge, color=self.EDGE_COLORS[edge["kind"]])
-                )
+                """).format(prefix="    ", edgeCount=edgeCount, edge=edge, color=self.EDGE_COLORS[edge["kind"]]))
                 edgeCount += 1
 
-            file.write(
-                dedent(
-                    """\
+            file.write(dedent("""\
               </graph>
             </graphml>
-            """
-                )
-            )
+            """))
 
 
 class CompileOrderGraphFormatter:
@@ -279,9 +235,7 @@ class CompileOrderGraphFormatter:
     def WriteGraphML(self, path: Path):
         print(path.absolute())
         with path.open("w") as file:
-            file.write(
-                dedent(
-                    f"""\
+            file.write(dedent(f"""\
             <graphml xmlns="http://graphml.graphdrawing.org/xmlns"
                      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                      xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd">
@@ -297,44 +251,30 @@ class CompileOrderGraphFormatter:
                      parse.nodes="{len(self._graph._verticesWithID)}"
                      parse.edges="{len(self._graph._edgesWithoutID)}"
                      parse.order="nodesfirst">
-            """
-                )
-            )
+            """))
 
             for vertex in self._graph._verticesWithID.values():
                 if vertex["kind"] is DependencyGraphVertexKind.Document:
-                    file.write(
-                        dedent(
-                            """\
+                    file.write(dedent("""\
                         {prefix}<node id="{vertex.ID}">
                         {prefix}  <data key="nd1">{vertex.ID}</data>
                         {prefix}  <data key="nd2">{vertex.Value.Path.name}</data>
                         {prefix}  <data key="nd3">{vertex[kind].name}</data>
                         {prefix}  <data key="nd4">{color}</data>
                         {prefix}</node>
-                    """
-                        ).format(prefix="    ", vertex=vertex, color=self.NODE_COLORS[vertex["kind"]])
-                    )
+                    """).format(prefix="    ", vertex=vertex, color=self.NODE_COLORS[vertex["kind"]]))
 
             edgeCount = 1
             for edge in self._graph._edgesWithoutID:
-                file.write(
-                    dedent(
-                        """\
+                file.write(dedent("""\
                     {prefix}<edge id="e{edgeCount}" source="{edge.Source.ID}" target="{edge.Destination.ID}">
                     {prefix}  <data key="ed3">{edge[kind].name}</data>
                     {prefix}  <data key="ed4">{color}</data>
                     {prefix}</edge>
-                """
-                    ).format(prefix="    ", edgeCount=edgeCount, edge=edge, color=self.EDGE_COLORS[edge["kind"]])
-                )
+                """).format(prefix="    ", edgeCount=edgeCount, edge=edge, color=self.EDGE_COLORS[edge["kind"]]))
                 edgeCount += 1
 
-            file.write(
-                dedent(
-                    """\
+            file.write(dedent("""\
               </graph>
             </graphml>
-            """
-                )
-            )
+            """))
