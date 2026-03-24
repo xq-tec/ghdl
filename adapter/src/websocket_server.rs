@@ -1,7 +1,11 @@
 use std::collections::HashSet;
+use std::fs::File;
 use std::future::pending;
 use std::io;
 use std::net::SocketAddr;
+use std::path::PathBuf;
+use std::sync::Once;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use crossbeam_channel::Sender;
@@ -11,6 +15,7 @@ use futures_util::stream::SplitStream;
 use hdl_simulation_protocol::SimulationStatus;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchy;
 use hdl_simulation_protocol::design_hierarchy::SignalElementId;
+use hdl_simulation_protocol::server_marker;
 use hdl_simulation_protocol::from_simulator::SimulationUpdate as WsSimulationUpdate;
 use hdl_simulation_protocol::to_simulator::Command;
 use smallvec::SmallVec;
@@ -28,6 +33,30 @@ use tracing::warn;
 
 use crate::SimulationCommand;
 use crate::SimulationUpdate;
+
+/// Path for `libc::atexit` cleanup. Stale files may remain after `SIGKILL` or crash.
+static SERVER_MARKER_PATH: OnceLock<PathBuf> = OnceLock::new();
+
+static REGISTER_SERVER_MARKER_ATEXIT: Once = Once::new();
+
+extern "C" fn remove_server_marker_atexit() {
+    if let Some(path) = SERVER_MARKER_PATH.get() {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+/// Creates an empty `{port}.server` file and registers a one-time `atexit` handler to remove it.
+fn create_server_marker_and_register_cleanup(port: u16) -> io::Result<()> {
+    let dir = server_marker::markers_directory();
+    std::fs::create_dir_all(&dir)?;
+    let path = server_marker::marker_path(port);
+    File::create(&path)?;
+    let _ = SERVER_MARKER_PATH.set(path);
+    REGISTER_SERVER_MARKER_ATEXIT.call_once(|| unsafe {
+        libc::atexit(remove_server_marker_atexit);
+    });
+    Ok(())
+}
 
 type WsSink = futures_util::stream::SplitSink<WebSocketStream<TcpStream>, Message>;
 type WsRecv = SplitStream<WebSocketStream<TcpStream>>;
@@ -135,14 +164,27 @@ pub(crate) async fn run_websocket_server(
     command_tx: Sender<SimulationCommand>,
     mut update_rx: tokio::sync::mpsc::UnboundedReceiver<SimulationUpdate>,
 ) {
-    let addr = "127.0.0.1:8080";
-    let listener = match TcpListener::bind(addr).await {
+    let bind_addr = "127.0.0.1:0";
+    let listener = match TcpListener::bind(bind_addr).await {
         Ok(l) => l,
         Err(e) => {
-            error!(%addr, "failed to bind WebSocket server: {e}");
+            error!(addr = bind_addr, "failed to bind WebSocket server: {e}");
             return;
         },
     };
+
+    let addr = match listener.local_addr() {
+        Ok(a) => a,
+        Err(e) => {
+            error!("failed to read WebSocket bind address: {e}");
+            return;
+        },
+    };
+
+    if let Err(e) = create_server_marker_and_register_cleanup(addr.port()) {
+        error!(%addr, "failed to create server marker file: {e}");
+        return;
+    }
 
     info!(%addr, "WebSocket server listening");
 

@@ -12,6 +12,7 @@ crossbeam-channel = "0.5"
 futures-util = "0.3"
 ghdl-ast = { path = "../ghdl-ast" }
 hdl-simulation-protocol = { path = "../hdl-simulation-protocol" }
+libc = "0.2"
 opentelemetry = { version = "0.31", features = ["trace", "logs"] }
 opentelemetry_sdk = { version = "0.31", features = [
     "trace",

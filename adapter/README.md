@@ -70,7 +70,8 @@ The central state structure passed to all FFI functions from GHDL:
 
 ### 3.2. WebSocket Server (`websocket_server.rs`)
 
-- Listens on `127.0.0.1:8080`
+- Listens on `127.0.0.1:0` (ephemeral port chosen by the OS)
+- After bind, creates an empty marker file `{port}.server` under `{temp_dir}/hdl-sim/` (see `hdl-simulation-protocol::server_marker`) so clients can discover the port; registers `libc::atexit` to remove that file on normal process exit (`SIGKILL` and crashes may leave stale files)
 - Uses `tokio-tungstenite` for WebSocket connections
 - Implements the `hdl-simulation-protocol` (binary postcard encoding)
 - Allows at most one client at a time; further TCP connections wait until the slot is free

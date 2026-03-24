@@ -332,6 +332,7 @@ dependencies = [
  "futures-util",
  "ghdl-ast",
  "hdl-simulation-protocol",
+ "libc",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
