@@ -41,10 +41,10 @@ The adapter operates with two main threads:
    - Processes commands from the WebSocket thread via channels
 
 2. **WebSocket Thread** (Tokio async runtime)
-   - Manages WebSocket server and client connections
+   - Manages WebSocket server and a single client connection
    - Handles bidirectional communication with frontend
    - Forwards commands to the simulation thread
-   - Broadcasts updates to all connected clients
+   - Sends updates to the connected client, if any
 
 ### 2.2. Communication Channels
 
@@ -53,8 +53,8 @@ The adapter operates with two main threads:
   - Delivers signal subscription requests
 
 - **Update Channel** (`tokio::sync::mpsc`): Simulation → WebSocket
-  - Streams signal events to clients
-  - Broadcasts design hierarchy
+  - Streams signal events to the client when connected
+  - Sends design hierarchy updates
   - Notifies status changes
 
 ## 3. Key Components
@@ -73,8 +73,8 @@ The central state structure passed to all FFI functions from GHDL:
 - Listens on `127.0.0.1:8080`
 - Uses `tokio-tungstenite` for WebSocket connections
 - Implements the `hdl-simulation-protocol` (binary postcard encoding)
-- Supports multiple simultaneous client connections
-- Automatically sends design hierarchy to new clients
+- Allows at most one client at a time; further TCP connections wait until the slot is free
+- Automatically sends design hierarchy when a client connects
 - 100ms periodic update interval for signal values
 
 ### 3.3. Design Hierarchy Builder (`design.rs`)
@@ -102,7 +102,7 @@ Initializes the adapter:
 
 #### 3.4.2. `adapter_process_commands(state: &mut AdapterState, block: bool)`
 
-Processes commands from WebSocket clients:
+Processes commands from the WebSocket client:
 
 - When `block=true`, waits for at least one command
 - When `block=false`, processes all pending commands and returns immediately
@@ -114,7 +114,7 @@ Called after elaboration to register the design hierarchy:
 
 - Collects all signals and instances from GHDL
 - Builds module hierarchy tree
-- Broadcasts design to all connected clients
+- Sends design to the connected client, if any
 
 #### 3.4.4. `adapter_set_next_event_time(state, physical_time, delta_cycle)`
 
@@ -136,8 +136,8 @@ Records a signal value change:
 
 Notifies status changes (Paused/Running/Stopped):
 
-- Broadcasts to all WebSocket clients
-- When stopping, blocks until acknowledgment (2s timeout) to ensure clients receive final events
+- Sends status to the connected WebSocket client, if any
+- When stopping, blocks until acknowledgment (2s timeout) so a connected client can receive the final notification
 
 ## 4. Signal Subscription Mechanism
 
@@ -145,7 +145,7 @@ Notifies status changes (Paused/Running/Stopped):
 2. WebSocket thread forwards `Subscribe` command to simulation thread
 3. Simulation thread calls `ghdl_set_signal_subscription(signal_id, index)` FFI function
 4. GHDL marks the signal for tracking and calls `adapter_notify_signal_event` on changes
-5. Events are buffered and periodically flushed to clients
+5. Events are buffered and periodically flushed to the client when connected
 
 ## 5. Event Batching
 
@@ -171,7 +171,7 @@ The adapter converts between GHDL's internal types and protocol types:
 
 - Panics on `abort` (configured in Cargo.toml profiles)
 - Channel send failures are logged but generally expected during shutdown
-- WebSocket errors cause connection removal
+- WebSocket errors clear the client slot so a new connection can be accepted
 - Invalid subscription indices indicate bugs and cause panic
 
 ## 8. Dependencies

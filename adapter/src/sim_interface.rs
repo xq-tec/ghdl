@@ -294,11 +294,11 @@ extern "C" fn adapter_update_simulation_time(state: &mut AdapterState) {
     trace!(%state.time_for_events, "updated simulation time");
 }
 
-/// Sends a status update to all connected clients if the status has changed.
+/// Sends a status update to the WebSocket client if the status has changed.
 ///
 /// When the status is [`SimulationStatus::Stopped`], blocks until the
-/// notification has been flushed on all WebSocket connections (with a
-/// two-second timeout).
+/// notification has been flushed to the client or skipped (no client), with a
+/// two-second timeout.
 #[instrument(skip(state), level = "debug")]
 #[unsafe(no_mangle)]
 extern "C" fn adapter_notify_simulation_status(state: &mut AdapterState, status: SimulationStatus) {

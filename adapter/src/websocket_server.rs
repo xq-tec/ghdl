@@ -1,13 +1,13 @@
-use std::collections::HashMap;
 use std::collections::HashSet;
-use std::pin::Pin;
+use std::future::pending;
+use std::io;
+use std::net::SocketAddr;
 use std::time::Duration;
 
 use crossbeam_channel::Sender;
 use futures_util::SinkExt;
-use futures_util::Stream;
 use futures_util::StreamExt;
-use futures_util::stream::SelectAll;
+use futures_util::stream::SplitStream;
 use hdl_simulation_protocol::SimulationStatus;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchy;
 use hdl_simulation_protocol::design_hierarchy::SignalElementId;
@@ -30,20 +30,22 @@ use crate::SimulationCommand;
 use crate::SimulationUpdate;
 
 type WsSink = futures_util::stream::SplitSink<WebSocketStream<TcpStream>, Message>;
-type TaggedWsStream =
-    Pin<Box<dyn Stream<Item = (u64, Result<Message, tungstenite::Error>)> + Send>>;
+type WsRecv = SplitStream<WebSocketStream<TcpStream>>;
 type SendError = Box<dyn std::error::Error + Send + Sync>;
 
-/// State for a single WebSocket connection.
-struct Connection {
-    id: u64,
+/// Send half and subscription state for the single allowed WebSocket client.
+///
+/// The receive half is stored separately so `tokio::select!` can await
+/// `recv.next()` without holding a borrow of this struct across polls of
+/// `listener.accept()`.
+struct ClientSession {
     sink: WsSink,
     subscribed_signals: HashSet<SignalElementId>,
 }
 
-impl Connection {
+impl ClientSession {
     /// Encodes and sends a protocol message over the WebSocket.
-    #[instrument(skip(self, message), fields(connection_id = self.id), level = "debug")]
+    #[instrument(skip(self, message), level = "debug")]
     async fn send(&mut self, message: &WsSimulationUpdate) -> Result<(), SendError> {
         let encoded = postcard::to_allocvec(message)?;
         self.sink.send(Message::Binary(encoded.into())).await?;
@@ -52,7 +54,7 @@ impl Connection {
 
     /// Processes a client command, forwarding simulation commands to the simulator
     /// thread and returning an optional response notification.
-    #[instrument(skip(self, command_tx), fields(connection_id = self.id), level = "debug")]
+    #[instrument(skip(self, command_tx), level = "debug")]
     fn handle_command(
         &mut self,
         command: Command,
@@ -106,23 +108,28 @@ impl Connection {
     }
 }
 
-// TODO don't re-encode the message for each connection
-/// Sends a notification to all connections, removing any that fail.
+fn disconnect_client(session: &mut Option<ClientSession>, recv: &mut Option<WsRecv>) {
+    *session = None;
+    *recv = None;
+}
+
+/// Sends a notification to the connected client, clearing the slot on failure.
 #[instrument(skip_all, level = "debug")]
-async fn broadcast(connections: &mut HashMap<u64, Connection>, update: &WsSimulationUpdate) {
-    let mut to_remove = Vec::new();
-    for conn in connections.values_mut() {
-        if let Err(e) = conn.send(update).await {
-            warn!(connection_id = conn.id, "failed to send to connection: {e}");
-            to_remove.push(conn.id);
-        }
-    }
-    for id in to_remove {
-        connections.remove(&id);
+async fn send_to_client(
+    session: &mut Option<ClientSession>,
+    recv: &mut Option<WsRecv>,
+    update: &WsSimulationUpdate,
+) {
+    let Some(client) = session.as_mut() else {
+        return;
+    };
+    if let Err(e) = client.send(update).await {
+        warn!("failed to send to client: {e}");
+        disconnect_client(session, recv);
     }
 }
 
-/// Runs the async WebSocket server with all connections handled in a single event loop.
+/// Runs the async WebSocket server with a single client handled in one event loop.
 #[instrument(skip_all)]
 pub(crate) async fn run_websocket_server(
     command_tx: Sender<SimulationCommand>,
@@ -139,9 +146,8 @@ pub(crate) async fn run_websocket_server(
 
     info!(%addr, "WebSocket server listening");
 
-    let mut connections: HashMap<u64, Connection> = HashMap::new();
-    let mut ws_receivers: SelectAll<TaggedWsStream> = SelectAll::new();
-    let mut next_id: u64 = 0;
+    let mut client_session: Option<ClientSession> = None;
+    let mut client_recv: Option<WsRecv> = None;
     let mut current_hierarchy: Option<DesignHierarchy> = None;
     let mut update_interval = tokio::time::interval(Duration::from_millis(100));
 
@@ -152,9 +158,15 @@ pub(crate) async fn run_websocket_server(
                 let _ = command_tx.send(SimulationCommand::SendUpdate);
             }
 
-            // Accept new connections
-            result = listener.accept() => {
-                let (stream, _) = match result {
+            // Accept new connections (only when no client is connected)
+            accept_result = async {
+                if client_session.is_none() {
+                    listener.accept().await
+                } else {
+                    pending::<io::Result<(TcpStream, SocketAddr)>>().await
+                }
+            } => {
+                let (stream, _) = match accept_result {
                     Ok(pair) => pair,
                     Err(e) => {
                         warn!("failed to accept connection: {e}");
@@ -169,13 +181,9 @@ pub(crate) async fn run_websocket_server(
                     }
                 };
 
-                let id = next_id;
-                next_id += 1;
-                let connection_span = info_span!("connection", id);
-
+                let connection_span = info_span!("client");
                 let (sink, stream) = ws_stream.split();
-                let mut conn = Connection {
-                    id,
+                let mut session = ClientSession {
                     sink,
                     subscribed_signals: HashSet::new(),
                 };
@@ -187,35 +195,46 @@ pub(crate) async fn run_websocket_server(
                     // Send current design hierarchy to the newly connected client
                     if let Some(ref hierarchy) = current_hierarchy {
                         let update = WsSimulationUpdate::DesignHierarchy(hierarchy.clone());
-                        if let Err(e) = conn.send(&update).await {
+                        if let Err(e) = session.send(&update).await {
                             warn!("failed to send design hierarchy: {e}");
                             continue;
                         }
                     }
                 }
 
-                connections.insert(id, conn);
-                ws_receivers.push(Box::pin(stream.map(move |msg| (id, msg))));
+                client_session = Some(session);
+                client_recv = Some(stream);
             }
 
-            // Handle messages from any connection
-            Some((id, result)) = ws_receivers.next() => {
-                let connection_span = info_span!("connection", id);
+            // Handle messages from the connected client
+            ws_item = async {
+                match &mut client_recv {
+                    Some(s) => s.next().await,
+                    None => pending::<Option<Result<Message, tungstenite::Error>>>().await,
+                }
+            } => {
+                let connection_span = info_span!("client");
                 let _enter = connection_span.enter();
+
+                let Some(result) = ws_item else {
+                    info!("WebSocket stream ended");
+                    disconnect_client(&mut client_session, &mut client_recv);
+                    continue;
+                };
 
                 let text = match result {
                     Ok(Message::Text(text)) => text,
                     Ok(Message::Close(_)) => {
                         info!("connection closed by client");
-                        connections.remove(&id);
+                        disconnect_client(&mut client_session, &mut client_recv);
                         continue;
-                    }
+                    },
                     Ok(_) => continue,
                     Err(e) => {
                         warn!("WebSocket error: {e}");
-                        connections.remove(&id);
+                        disconnect_client(&mut client_session, &mut client_recv);
                         continue;
-                    }
+                    },
                 };
 
                 let command: Command = match serde_json::from_str(&text) {
@@ -223,16 +242,16 @@ pub(crate) async fn run_websocket_server(
                     Err(e) => {
                         warn!("failed to parse message: {e}");
                         continue;
-                    }
+                    },
                 };
 
-                let Some(conn) = connections.get_mut(&id) else { continue };
-                let response = conn.handle_command(command, &command_tx);
+                let Some(session) = client_session.as_mut() else { continue };
+                let response = session.handle_command(command, &command_tx);
 
                 if let Some(update) = response
-                    && let Err(e) = conn.send(&update).await {
+                    && let Err(e) = session.send(&update).await {
                         warn!("failed to send response: {e}");
-                        connections.remove(&id);
+                        disconnect_client(&mut client_session, &mut client_recv);
                     }
             }
 
@@ -243,34 +262,36 @@ pub(crate) async fn run_websocket_server(
                         current_hierarchy = Some(hierarchy.clone());
 
                         // Clear subscriptions since signal IDs may have changed
-                        for conn in connections.values_mut() {
-                            conn.subscribed_signals.clear();
+                        if let Some(s) = client_session.as_mut() {
+                            s.subscribed_signals.clear();
                         }
 
-                        broadcast(
-                            &mut connections,
+                        send_to_client(
+                            &mut client_session,
+                            &mut client_recv,
                             &WsSimulationUpdate::DesignHierarchy(hierarchy),
                         )
                         .await;
-                    }
+                    },
                     SimulationUpdate::Events(values) => {
-                        broadcast(
-                            &mut connections,
+                        send_to_client(
+                            &mut client_session,
+                            &mut client_recv,
                             &WsSimulationUpdate::Events(values),
                         )
                         .await;
-                    }
+                    },
                     SimulationUpdate::StatusChanged(status, ack_tx) => {
                         let update = match status {
                             SimulationStatus::Paused => WsSimulationUpdate::SimulationPaused,
                             SimulationStatus::Running => WsSimulationUpdate::SimulationResumed,
                             SimulationStatus::Stopped => WsSimulationUpdate::SimulationStopped,
                         };
-                        broadcast(&mut connections, &update).await;
+                        send_to_client(&mut client_session, &mut client_recv, &update).await;
                         if let Some(tx) = ack_tx {
                             let _ = tx.send(());
                         }
-                    }
+                    },
                 }
             }
         }
