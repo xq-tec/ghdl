@@ -193,6 +193,7 @@ extern "C" fn adapter_register_design(
 
     let root_module = build_module(root_instance, &instances, &signals);
     let hierarchy = hierarchy::DesignHierarchy {
+        simulation_id: 0,
         root_modules: vec![root_module],
     };
     state.set_design_hierarchy(hierarchy, signals);

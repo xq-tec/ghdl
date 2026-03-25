@@ -15,8 +15,8 @@ use futures_util::stream::SplitStream;
 use hdl_simulation_protocol::SimulationStatus;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchy;
 use hdl_simulation_protocol::design_hierarchy::SignalElementId;
-use hdl_simulation_protocol::server_marker;
 use hdl_simulation_protocol::from_simulator::SimulationUpdate as WsSimulationUpdate;
+use hdl_simulation_protocol::server_marker;
 use hdl_simulation_protocol::to_simulator::Command;
 use smallvec::SmallVec;
 use tokio::net::TcpListener;
@@ -45,17 +45,29 @@ extern "C" fn remove_server_marker_atexit() {
     }
 }
 
-/// Creates an empty `{port}.server` file and registers a one-time `atexit` handler to remove it.
-fn create_server_marker_and_register_cleanup(port: u16) -> io::Result<()> {
+/// Creates an empty `{port}-{simulation_id:014x}.server` file and registers a one-time `atexit` handler to remove it.
+fn create_server_marker_and_register_cleanup(port: u16, simulation_id: u64) -> io::Result<()> {
     let dir = server_marker::markers_directory();
     std::fs::create_dir_all(&dir)?;
-    let path = server_marker::marker_path(port);
+    let path = server_marker::marker_path(port, simulation_id);
     File::create(&path)?;
     let _ = SERVER_MARKER_PATH.set(path);
     REGISTER_SERVER_MARKER_ATEXIT.call_once(|| unsafe {
         libc::atexit(remove_server_marker_atexit);
     });
     Ok(())
+}
+
+/// Returns a uniform random 53-bit simulation instance identifier.
+fn random_simulation_id() -> u64 {
+    let mut bytes = [0u8; 8];
+    if getrandom::fill(&mut bytes).is_err() {
+        let time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(1u64, |d| d.as_nanos() as u64);
+        bytes = time.to_ne_bytes();
+    }
+    u64::from_ne_bytes(bytes) & ((1u64 << 53) - 1)
 }
 
 type WsSink = futures_util::stream::SplitSink<WebSocketStream<TcpStream>, Message>;
@@ -181,7 +193,8 @@ pub(crate) async fn run_websocket_server(
         },
     };
 
-    if let Err(e) = create_server_marker_and_register_cleanup(addr.port()) {
+    let simulation_id = random_simulation_id();
+    if let Err(e) = create_server_marker_and_register_cleanup(addr.port(), simulation_id) {
         error!(%addr, "failed to create server marker file: {e}");
         return;
     }
@@ -300,7 +313,8 @@ pub(crate) async fn run_websocket_server(
             // Handle simulation updates from the simulator thread
             Some(update) = update_rx.recv() => {
                 match update {
-                    SimulationUpdate::Design(hierarchy) => {
+                    SimulationUpdate::Design(mut hierarchy) => {
+                        hierarchy.simulation_id = simulation_id;
                         current_hierarchy = Some(hierarchy.clone());
 
                         // Clear subscriptions since signal IDs may have changed

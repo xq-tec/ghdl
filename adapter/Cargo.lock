@@ -330,6 +330,7 @@ dependencies = [
  "compact_str",
  "crossbeam-channel",
  "futures-util",
+ "getrandom",
  "ghdl-ast",
  "hdl-simulation-protocol",
  "libc",
