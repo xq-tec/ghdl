@@ -514,4 +514,10 @@ package body Grt.Options is
          end;
       end loop;
    end Decode;
+
+   function Sim_Name_Valid return Boolean is
+   begin
+      return Sim_Name /= null;
+   end Sim_Name_Valid;
+
 end Grt.Options;

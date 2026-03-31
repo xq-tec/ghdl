@@ -181,19 +181,31 @@ extern "C" fn adapter_register_design(
     root_instance: u32,
     instance_count: u32,
     signal_count: u32,
+    name_str: *const u8,
+    name_len: u64,
 ) {
     info!("Registering design");
     let signals = collect_signals(signal_count);
     let instances = collect_instances(instance_count);
-
     let root_module = build_module(root_instance, &instances, &signals);
     let root_modules = root_module.into_iter().collect();
+
+    let name = unsafe { get_string_opt(name_str, name_len) };
     let hierarchy = hierarchy::DesignHierarchy {
         simulation_id: 0,
+        name,
         root_modules,
     };
     state.set_design_hierarchy(hierarchy, signals);
     info!("design hierarchy built successfully");
+}
+
+unsafe fn get_string_opt(str: *const u8, len: u64) -> Option<CompactString> {
+    if str.is_null() {
+        return None;
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(str, len as usize) };
+    str::from_utf8(bytes).ok().map(CompactString::from)
 }
 
 struct DecodingError {

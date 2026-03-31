@@ -31,6 +31,7 @@ with Elab.Vhdl_Context; use Elab.Vhdl_Context;
 with Elab.Vhdl_Objtypes; use Elab.Vhdl_Objtypes;
 with Elab.Vhdl_Insts;
 with Elab.Vhdl_Values; use Elab.Vhdl_Values;
+with Grt.Options;
 with Grt.Signals; use Grt.Signals;
 with Simul.Vhdl_Elab; use Simul.Vhdl_Elab;
 with Simul.Vhdl_Simul; use Simul.Vhdl_Simul;
@@ -243,14 +244,25 @@ package body Grt.Export is
 
    procedure Register_Design is
       procedure Adapter_Register_Design (
-         Adapter_State : System.Address; Root_Instance, Instance_Count, Signal_Count : Unsigned_32);
+         Adapter_State : System.Address;
+         Root_Instance, Instance_Count, Signal_Count : Unsigned_32;
+         Name_Str : System.Address; Name_Len : Unsigned_64);
       pragma Import (C, Adapter_Register_Design, "adapter_register_design");
+
+      Name_Str : System.Address := System.Null_Address;
+      Name_Len : Unsigned_64 := 0;
    begin
+      if Grt.Options.Sim_Name_Valid then
+         Name_Str := Grt.Options.Sim_Name.all'Address;
+         Name_Len := Unsigned_64 (Grt.Options.Sim_Name'Length);
+      end if;
+
       Adapter_Register_Design (
          Get_Adapter_State,
          Unsigned_32 (Get_Instance_Id (Elab.Vhdl_Insts.Top_Instance)),
          Unsigned_32 (Get_Instance_Count),
-         Unsigned_32 (Signals_Table.Last));
+         Unsigned_32 (Signals_Table.Last),
+         Name_Str, Name_Len);
    end Register_Design;
 
    procedure Set_Signal_Subscription (Signal_Id, Element_Index : Unsigned_32;

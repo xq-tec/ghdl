@@ -98,6 +98,10 @@ package Grt.Options is
    --  If STOP is true, there nothing must happen (set by --help).
    procedure Decode (Stop : out Boolean);
 
+   --  Set by --name=NAME for the exported design hierarchy.
+   Sim_Name : String_Access := null;
+   function Sim_Name_Valid return Boolean;
+
    --  Set by --disp-time (and --trace-signals, --trace-processes) to display
    --  time and deltas.
    Disp_Time : Boolean := False;
