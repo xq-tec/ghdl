@@ -6,7 +6,6 @@ project Ghdl is
                         srcdir & "/src",
                         srcdir & "/src/vhdl",
                         srcdir & "/src/vhdl/translate",
-                        srcdir & "/src/vhdl/simulate",
                         srcdir & "/src/psl",
                         srcdir & "/src/synth",
                         srcdir & "/src/ghdldrv",
