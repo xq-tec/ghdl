@@ -78,8 +78,19 @@ enum Type {
         is_last: bool,
         element_type: Box<Type>,
     },
+    Record {
+        fields: Vec<RecordField>,
+    },
     #[serde(other)]
     Other,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct RecordField {
+    typ: Type,
+    net_offset: u32,
+    mem_offset: u64,
+    decl: Option<ast::GenericNodeId>,
 }
 
 impl From<&Type> for hierarchy::SignalType {
@@ -116,10 +127,7 @@ impl From<&Type> for hierarchy::SignalType {
                 let element_type: Box<hierarchy::SignalType> =
                     Box::new(element_type.as_ref().into());
                 let length = direction.length_for(left, right);
-                let element_count = match &*element_type {
-                    hierarchy::SignalType::Array { element_count, .. } => length * *element_count,
-                    _ => length,
-                };
+                let element_count = length * element_type.element_count();
 
                 hierarchy::SignalType::Array {
                     left,
@@ -127,6 +135,34 @@ impl From<&Type> for hierarchy::SignalType {
                     direction,
                     element_count,
                     element_type,
+                }
+            },
+            Type::Record { fields } => {
+                let fields: Vec<_> = fields
+                    .iter()
+                    .map(|field| {
+                        let name = if let Some(node_id) = field.decl {
+                            let node = retrieve_ast_node(node_id).unwrap();
+                            if let ast::Node::ElementDeclaration(element) = node {
+                                element.identifier.into_original()
+                            } else {
+                                CompactString::const_new("<unknown>")
+                            }
+                        } else {
+                            CompactString::const_new("<unknown>")
+                        };
+                        hierarchy::RecordField {
+                            name,
+                            typ: (&field.typ).into(),
+                            element_offset: field.net_offset,
+                        }
+                    })
+                    .collect();
+
+                let element_count = fields.iter().map(|field| field.typ.element_count()).sum();
+                hierarchy::SignalType::Record {
+                    fields,
+                    element_count,
                 }
             },
             Type::Other => hierarchy::SignalType::Unsupported,
@@ -219,15 +255,6 @@ impl fmt::Debug for DecodingError {
     }
 }
 
-fn retrieve_signal(signal_id: u32) -> Result<Signal, DecodingError> {
-    let mut buffer = Vec::with_capacity(4096);
-    adapter_encode_signal(&mut buffer, signal_id);
-    serde_json::from_slice::<Signal>(&buffer).map_err(|e| DecodingError {
-        json_error: e,
-        encoded: String::from_utf8_lossy(&buffer).to_string(),
-    })
-}
-
 fn get_signal_name(decl_id: ast::GenericNodeId) -> Option<CompactString> {
     let node = retrieve_ast_node(decl_id).ok()?;
     match node {
@@ -275,11 +302,15 @@ fn collect_signals(signal_count: u32) -> Vec<Signal> {
         },
     });
 
+    let mut buffer = Vec::with_capacity(4096);
     for signal_id in 1..=signal_count {
-        match retrieve_signal(signal_id) {
+        buffer.clear();
+        adapter_encode_signal(&mut buffer, signal_id);
+        match serde_json::from_slice::<Signal>(&buffer) {
             Ok(signal) => signals.push(signal),
             Err(e) => {
-                panic!("Error deserializing signal {signal_id}: {e:?}");
+                let encoded = String::from_utf8_lossy(&buffer);
+                panic!("Error deserializing signal {signal_id}: {e}; encoded: {encoded:?}");
             },
         }
     }

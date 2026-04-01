@@ -2247,7 +2247,8 @@ package body Synth.Vhdl_Stmts is
                   Els.E (I) :=
                     (Offs => Typ.Rec.E (I).Offs,
                      Typ => Copy_Unbounded_Type (Typ.Rec.E (I).Typ,
-                                                 Base.Rec.E (I).Typ));
+                                                 Base.Rec.E (I).Typ),
+                     Decl => Typ.Rec.E (I).Decl);
                end loop;
                return Create_Unbounded_Record (Typ.Rec_Base, Els);
             end;

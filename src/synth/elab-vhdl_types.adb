@@ -351,6 +351,7 @@ package body Elab.Vhdl_Types is
             Bounded := False;
          end if;
          Rec_Els.E (Iir_Index32 (I + 1)).Typ := El_Typ;
+         Rec_Els.E (Iir_Index32 (I + 1)).Decl := El;
       end loop;
 
       if Bounded then

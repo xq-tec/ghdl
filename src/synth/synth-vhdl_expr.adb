@@ -588,6 +588,7 @@ package body Synth.Vhdl_Expr is
                for I in Els.E'Range loop
                   Els.E (I).Typ := Convert_Indexes
                     (T.Rec.E (I).Typ, Obj.Rec.E (I).Typ);
+                  Els.E (I).Decl := T.Rec.E (I).Decl;
                end loop;
                Res := Create_Record_Type (T.Rec_Base, Els);
                for I in Els.E'Range loop

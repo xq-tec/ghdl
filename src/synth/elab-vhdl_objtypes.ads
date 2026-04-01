@@ -124,6 +124,9 @@ package Elab.Vhdl_Objtypes is
 
       --  Type of the element.
       Typ : Type_Acc;
+
+      --  Declaration of the element.
+      Decl : Node;
    end record;
 
    type Rec_El_Array_Type is array (Iir_Index32 range <>) of Rec_El_Type;

@@ -60,10 +60,9 @@ package body Grt.Export is
             Append (Buffer, "{""array"":{");
          when Type_Unbounded_Array =>
             Append (Buffer, """unbounded_array""");
-         when Type_Unbounded_Record =>
-            Append (Buffer, """unbounded_record""");
-         when Type_Record =>
-            Append (Buffer, """record""");
+         when Type_Record
+            | Type_Unbounded_Record =>
+            Append (Buffer, "{""record"":{");
          when Type_Access =>
             Append (Buffer, """access""");
          when Type_File =>
@@ -112,29 +111,42 @@ package body Grt.Export is
             Encode_Type (Buffer, Typ.Arr_El);
             Append (Buffer, "}}");
 
+         when Type_Record
+            | Type_Unbounded_Record =>
+            declare
+               Is_First : Boolean := True;
+            begin
+               Append (Buffer, """fields"":[");
+               for I in Typ.Rec.E'Range loop
+                  if Is_First then
+                     Is_First := False;
+                  else
+                     Append (Buffer, ',');
+                  end if;
+                  Append (Buffer, "{""typ"":");
+                  Encode_Type (Buffer, Typ.Rec.E (I).Typ);
+                  Append (Buffer, ",""net_offset"":");
+                  Append (Buffer, Integer_64 (Typ.Rec.E (I).Offs.Net_Off));
+                  Append (Buffer, ",""mem_offset"":");
+                  Append (Buffer, Integer_64 (Typ.Rec.E (I).Offs.Mem_Off));
+                  Append (Buffer, ",""decl"":");
+                  Append (Buffer, Unsigned_32 (Typ.Rec.E (I).Decl));
+                  Append (Buffer, "}");
+               end loop;
+               Append (Buffer, "]}}");
+            end;
+
          when others =>
             null;
          --  when Type_Slice =>
          --     Slice_Base : Type_Acc;
          --     Slice_Len : Unsigned_32;
          --     Slice_El : Type_Acc;
-         --  when Type_Array
-         --     | Type_Array_Unbounded
-         --     | Type_Vector =>
-         --     Abound : Bound_Type;
-         --     Alast : Boolean;  --  True for the last dimension
-         --     Arr_El : Type_Acc;
          --  when Type_Unbounded_Array
          --     | Type_Unbounded_Vector =>
          --     Uarr_El : Type_Acc;
          --     Ulast : Boolean;
          --     Uarr_Idx : Type_Acc;
-         --  when Type_Record
-         --     | Type_Unbounded_Record =>
-         --     --  The base type, used to have compatible layouts.
-         --     Rec_Base : Type_Acc;
-         --     --  The first elements is in the LSBs of the net.
-         --     Rec : Rec_El_Array_Acc;
          --  when Type_Access =>
          --     Acc_Acc : Type_Acc;
          --     --  Memory size to store the type and its bounds.
@@ -267,7 +279,6 @@ package body Grt.Export is
 
    procedure Set_Signal_Subscription (Signal_Id, Element_Index : Unsigned_32;
                                       Subscription : Subscription_Index) is
-      -- This is the Signal_Entry type in simul-vhdl_elab.ads
       Signal : Signal_Entry renames Signals_Table.Table (Signal_Index_Type (Signal_Id));
       Sig_Ptr : constant Ghdl_Signal_Ptr :=
          Read_Sig (Sig_Index (Signal.Sig, Types.Uns32 (Element_Index)));

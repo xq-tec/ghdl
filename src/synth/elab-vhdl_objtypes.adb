@@ -1416,7 +1416,8 @@ package body Elab.Vhdl_Objtypes is
             Res.Rec := Create_Rec_El_Array (T.Rec.Len, Pool);
             for I in T.Rec.E'Range loop
                Res.Rec.E (I) := (Offs => T.Rec.E (I).Offs,
-                                 Typ => Unshare (T.Rec.E (I).Typ, Pool));
+                                 Typ => Unshare (T.Rec.E (I).Typ, Pool),
+                                 Decl => T.Rec.E (I).Decl);
             end loop;
             if T.Rec_Base = T then
                Res.Rec_Base := Res;
@@ -1485,7 +1486,8 @@ package body Elab.Vhdl_Objtypes is
                Res.Rec.E (I) := (Offs => Typ.Rec.E (I).Offs,
                                  Typ => Unshare_Type (Typ.Rec.E (I).Typ,
                                                       Base.Rec.E (I).Typ,
-                                                      Global, Pool));
+                                                      Global, Pool),
+                                 Decl => Typ.Rec.E (I).Decl);
             end loop;
          when Type_Access =>
             raise Internal_Error;

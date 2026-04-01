@@ -665,6 +665,7 @@ package body Synth.Vhdl_Aggr is
                      --  so reverse again...
                      Els_Typ.E (I).Typ :=
                        Tab_Res (Tab_Res'Last - Nat32 (I) + 1).Typ;
+                     Els_Typ.E (I).Decl := Aggr_Type.Rec.E (I).Decl;
                   end loop;
                   Res_Typ := Create_Record_Type (Aggr_Type, Els_Typ);
                end;
