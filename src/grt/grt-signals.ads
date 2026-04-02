@@ -21,6 +21,7 @@
 --  however invalidate any other reasons why the executable file might be
 --  covered by the GNU Public License.
 with System;
+with Interfaces;
 with Ada.Unchecked_Conversion;
 with Grt.Export; use Grt.Export;
 with Grt.Table;
@@ -534,6 +535,9 @@ package Grt.Signals is
    --  If the value is different from the previous one, resume processes.
    procedure Set_Effective_Value (Sig : Ghdl_Signal_Ptr;
                                   Val : Value_Union);
+
+   --  Return the effective value of signal SIG.
+   function Get_Effective_Value (Sig : Ghdl_Signal_Ptr) return Interfaces.Unsigned_64;
 
    --  Add PROC in the list of processes to be resumed in case of event on
    --  SIG.

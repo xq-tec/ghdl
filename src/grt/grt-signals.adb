@@ -24,7 +24,6 @@ with System; use System;
 with System.Storage_Elements; --  Work around GNAT bug.
 pragma Unreferenced (System.Storage_Elements);
 with Ada.Unchecked_Deallocation;
-with Interfaces;
 
 with Grt.Errors; use Grt.Errors;
 with Grt.Errors_Exec; use Grt.Errors_Exec;
@@ -3381,6 +3380,32 @@ package body Grt.Signals is
          El := El.Next;
       end loop;
    end Set_Effective_Value;
+
+   --  Return the effective value of signal SIG.
+   function Get_Effective_Value (Sig : Ghdl_Signal_Ptr) return Interfaces.Unsigned_64
+   is
+      function F64_To_Binary is new Ada.Unchecked_Conversion (Ghdl_F64, Interfaces.Unsigned_64);
+      function I64_To_Binary is new Ada.Unchecked_Conversion (Ghdl_I64, Interfaces.Unsigned_64);
+   begin
+      case Sig.Mode is
+         when Mode_B1 =>
+            if Sig.Value_Ptr.B1 then
+               return 1;
+            else
+               return 0;
+            end if;
+         when Mode_E8 =>
+            return Interfaces.Unsigned_64 (Sig.Value_Ptr.E8);
+         when Mode_E32 =>
+            return Interfaces.Unsigned_64 (Sig.Value_Ptr.E32);
+         when Mode_I32 =>
+            return I64_To_Binary (Ghdl_I64 (Sig.Value_Ptr.I32));
+         when Mode_I64 =>
+            return I64_To_Binary (Sig.Value_Ptr.I64);
+         when Mode_F64 =>
+            return F64_To_Binary (Sig.Value_Ptr.F64);
+      end case;
+   end Get_Effective_Value;
 
    --  Propagate signal SIG_NET (for connections or attributes).
    procedure Run_Propagation (Sig_Net : Ghdl_Signal_Ptr)

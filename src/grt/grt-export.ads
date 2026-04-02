@@ -31,10 +31,10 @@ package Grt.Export is
    procedure Register_Design;
 
    --  Sets the Subscription field of a signal in the signal table.
-   procedure Set_Signal_Subscription (Signal_Id, Element_Index : Unsigned_32;
-                                      Subscription : Subscription_Index);
+   function Set_Signal_Subscription (Signal_Id, Element_Index : Unsigned_32;
+                                     Subscription : Subscription_Index) return Unsigned_64;
    pragma Export (C, Set_Signal_Subscription, "ghdl_set_signal_subscription");
 
-   procedure Notify_Signal_Event (Sig_Idx : Subscription_Index; Value : Unsigned_64);
+   procedure Notify_Signal_Event (Subscription : Subscription_Index; Value : Unsigned_64);
 
 end Grt.Export;

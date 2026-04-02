@@ -126,8 +126,9 @@ impl ClientSession {
                 let mut to_subscribe: SmallVec<[SignalElementId; 1]> = SmallVec::new();
                 for &element_id in &request.signal_element_ids {
                     if request.subscribe && request.enabled {
-                        self.subscribed_signals.insert(element_id);
-                        to_subscribe.push(element_id);
+                        if self.subscribed_signals.insert(element_id) {
+                            to_subscribe.push(element_id);
+                        }
                         debug!(?element_id, "subscribed to signal");
                     } else {
                         self.subscribed_signals.remove(&element_id);

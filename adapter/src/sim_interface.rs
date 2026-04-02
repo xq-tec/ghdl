@@ -32,7 +32,7 @@ unsafe extern "C" {
         signal_id: NonZeroU32,
         element_index: u32,
         subscription_index: SubscriptionIndex,
-    );
+    ) -> u64;
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -128,12 +128,17 @@ impl SubscriptionTracker {
                 entry.insert(subscription_index);
                 self.subscriptions.push(element_id);
                 // TODO ensure that signal_id and element_index are in bounds
-                ghdl_set_signal_subscription(
+                let initial_value = ghdl_set_signal_subscription(
                     element_id.signal_id.0,
                     element_id.element_index,
                     subscription_index,
                 );
-                self.events.signals.push(SignalEvents::new(element_id));
+                let mut signal_events = SignalEvents::new(element_id);
+                signal_events.events.push(Event {
+                    time: self.events.time_range.end,
+                    value: RawValue(initial_value),
+                });
+                self.events.signals.push(signal_events);
 
                 next_index += 1;
             }

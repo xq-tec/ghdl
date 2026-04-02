@@ -277,22 +277,23 @@ package body Grt.Export is
          Name_Str, Name_Len);
    end Register_Design;
 
-   procedure Set_Signal_Subscription (Signal_Id, Element_Index : Unsigned_32;
-                                      Subscription : Subscription_Index) is
+   function Set_Signal_Subscription (Signal_Id, Element_Index : Unsigned_32;
+                                     Subscription : Subscription_Index) return Unsigned_64 is
       Signal : Signal_Entry renames Signals_Table.Table (Signal_Index_Type (Signal_Id));
-      Sig_Ptr : constant Ghdl_Signal_Ptr :=
+      Sig : constant Ghdl_Signal_Ptr :=
          Read_Sig (Sig_Index (Signal.Sig, Types.Uns32 (Element_Index)));
    begin
-      Sig_Ptr.Subscription := Subscription;
+      Sig.Subscription := Subscription;
+      return Get_Effective_Value (Sig);
    end Set_Signal_Subscription;
 
-   procedure Notify_Signal_Event (Sig_Idx : Subscription_Index; Value : Unsigned_64) is
+   procedure Notify_Signal_Event (Subscription : Subscription_Index; Value : Unsigned_64) is
       procedure Adapter_Notify_Signal_Event (Adapter_State : System.Address;
-                                             Sig_Idx : Unsigned_32;
+                                             Subscription : Unsigned_32;
                                              Value : Unsigned_64);
       pragma Import (C, Adapter_Notify_Signal_Event, "adapter_notify_signal_event");
    begin
-      Adapter_Notify_Signal_Event (Get_Adapter_State, Unsigned_32 (Sig_Idx), Value);
+      Adapter_Notify_Signal_Event (Get_Adapter_State, Unsigned_32 (Subscription), Value);
    end Notify_Signal_Event;
 
 end Grt.Export;
