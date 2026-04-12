@@ -62,6 +62,10 @@ ADAPTER_CARGO_FLAGS=--release
 endif
 ADAPTER_LIB=$(ADAPTER_TARGET_DIR)/$(ADAPTER_PROFILE)/libghdl_adapter.a
 ADAPTER_LDFLAGS=-L$(ADAPTER_TARGET_DIR)/$(ADAPTER_PROFILE) -lghdl_adapter
+ifeq ($(EXEEXT),.exe)
+# Link native Windows libs required by Rust std when consuming a static .a.
+ADAPTER_LDFLAGS+=-luserenv -lntdll
+endif
 
 INSTALL_PROGRAM=install -m 755
 INSTALL_DATA=install -m 644
