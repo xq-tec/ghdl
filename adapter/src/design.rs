@@ -143,10 +143,14 @@ impl From<&Type> for hierarchy::SignalType {
                     .map(|field| {
                         let name = if let Some(node_id) = field.decl {
                             let node = retrieve_ast_node(node_id).unwrap();
-                            if let ast::Node::ElementDeclaration(element) = node {
-                                element.identifier.into_original()
-                            } else {
-                                CompactString::const_new("<unknown>")
+                            match node {
+                                ast::Node::ElementDeclaration(element) => {
+                                    element.identifier.into_original()
+                                },
+                                ast::Node::RecordElementConstraint(constraint) => {
+                                    constraint.identifier.into_original()
+                                },
+                                _ => CompactString::const_new("<unknown>"),
                             }
                         } else {
                             CompactString::const_new("<unknown>")
