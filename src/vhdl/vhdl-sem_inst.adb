@@ -15,10 +15,13 @@
 --  the original declaration are also stored in that table.
 
 with Tables;
+with Types; use Types;
+with Hash; use Hash;
+with Dyn_Maps;
+with Files_Map;
+
 with Vhdl.Nodes_Priv;
 with Vhdl.Nodes_Meta;
-with Types; use Types;
-with Files_Map;
 with Vhdl.Sem_Types;
 with Vhdl.Sem_Decls;
 with Vhdl.Utils; use Vhdl.Utils;
@@ -816,6 +819,13 @@ package body Vhdl.Sem_Inst is
                        (Get_Interface_Type_Subprograms (Inter)));
                end;
             when Iir_Kinds_Interface_Subprogram_Declaration =>
+               Set_Interface_Declaration_Chain
+                 (Res,
+                  Instantiate_Iir_Chain
+                    (Get_Interface_Declaration_Chain (Inter)));
+               if Get_Kind (Res) = Iir_Kind_Interface_Function_Declaration then
+                  Set_Return_Type (Res, Get_Return_Type (Inter));
+               end if;
                Sem_Utils.Compute_Subprogram_Hash (Res);
             when others =>
                Error_Kind ("instantiate_generic_chain", Res);
@@ -1232,8 +1242,10 @@ package body Vhdl.Sem_Inst is
         (Inst,
          Instantiate_Generic_Chain (Inst, Get_Generic_Chain (Subprg), True));
       Instantiate_Generic_Map_Chain (Inst, Inst, Subprg);
-      if Get_Kind (Subprg) = Iir_Kind_Function_Instantiation_Declaration then
-         Set_Return_Type (Inst, Instantiate_Iir (Subprg, True));
+      if Get_Kind (Inst) = Iir_Kind_Function_Instantiation_Declaration then
+         Set_Return_Type (Inst,
+                          Instantiate_Iir (Get_Return_Type (Subprg), True));
+         Set_Pure_Flag (Inst, Get_Pure_Flag (Subprg));
       end if;
       Set_Interface_Declaration_Chain
         (Inst,
@@ -1427,6 +1439,28 @@ package body Vhdl.Sem_Inst is
       end loop;
    end Instantiate_Interface_References;
 
+   --  In the body of INST_PARENT, use parameters of the instance instead of
+   --  parameters of the generic subprogram ORIG_PARENT.
+   procedure Instantiate_Parameter_References (Orig_Parent : Iir;
+                                               Inst_Parent : Iir)
+   is
+      Orig_El : Iir;
+      Inst_El : Iir;
+   begin
+      --  In the arch/body, references to parameter object are redirected to
+      --  the instantiated parameter objects (of the subprogram)
+      --  Also for the subtype indication.
+      Orig_El := Get_Interface_Declaration_Chain (Orig_Parent);
+      Inst_El := Get_Interface_Declaration_Chain (Inst_Parent);
+      while Is_Valid (Orig_El) loop
+         Set_Instance (Orig_El, Inst_El);
+         Set_Instance (Get_Subtype_Indication (Orig_El),
+                       Get_Subtype_Indication (Inst_El));
+         Orig_El := Get_Chain (Orig_El);
+         Inst_El := Get_Chain (Inst_El);
+      end loop;
+   end Instantiate_Parameter_References;
+
    function Instantiate_Package_Body (Inst : Iir) return Iir
    is
       Pkg : constant Iir := Get_Uninstantiated_Package_Decl (Inst);
@@ -1475,6 +1509,58 @@ package body Vhdl.Sem_Inst is
 
       return Res;
    end Instantiate_Package_Body;
+
+   function Instantiate_Subprogram_Body (Inst : Iir) return Iir
+   is
+      Spec : constant Iir :=
+        Get_Named_Entity (Get_Uninstantiated_Subprogram_Name (Inst));
+      Prev_Instance_File : constant Source_File_Entry := Instance_File;
+      Mark : constant Instance_Index_Type := Prev_Instance_Table.Last;
+      Bod : constant Iir := Get_Subprogram_Body (Spec);
+      Res : Iir;
+   begin
+      Create_Relocation (Inst, Spec);
+
+      --  Be sure Get_Origin_Priv can be called on existing nodes.
+      Expand_Origin_Table;
+
+      --  References to subprogram specification (and its declarations) will
+      --  be redirected to the subprogram instantiation.
+      Set_Instance (Spec, Inst);
+
+      --  Redirect references of generics.
+      Instantiate_Interface_References (Spec, Inst, Inst);
+      --  Redirect references of parameters.
+      Instantiate_Parameter_References (Spec, Inst);
+
+      --  Instantiate the body.
+
+      Res := Create_Iir (Iir_Kind_Subprogram_Instantiation_Body);
+      if Get_Kind (Spec) = Iir_Kind_Procedure_Declaration then
+         Set_Suspend_Flag (Res, Get_Suspend_Flag (Bod));
+      end if;
+      Location_Copy (Res, Inst);
+
+      Set_Instance (Bod, Res);
+
+      Set_Declaration_Chain
+        (Res, Instantiate_Iir_Chain (Get_Declaration_Chain (Bod)));
+      Set_Sequential_Statement_Chain
+        (Res, Instantiate_Iir_Chain (Get_Sequential_Statement_Chain (Bod)));
+      Set_Attribute_Value_Chain
+        (Res, Instantiate_Iir_Chain (Get_Attribute_Value_Chain (Bod)));
+      Set_Subprogram_Specification (Res, Inst);
+
+      --  Restore.
+      Instance_File := Prev_Instance_File;
+      Restore_Origin (Mark);
+
+      if Has_Unbounded_Type_Interface (Inst) then
+         Reanalyze_Instantiated_Declarations (Get_Declaration_Chain (Res));
+      end if;
+
+      return Res;
+   end Instantiate_Subprogram_Body;
 
    function Instantiate_Component_Entity_Common (Comp : Iir; Map_Parent : Iir)
                                                 return Iir
@@ -1695,9 +1781,15 @@ package body Vhdl.Sem_Inst is
 
    function Get_Subprogram_Body_Origin (Spec : Iir) return Iir
    is
-      Res : constant Iir := Get_Subprogram_Body (Spec);
+      Res : Iir;
       Orig : Iir;
    begin
+      if Get_Kind (Spec) in Iir_Kinds_Subprogram_Instantiation_Declaration then
+         return Get_Instance_Subprogram_Body (Spec);
+      else
+         Res := Get_Subprogram_Body (Spec);
+      end if;
+
       if Res /= Null_Iir then
          return Res;
       else
@@ -1720,4 +1812,92 @@ package body Vhdl.Sem_Inst is
          return Get_Protected_Type_Body_Origin (Orig);
       end if;
    end Get_Protected_Type_Body_Origin;
+
+   type Node_Tuple is record
+      Key : Node;
+      Val : Node;
+   end record;
+
+   function Hash_Node (V : Node_Tuple) return Hash_Value_Type is
+   begin
+      return Hash_Value_Type (V.Key);
+   end Hash_Node;
+
+   procedure Build (Key : Node_Tuple; Obj : out Node; Value : out Node) is
+   begin
+      Obj := Key.Key;
+      Value := Key.Val;
+   end Build;
+
+   function "=" (L : Node; R : Node_Tuple) return Boolean is
+   begin
+      return L = R.Key;
+   end "=";
+
+   package Node_Maps is new Dyn_Maps
+     (Key_Type => Node_Tuple,
+      Object_Type => Node,
+      Value_Type => Node,
+      Hash => Hash_Node,
+      Build => Build,
+      Equal => "=");
+
+   procedure Reassoc_Association_Formals
+     (Assocs : Iir; Formals : Iir; New_Formals : Iir)
+   is
+      use Node_Maps;
+      Map : Node_Maps.Instance;
+      Idx : Node_Maps.Index_Type;
+      Assoc : Iir;
+      Formal, New_Formal : Iir;
+      Ent : Iir;
+   begin
+      Init (Map);
+
+      --  Put formal into the map.
+      Formal := Formals;
+      New_Formal := New_Formals;
+      while Formal /= Null_Iir loop
+         Get_Index (Map, (Key => Formal, Val => New_Formal), Idx);
+         Formal := Get_Chain (Formal);
+         New_Formal := Get_Chain (New_Formal);
+      end loop;
+
+      Assoc := Assocs;
+      while Assoc /= Null_Iir loop
+         Formal := Get_Formal (Assoc);
+         if Formal /= Null_Iir then
+            --  We need the base name, but not the named entity.
+            --  So we cannot use Get_Base_Name.
+            loop
+               case Get_Kind (Formal) is
+                  when Iir_Kind_Simple_Name
+                    | Iir_Kind_Reference_Name =>
+                     Ent := Get_Named_Entity (Formal);
+                     if Ent /= Null_Iir then
+                        --  Except in case of error!
+                        Idx := Get_Index_Soft
+                          (Map, (Key => Ent, Val => Null_Iir));
+                        pragma Assert (Idx /= No_Index);
+                        Ent := Get_Value (Map, Idx);
+                        Set_Named_Entity (Formal, Ent);
+                     end if;
+
+                     exit;
+
+                  when Iir_Kind_Selected_Element
+                    | Iir_Kind_Indexed_Name
+                    | Iir_Kind_Slice_Name =>
+                     Formal := Get_Prefix (Formal);
+                  when others =>
+                     --  TODO.
+                     raise Internal_Error;
+               end case;
+            end loop;
+         end if;
+         Assoc := Get_Chain (Assoc);
+      end loop;
+
+      Free (Map);
+   end Reassoc_Association_Formals;
 end Vhdl.Sem_Inst;

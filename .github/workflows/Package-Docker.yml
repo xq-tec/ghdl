@@ -16,6 +16,14 @@ on:
         description: 'Version of used Ubuntu for the artifact.'
         required: true
         type: string
+      ghdl_backend:
+        description: 'GHDL backend.'
+        required: true
+        type: string
+      ghdl_version:
+        description: 'GHDL version.'
+        required: true
+        type: string
       publish:
         description: 'Publish Docker image to Docker Hub.'
         required: false
@@ -27,7 +35,7 @@ on:
         default: 'ghdl'
         type: string
       testsuites:
-        description: 'GHDL testsuites'
+        description: "List of GHDL testsuites to execute while testing (space separated). Alternatively: 'all' or 'none'"
         required: true
         type: string
 
@@ -44,10 +52,10 @@ jobs:
 
     steps:
       - name: ⏬ Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: 📥 Download artifacts '${{ inputs.ghdl_artifact }}' from 'Build' job
-        uses: pyTooling/download-artifact@v4
+        uses: pyTooling/download-artifact@v7
         with:
           name: ${{ inputs.ghdl_artifact }}
           path: dist/docker/install
@@ -61,41 +69,63 @@ jobs:
 
           image_ns="${{ vars.DOCKERHUB_NAMESPACE }}"
           image_name="${{ inputs.dockerhub_image }}"
-          image_tag="6.0.0-risim-mcode-${base_image}-${base_image_tag}"
+          image_tag="${{ inputs.ghdl_version }}-${{ inputs.ghdl_backend }}-${base_image}-${base_image_tag}"
           image="${image_ns}/${image_name}:${image_tag}"
 
-          echo "ghdl_image_ns=${image_ns}" >> $GITHUB_OUTPUT
-          echo "ghdl_image_name=${image_name}" >> $GITHUB_OUTPUT
-          echo "ghdl_image_tag=${image_tag}" >> $GITHUB_OUTPUT
-          echo "ghdl_image=${image}" >> $GITHUB_OUTPUT
-          cat $GITHUB_OUTPUT
+          tee "${GITHUB_OUTPUT}" <<EOF
+          ghdl_image_ns=${image_ns}
+          ghdl_image_name=${image_name}
+          ghdl_image_tag=${image_tag}
+          ghdl_image=${image}
+          EOF
 
-          echo "Building docker file './dist/docker/Dockerfile.${base_image}' ..."
+          dockerfile="./dist/docker/Dockerfile.${base_image}"
+          githubOrg="${{ github.repository_owner }}"
+          githubRepo="${{ github.repository }}"
+          githubRepo="${githubRepo##*/}"
+          githubUrl="${{ github.server_url }}/${{ github.repository }}"
+          githubDoc="https://${githubOrg}.github.io/${githubRepo}/"
+          printf "Building docker file '%s' ...\n" "${dockerfile}"
           docker buildx build \
-            --file ./dist/docker/Dockerfile.${base_image} \
+            --file "${dockerfile}" \
             --build-arg IMAGE=${base_image} \
             --build-arg IMAGE_TAG=${base_image_tag} \
+            --build-arg GHDL_VERSION=${{ inputs.ghdl_version }} \
+            --build-arg GHDL_BACKEND=${{ inputs.ghdl_backend }} \
+            --label "org.opencontainers.image.vendor=Tristan Gingold and contributors" \
+            --label "org.opencontainers.image.authors=Tristan Gingold <tgingold@free.fr>" \
+            --label "org.opencontainers.image.url=${githubUrl}" \
+            --label "org.opencontainers.image.documentation=${githubDoc}" \
+            --label "org.opencontainers.image.source=${{ github.repositoryUrl }}" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            --label "org.opencontainers.image.version=${{ inputs.ghdl_version }}" \
+            --label "org.opencontainers.image.description=GHDL ${{ inputs.ghdl_version }} - ${{ inputs.ghdl_backend }}" \
             --tag "ghdl:current" \
             ./dist/docker
 
-          echo "Docker image 'ghdl:current' has $(docker image inspect ghdl:current --format='{{.Size}}' | numfmt --to=iec --format '%.2f')"
+          printf "Entrypoint: %s\n" "$(docker inspect -f '{{.Config.Entrypoint}}' ghdl:current)"
+          printf "Cmd:        %s\n" "$(docker inspect -f '{{.Config.Cmd}}'        ghdl:current)"
+          printf "Image labels:\n"
+          docker inspect ghdl:current | jq -r '.[0].Config.Labels | to_entries | map("  " + .key + "=" + .value) | join("\n")'
+
+          printf "Docker image 'ghdl:current' has %s\n" "$(docker image inspect ghdl:current --format='{{.Size}}' | numfmt --to=iec --format '%.2f')"
 
       - name: ☑ Checking GHDL image 'ghdl:current'
         run: |
-          docker container run --rm ghdl:current 'echo "which risim-ghdl: $(command -v risim-ghdl)"; risim-ghdl version'
+          docker container run --rm ghdl:current /bin/bash -c 'printf "ActiveShell: %s (%s)\n" "$(readlink /proc/$$/exe)" "${BASH_VERSION}"; printf "which risim-ghdl: %s\n" "$(which risim-ghdl)"; risim-ghdl version'
 
       - name: 🔑 Login and push to Docker Hub
         if: inputs.publish
         run: |
-          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u ${{ vars.DOCKERHUB_USERNAME }} --password-stdin
+          printf "%s" "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u ${{ vars.DOCKERHUB_USERNAME }} --password-stdin
           docker image tag ghdl:current ${{ steps.build.outputs.ghdl_image }}
 
-          echo "Docker image '${{ steps.build.outputs.ghdl_image }}' has $(docker image inspect ${{ steps.build.outputs.ghdl_image }} --format='{{.Size}}' | numfmt --to=iec --format '%.2f')"
+          printf "Docker image '%s' has %s\n" "${{ steps.build.outputs.ghdl_image }}" "$(docker image inspect ${{ steps.build.outputs.ghdl_image }} --format='{{.Size}}' | numfmt --to=iec --format '%.2f')"
           docker image push ${{ steps.build.outputs.ghdl_image }}
 
       - name: 🚦 Testing GHDL image
         run: |
-          docker container run --rm -v $(pwd):/data ghdl:current 'cd /data/testsuite; ./testsuite.sh ${{ inputs.testsuites }}'
+          docker container run --rm -v $(pwd):/data ghdl:current /bin/bash -c 'cd /data/testsuite; ./testsuite.sh ${{ inputs.testsuites }}'
 
   TestDocker:
     uses: ./.github/workflows/Test-Docker.yml
@@ -103,6 +133,8 @@ jobs:
       - Ubuntu
     if: inputs.publish
     with:
-      os_image:   ${{ inputs.ubuntu_image }}
-      ghdl_image: ${{ needs.Ubuntu.outputs.ghdl_image }}
-      testsuites: ${{ inputs.testsuites }}
+      os_image:          ${{ inputs.ubuntu_image }}
+      ghdl_image:        ${{ needs.Ubuntu.outputs.ghdl_image }}
+      ghdl_backend:      ${{ inputs.ghdl_backend }}
+      ghdl_version:      ${{ inputs.ghdl_version }}
+      testsuites:        ${{ inputs.testsuites }}

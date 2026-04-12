@@ -16,7 +16,7 @@ on:
         required: true
         type: string
       testsuites:
-        description: 'GHDL testsuites to run'
+        description: "List of GHDL testsuites to execute while testing (space separated). Alternatively: 'all' or 'none'"
         required: true
         type: string
     # Parameters created build artifacts
@@ -63,6 +63,7 @@ on:
 jobs:
   Build:
     name: Build GHDL on '${{ inputs.macos_image }}'
+    if: true
     runs-on: ${{ inputs.macos_image }}
     outputs:
       ghdl_artifact: ${{ steps.artifact_name.outputs.ghdl_artifact }}
@@ -73,7 +74,7 @@ jobs:
 
     steps:
       - name: ⏬ Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           # The command 'git describe' (used for version) needs the history.
           fetch-depth: 0
@@ -88,7 +89,17 @@ jobs:
       - name: 🖉 Assemble artifact name
         id: artifact_name
         run: |
-          echo "ghdl_artifact=${{ inputs.macos_artifact }}-mcode" >> $GITHUB_OUTPUT
+          tee "${GITHUB_OUTPUT}" <<EOF
+          ghdl_artifact=${{ inputs.macos_artifact }}-${{ inputs.backend }}
+          EOF
+
+      - name: 🔧 Install dependencies
+        run: |
+          brew install llvm coreutils
+
+          tee "${GITHUB_ENV}" <<EOF
+          LLVM_BINARY_PATH=$(brew --prefix llvm)/bin
+          EOF
 
       - name: 🔧 Install GNAT
         id: gnat
@@ -129,7 +140,9 @@ jobs:
             exit 1
           fi
 
-          echo "GNAT_MAJOR_VERSION=${GNAT_MAJOR_VERSION}" >> $GITHUB_OUTPUT
+          tee "${GITHUB_OUTPUT}" <<EOF
+          GNAT_MAJOR_VERSION=${GNAT_MAJOR_VERSION}
+          EOF
 
       - name: Prepare build environment
         run: |
@@ -156,7 +169,8 @@ jobs:
           GNATMAKE="gnatmake -j$NPROC" \
           MAKE="make -j$NPROC" \
           LDFLAGS=$CONFIG_LDFLAGS \
-          ../../configure --prefix=../../install
+          CC=clang \
+          ../../configure --prefix=../../install $CONFIG_ARGS
 
       - name: 🔨 Make
         run: |
@@ -179,15 +193,15 @@ jobs:
 
       - name: "🚦 Run testsuite: 'sanity'"
         run: |
-          export GHDL=$(pwd)/install/bin/risim-ghdl
+          export PATH="/opt/homebrew/opt/coreutils/libexec/gnubin:$PATH"
+          export GHDL=$(pwd)/install/bin/ghdl
           cd testsuite
 
           # no pyunit
           ./testsuite.sh sanity
 
-      - name: 📤 Upload '${{ inputs.macos_artifact }}-mcode' artifact
-#        uses: actions/upload-artifact@v4
-        uses: pyTooling/upload-artifact@v4
+      - name: 📤 Upload '${{ inputs.macos_artifact }}-${{ inputs.backend }}' artifact
+        uses: pyTooling/upload-artifact@v6
         with:
           name: ${{ inputs.macos_artifact }}-mcode
           working-directory: install
@@ -214,9 +228,9 @@ jobs:
         run: |
           cp -r -v ./install/lib/* ./pyGHDL/lib
 
-      - name: 🐍 Setup Python
-        uses: actions/setup-python@v5
-        if: inputs.unittesting || inputs.coverage
+      - name: 🐍 Setup Python (only mcode backend)
+        uses: actions/setup-python@v6
+        if: (inputs.unittesting || inputs.coverage) && inputs.backend == 'mcode'
         with:
           python-version: ${{ inputs.python_version }}
 
@@ -227,19 +241,22 @@ jobs:
           python -m pip install --disable-pip-version-check -r testsuite/requirements.txt
 
       # TODO: replace with https://github.com/pyTooling/Actions/blob/dev/.github/workflows/ExtractConfiguration.yml
-      - name: 🔁 Extract configurations from pyproject.toml
-        if: inputs.coverage
+      - name: 🔁 Extract configurations from pyproject.toml (only mcode backend)
         id: getVariables
+        if: inputs.coverage && inputs.backend == 'mcode'
         shell: python
         run: |
           from os       import getenv
           from pathlib  import Path
-          from sys      import version
+          from sys      import version, version_info
           from textwrap import dedent
 
           print(f"Python: {version}")
 
-          from tomli import load as tomli_load
+          if version_info < (3, 11):
+            from tomli import load as toml_load
+          else:
+            from tomllib import load as toml_load
 
           htmlDirectory = Path("htmlcov")
           xmlFile =  Path("./coverage.xml")
@@ -249,7 +266,7 @@ jobs:
           pyProjectFile =  Path("pyproject.toml")
           if pyProjectFile.exists():
             with pyProjectFile.open("rb") as file:
-              pyProjectSettings = tomli_load(file)
+              pyProjectSettings = toml_load(file)
 
             htmlDirectory = Path(pyProjectSettings["tool"]["coverage"]["html"]["directory"])
             xmlFile       = Path(pyProjectSettings["tool"]["coverage"]["xml"]["output"])
@@ -291,16 +308,14 @@ jobs:
 
 # Upload test result artifacts
 
-      - name: 📤 Upload 'TestReportSummary.xml' artifact
-        if: inputs.unittesting && inputs.unittest_xml_artifact != ''
+      - name: 📤 Upload 'TestReportSummary.xml' artifact (only mcode backend)
+        uses: pyTooling/upload-artifact@v6
+        if: inputs.unittesting && inputs.backend == 'mcode' && inputs.unittest_xml_artifact != ''
         continue-on-error: true
-#        uses: actions/upload-artifact@v4
-        uses: pyTooling/upload-artifact@v4
         with:
           name: ${{ inputs.unittest_xml_artifact }}-${{ inputs.macos_image }}-${{ inputs.python_version }}
           working-directory: report/unit
           path: TestReportSummary.xml
-#          path: report/unit/TestReportSummary.xml
           if-no-files-found: error
           retention-days: 1
 
@@ -313,8 +328,7 @@ jobs:
       - name: 📤 Upload 'Coverage SQLite Database' artifact
         if: inputs.coverage && inputs.coverage_sqlite_artifact != ''
         continue-on-error: true
-#        uses: actions/upload-artifact@v4
-        uses: pyTooling/upload-artifact@v4
+        uses: pyTooling/upload-artifact@v6
         with:
           name: ${{ inputs.coverage_sqlite_artifact }}-${{ inputs.macos_image }}-${{ inputs.python_version }}
           path: .coverage

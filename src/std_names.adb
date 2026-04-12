@@ -630,6 +630,8 @@ package body Std_Names is
       Def ("textio_write_real",     Name_Textio_Write_Real);
       Def ("get_resolution_limit",  Name_Get_Resolution_Limit);
       Def ("control_simulation",    Name_Control_Simulation);
+      Def ("get_assert_count",      Name_Get_Assert_Count);
+      Def ("clear_assert_count",    Name_Clear_Assert_Count);
       Def ("step",                  Name_Step);
       Def ("index",                 Name_Index);
       Def ("item",                  Name_Item);
@@ -700,17 +702,26 @@ package body Std_Names is
       Def ("round",              Name_Round);
       Def ("trunc",              Name_Trunc);
       Def ("realmax",            Name_Realmax);
+      Def ("realmin",            Name_Realmin);
       Def ("exp",                Name_Exp);
       Def ("log",                Name_Log);
       Def ("log2",               Name_Log2);
       Def ("log10",              Name_Log10);
       Def ("sin",                Name_Sin);
       Def ("cos",                Name_Cos);
+      Def ("tan",                Name_Tan);
+      Def ("arcsin",             Name_Arcsin);
+      Def ("arccos",             Name_Arccos);
       Def ("arctan",             Name_Arctan);
       Def ("sinh",               Name_Sinh);
       Def ("cosh",               Name_Cosh);
+      Def ("tanh",               Name_Tanh);
+      Def ("arcsinh",            Name_Arcsinh);
+      Def ("arccosh",            Name_Arccosh);
+      Def ("arctanh",            Name_Arctanh);
       Def ("sign",               Name_Sign);
       Def ("sqrt",               Name_Sqrt);
+      Def ("cbrt",               Name_Cbrt);
       Def ("shl",                Name_Shl);
       Def ("shr",                Name_Shr);
       Def ("ext",                Name_Ext);
@@ -726,6 +737,7 @@ package body Std_Names is
       Def ("loc",                Name_Loc);
       Def ("keep",               Name_Keep);
       Def ("syn_black_box",      Name_Syn_Black_Box);
+      Def ("wrap",               Name_Wrap);
 
       --  Verilog directives
       Def ("define",          Name_Define);

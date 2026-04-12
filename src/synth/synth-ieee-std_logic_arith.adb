@@ -26,22 +26,6 @@ with Synth.Ieee.Std_Logic_1164; use Synth.Ieee.Std_Logic_1164;
 
 package body Synth.Ieee.Std_Logic_Arith is
 
-   function Create_Res_Type (Otyp : Type_Acc; Len : Uns32) return Type_Acc is
-   begin
-      if Otyp.Abound.Len = Len
-        and then Otyp.Abound.Right = 0
-        and then Otyp.Abound.Dir = Dir_Downto
-        and then not Otyp.Is_Global
-      then
-         --  Try to reuse the same type as the parameter.
-         --  But the result type must be allocated on the expr_pool.
-         --  FIXME: is this code ever executed ?
-         pragma Assert (Otyp.Abound.Left = Int32 (Len) - 1);
-         return Otyp;
-      end if;
-      return Create_Vec_Type_By_Length (Len, Otyp.Arr_El);
-   end Create_Res_Type;
-
    procedure Fill (Res : Memory_Ptr; Len : Uns32; V : Std_Ulogic) is
    begin
       for I in 1 .. Len loop
@@ -235,13 +219,13 @@ package body Synth.Ieee.Std_Logic_Arith is
    function Add_Uns_Int_Uns (L : Memtyp; R : Int64; Loc : Location_Type)
                             return Memtyp is
    begin
-      return Add_Sub_Vec_Int (L, R, True, False, Loc);
+      return Add_Sub_Vec_Int (L, R, False, False, Loc);
    end Add_Uns_Int_Uns;
 
    function Sub_Uns_Int_Uns (L : Memtyp; R : Int64; Loc : Location_Type)
                             return Memtyp is
    begin
-      return Add_Sub_Vec_Int (L, R, True, True, Loc);
+      return Add_Sub_Vec_Int (L, R, False, True, Loc);
    end Sub_Uns_Int_Uns;
 
    function Add_Sgn_Int_Sgn (L : Memtyp; R : Int64; Loc : Location_Type)
@@ -382,10 +366,11 @@ package body Synth.Ieee.Std_Logic_Arith is
       Res.Typ := Create_Res_Type (L.Typ, Len);
       Res := Create_Memory (Res.Typ);
 
-      Neg_Vec (L.Mem, Res.Mem, Len);
-
-      if Read_Std_Logic (Res.Mem, 0) = 'X' then
+      if Has_X (L) then
          Warn_X (Loc);
+         Fill (Res.Mem, Len, 'X');
+      else
+         Neg_Vec (L.Mem, Res.Mem, Len);
       end if;
 
       return Res;
@@ -399,15 +384,95 @@ package body Synth.Ieee.Std_Logic_Arith is
       Res.Typ := Create_Res_Type (L.Typ, Len);
       Res := Create_Memory (Res.Typ);
 
-      Abs_Vec (L.Mem, Res.Mem, Len);
-
-      --  Humm, there is no warning if the MSB is '0'.
-      if Read_Std_Logic (Res.Mem, 0) = 'X' then
+      if Len > 0 and Sl_To_X01 (Read_Std_Logic (L.Mem, 0)) = '0' then
+         --  If L is positive (first bit is '0'), return L.
+         Copy_Memory (Res.Mem, L.Mem, Size_Type (Len));
+      elsif Has_X (L) then
+         --  Humm, there is no warning if the MSB is '0'.
          Warn_X (Loc);
+         Fill (Res.Mem, Len, 'X');
+      else
+         Neg_Vec (L.Mem, Res.Mem, Len);
       end if;
 
       return Res;
    end Abs_Sgn_Sgn;
+
+   --  Multiplication.
+   --  Length of RES is LLEN + RLEN + 1 (if L_SIGN /= R_SIGN)
+   procedure Mul_Vec (L, R : Memory_Ptr;
+                      Llen, Rlen : Uns32;
+                      L_Sign, R_Sign : Boolean;
+                      Res : Memory_Ptr)
+   is
+      Res_Len : constant Uns32 :=
+        Llen + Rlen + Boolean'Pos (L_Sign xor R_Sign);
+      Lb, Rb, Vb, Carry : Sl_X01;
+   begin
+      --  Check for 'X' in L.
+      for I in 1 .. Llen loop
+         if Read_Std_Logic (L, I - 1) = 'X' then
+            Fill (Res, Res_Len, 'X');
+            return;
+         end if;
+      end loop;
+
+      --  Init RES.
+      Fill (Res, Res_Len, '0');
+
+      if Rlen = 0 then
+         return;
+      end if;
+
+      --  Shift and add L.
+      for I in 1 .. Rlen - Boolean'Pos (R_Sign) loop
+         Rb := Sl_To_X01 (Read_Std_Logic (R, Rlen - I));
+         if Rb = '1' then
+            --  Compute res := res + shift_left (l, i).
+            Carry := '0';
+            for J in 1 .. Llen loop
+               Lb := Read_Std_Logic (L, Llen - J);
+               Vb := Read_Std_Logic (Res, Res_Len - (I + J - 1));
+               Write_Std_Logic
+                 (Res, Res_Len - (I + J - 1), Compute_Sum (Carry, Vb, Lb));
+               Carry := Compute_Carry (Carry, Vb, Lb);
+            end loop;
+            --  Propagate carry.
+            if L_Sign then
+               --  Sign extend.
+               Lb := Read_Std_Logic (L, 0);
+            else
+               Lb := '0';
+            end if;
+            for J in I + Llen .. Res_Len loop
+               exit when Lb = '0' and Carry = '0';
+               Vb := Read_Std_Logic (Res, Res_Len - J);
+               Write_Std_Logic (Res, Res_Len - J, Compute_Sum (Carry, Vb, Lb));
+               Carry := Compute_Carry (Carry, Vb, Lb);
+            end loop;
+         elsif Rb = 'X' then
+            Fill (Res, Res_Len, 'X');
+            exit;
+         end if;
+      end loop;
+      if R_Sign and then Read_Std_Logic (R, 0) = '1' then
+         --  R is a negative number.  It is considered as:
+         --   -2**n + (Rn-1 Rn-2 ... R0).
+         --  Compute res := res - 2**n * l.
+         Carry := '1';
+         for I in 1 .. Llen loop
+            --  Start at len - (rlen - 1) = llen + 1
+            Vb := Read_Std_Logic (Res, Llen - I + 1);
+            Lb := Not_Table (Read_Std_Logic (L, Llen - I));
+            Write_Std_Logic (Res, Llen - I + 1, Compute_Sum (Carry, Vb, Lb));
+            Carry := Compute_Carry (Carry, Vb, Lb);
+         end loop;
+         --  The last bit.
+         Vb := Read_Std_Logic (Res, 0);
+         Lb := Not_Table (Read_Std_Logic (L, 0));
+         Write_Std_Logic (Res, 0, Compute_Sum (Carry, Vb, Lb));
+      end if;
+   end Mul_Vec;
 
    function Mul_Vec_Vec (L, R : Memtyp;
                          L_Sign, R_Sign : Boolean;
@@ -453,31 +518,60 @@ package body Synth.Ieee.Std_Logic_Arith is
       return Mul_Vec_Vec (L, R, True, False, Loc);
    end Mul_Sgn_Uns_Sgn;
 
-   function Has_X (V : Memtyp) return Boolean is
+   function Compare_Vec (L, R : Memory_Ptr;
+                         Llen, Rlen : Uns32;
+                         L_Sign, R_Sign : Boolean) return Order_Type
+   is
+      Lb, Rb : Sl_X01;
    begin
-      for I in 1 .. V.Typ.Abound.Len loop
-         if Sl_To_X01 (Read_Std_Logic (V.Mem, I - 1)) = 'X' then
-            return True;
+      --  The sign.
+      if L_Sign and Llen > 0 then
+         Lb := Sl_To_X01 (Read_Std_Logic (L, 0));
+      else
+         Lb := '0';
+      end if;
+      if R_Sign and Rlen > 0 then
+         Rb := Sl_To_X01 (Read_Std_Logic (R, 0));
+      else
+         Rb := '0';
+      end if;
+      if Lb = '1' and Rb = '0' then
+         --  Never taken if L is unsigned.
+         pragma Assert (L_Sign);
+         return Less;
+      elsif Lb = '0' and Rb = '1' then
+         --  Never taken if R is unsigned.
+         pragma Assert (R_Sign);
+         return Greater;
+      end if;
+
+      --  Same sign.
+      for I in reverse 1 .. Uns32'Max (Llen, Rlen) loop
+         if I <= Llen then
+            Lb := Sl_To_X01 (Read_Std_Logic (L, Llen - I));
+         end if;
+         if I <= Rlen then
+            Rb := Sl_To_X01 (Read_Std_Logic (R, Rlen - I));
+         end if;
+         if Lb = '0' and Rb = '1' then
+            return Less;
+         elsif Lb = '1' and Rb = '0' then
+            return Greater;
          end if;
       end loop;
-      return False;
-   end Has_X;
+      return Equal;
+   end Compare_Vec;
 
-   function Compare_Uns_Sgn (L, R : Memtyp; Loc : Location_Type)
-                            return Order_Type
+   function Compare_Uns_Sgn (L, R : Memtyp;
+                             Res_X : Order_Type;
+                             Loc : Location_Type) return Order_Type
    is
       X_In_L : constant Boolean := Has_X (L);
       X_In_R : constant Boolean := Has_X (R);
    begin
       if X_In_L or X_In_R then
          Warn_X (Loc);
-         if X_In_L and X_In_R then
-            return Equal;
-         elsif X_In_L then
-            return Less;
-         else
-            return Greater;
-         end if;
+         return Res_X;
       end if;
 
       return Compare_Vec (L.Mem, R.Mem,
@@ -485,8 +579,10 @@ package body Synth.Ieee.Std_Logic_Arith is
                           False, True);
    end Compare_Uns_Sgn;
 
-   function Compare_Uns_Int (L : Memtyp; R : Int64; Loc : Location_Type)
-                            return Order_Type
+   function Compare_Uns_Int (L : Memtyp;
+                             R : Int64;
+                             Res_X : Order_Type;
+                             Loc : Location_Type) return Order_Type
    is
       Len : constant Uns32 := L.Typ.Abound.Len;
       Rlen : constant Uns32 := Uns32'Min (Len + 1, 64);
@@ -495,15 +591,17 @@ package body Synth.Ieee.Std_Logic_Arith is
    begin
       if Has_X (L) then
          Warn_X (Loc);
-         return Less;
+         return Res_X;
       end if;
 
       To_Signed (Rmem, Rlen, To_Uns64 (R));
       return Compare_Vec (L.Mem, Rmem, Len, Rlen, False, True);
    end Compare_Uns_Int;
 
-   function Compare_Sgn_Int (L : Memtyp; R : Int64; Loc : Location_Type)
-                            return Order_Type
+   function Compare_Sgn_Int (L : Memtyp;
+                             R : Int64;
+                             Res_X : Order_Type;
+                             Loc : Location_Type) return Order_Type
    is
       Len : constant Uns32 := L.Typ.Abound.Len;
       Rlen : constant Uns32 := Uns32'Min (Len, 64);
@@ -512,7 +610,7 @@ package body Synth.Ieee.Std_Logic_Arith is
    begin
       if Has_X (L) then
          Warn_X (Loc);
-         return Less;
+         return Res_X;
       end if;
 
       To_Signed (Rmem, Rlen, To_Uns64 (R));

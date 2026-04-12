@@ -106,13 +106,21 @@ package Netlists.Gates is
    --  Output: o
    Id_Mux4 : constant Module_Id := 48;
 
+   subtype Mux_Module_Id is Module_Id range Id_Mux2 .. Id_Mux4;
+
    --  Inputs: 0: Selector as one-hot encoding
    --          1: Default value (when the selector is 0)
    --          2..1+W: values (2: MSB of sel, 1+W: LSB of sel)
    --  Output: 0: selected value
    Id_Pmux : constant Module_Id := 49;
 
-   subtype Mux_Module_Id is Module_Id range Id_Mux2 .. Id_Mux4;
+   --  Non-overlap dynamic extraction (get a slice of IN0).
+   --  The width of the index gives the maximum index value.
+   --  The WD = width(IN0) / 2**width(IN1), and the division must be exact.
+   --  OUT := IN0[IN1*WD+WD-1:IN1*WD]
+   --  Inputs:  0: the memory to be indexed
+   --           1: the index
+   Id_Bmux : constant Module_Id := 50;
 
    --  Like a wire: the output is equal to the input, but could be elimited
    --  at any time.  Isignal has an initial value.
@@ -271,6 +279,8 @@ package Netlists.Gates is
    --  Gate to compute dynamic insert or extract offsets.
    --  Provides the scale (step) factor (needed for insert/extract wider than
    --   1 bit), also provides the maximum index value.
+   --  The width of the output must be clog2(STEP*(MAX+1)).
+   --  The width of the index (IN0) must be minimum (= clog2(MAX + 1)).
    --  For multi-dimensional insert/extract, memidx needs to be combined with
    --   addidx.
    --  Inputs:  0: index
@@ -281,7 +291,7 @@ package Netlists.Gates is
 
    --  Combine (simply add) indexes for dynamic insert or extract.
    --  Despite the addition being commutative, the inputs are ordered.
-   --  Input 0 must be a memidx (the most significant one, so with the larger
+   --  Input 0 must be a memidx (the least significant one, so with the smaller
    --   step), and input 1 must be either a memidx or an addidx.
    --  OUT := IN0 + IN1, size extension (max of inputs width).
    --  Inputs:  0: a memidx
@@ -364,27 +374,25 @@ package Netlists.Gates is
    --  Constants are gates with only one constant output.  There are multiple
    --  kind of constant gates: for small width, the value is stored as a
    --  parameter, possibly signed or unsigned extended.
-   Id_Const_UB32 : constant Module_Id := 112;
-   Id_Const_SB32 : constant Module_Id := 113;
-   Id_Const_UL32 : constant Module_Id := 114;
-   Id_Const_UB64 : constant Module_Id := 115;
-   Id_Const_UL64 : constant Module_Id := 116;
-   Id_Const_X : constant Module_Id := 117;
-   Id_Const_Z : constant Module_Id := 118;
-   Id_Const_0 : constant Module_Id := 119;
-   Id_Const_1 : constant Module_Id := 120;
-
-   --  Should we keep them ?
-   pragma Unreferenced (Id_Const_UB64, Id_Const_UL64);
+   Id_Const_X : constant Module_Id := 112;
+   Id_Const_Z : constant Module_Id := 113;
+   Id_Const_0 : constant Module_Id := 114;
+   Id_Const_1 : constant Module_Id := 115;
+   Id_Const_UB32 : constant Module_Id := 116;
+   Id_Const_SB32 : constant Module_Id := 117;
+   Id_Const_UL32 : constant Module_Id := 118;
 
    --  Large width.
    --  For Const_Bit: param N is for bits 32*N .. 32*N+31
    --  For Const_Log: param 2*N   is for 0/1 of bits 32*N .. 32*N+31
    --                 param 2*N+1 is for Z/X of bits 32*N .. 32*N+31
-   Id_Const_Bit : constant Module_Id := 121;
-   Id_Const_Log : constant Module_Id := 122;
+   Id_Const_Bit : constant Module_Id := 119;
+   Id_Const_Log : constant Module_Id := 120;
 
-   subtype Constant_Module_Id is Module_Id range Id_Const_UB32 .. Id_Const_Log;
+   subtype Constant_Module_Id is Module_Id range Id_Const_X .. Id_Const_Log;
+
+   subtype Constant_Defined_Module_Id is
+     Module_Id range Id_Const_0 .. Id_Const_Log;
 
    --  Id 128 is the first user id.
 end Netlists.Gates;

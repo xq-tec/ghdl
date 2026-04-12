@@ -41,6 +41,7 @@ generic
      (Decl : Decl_Type; First_Off : Uns32; Last_Off : Uns32);
    with procedure Error_Multiple_Assignments
      (Decl : Decl_Type; First_Off : Uns32; Last_Off : Uns32);
+   with function Get_Location (Decl : Decl_Type) return Location_Type;
 package Synth.Environment is
    --  This package declares the type Wire_Id and its methods.
    --
@@ -120,7 +121,6 @@ package Synth.Environment is
    --  Set the gate for a wire.
    procedure Set_Wire_Gate (Wid : Wire_Id; Gate : Net);
    function Get_Wire_Gate (Wid : Wire_Id) return Net;
-   procedure Replace_Wire_Gate (Wid : Wire_Id; Gate : Net);
 
    --  The current value of WID.  For variables, this is the last assigned
    --  value.  For signals, this is the gate.
@@ -138,7 +138,7 @@ package Synth.Environment is
    procedure Phi_Assign_Net
      (Ctxt : Builders.Context_Acc; Dest : Wire_Id; Val : Net; Offset : Uns32);
 
-   --  Assign a static value to DEST.  VAL is copied.
+   --  Assign a static value VAL to DEST.
    procedure Phi_Assign_Static (Dest : Wire_Id; Val : Static_Type);
 
    --  A Phi represent a split in the control flow (two or more branches).
@@ -199,13 +199,6 @@ package Synth.Environment is
    function Get_Assign_Chain (Asgn : Seq_Assign) return Seq_Assign;
    function Get_Assign_Value (Ctxt : Builders.Context_Acc; Asgn : Seq_Assign)
                              return Net;
-
-   --  Return the value from the gate.
-   function Get_Gate_Value (Wid : Wire_Id) return Net;
-
-   --  Return the current assigned value.
-   function Get_Assigned_Value (Ctxt : Builders.Context_Acc; Wid : Wire_Id)
-                               return Net;
 
    --  For low-level phi merge.
    --  A sequential assignment is a linked list of partial assignment.

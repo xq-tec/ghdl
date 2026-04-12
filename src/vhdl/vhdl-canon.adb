@@ -165,7 +165,7 @@ package body Vhdl.Canon is
             null;
 
          when Iir_Kinds_Denoting_Name =>
-            if not Is_Target and then Is_Signal_Name (Expr) then
+            if not Is_Target and then Is_Signal_Name (Expr, True) then
                Sensitivity_Append_Name (Sensitivity_List, Expr);
             else
                --  For PSL endpoints
@@ -177,7 +177,7 @@ package body Vhdl.Canon is
             if not Is_Target and then
               Get_Name_Staticness (Expr) >= Globally
             then
-               if Is_Signal_Object (Expr) then
+               if Is_Signal_Object (Expr, True) then
                   Sensitivity_Append (Sensitivity_List, Expr);
                end if;
             else
@@ -200,7 +200,7 @@ package body Vhdl.Canon is
             if not Is_Target
               and then Get_Name_Staticness (Expr) >= Globally
             then
-               if Is_Signal_Object (Expr) then
+               if Is_Signal_Object (Expr, True) then
                   Sensitivity_Append (Sensitivity_List, Expr);
                end if;
             else
@@ -212,7 +212,7 @@ package body Vhdl.Canon is
             if not Is_Target
               and then Get_Name_Staticness (Expr) >= Globally
             then
-               if Is_Signal_Object (Expr) then
+               if Is_Signal_Object (Expr, True) then
                   Sensitivity_Append (Sensitivity_List, Expr);
                end if;
             else
@@ -324,7 +324,7 @@ package body Vhdl.Canon is
             end;
 
          when Iir_Kind_Object_Alias_Declaration =>
-            if not Is_Target and then Is_Signal_Object (Expr) then
+            if not Is_Target and then Is_Signal_Object (Expr, True) then
                Sensitivity_Append_Name (Sensitivity_List, Expr);
             end if;
 
@@ -570,10 +570,8 @@ package body Vhdl.Canon is
                  (Get_Target (Stmt), List, True);
                Ce := Get_Selected_Expressions_Chain (Stmt);
                while Ce /= Null_Iir loop
-                  Canon_Extract_Sensitivity_If_Not_Null
-                    (Get_Condition (Ce), List, False);
                   Canon_Extract_Sensitivity_Expression
-                    (Get_Expression (Ce), List, False);
+                    (Get_Associated_Expr (Ce), List, False);
                   Ce := Get_Chain (Ce);
                end loop;
             end;
@@ -1084,6 +1082,36 @@ package body Vhdl.Canon is
       end loop;
    end Canon_Waveform_Expression;
 
+   --  Back propagate use_flag from the uninstantiated package specification
+   --  to the instantiated one.
+   --  When the body is analyzed, the use flag is set only on the
+   --  uninstantiated specification (for non-macro expanded generic package).
+   --  The use flag needs to be propagated to the instantiated specifications,
+   --  as this is the one which is elaborated.
+   procedure Package_Copy_Use_Flag (Uninst : Iir; Inst : Iir)
+   is
+      U_Chain : constant Iir := Get_Declaration_Chain (Uninst);
+      I_Chain : constant Iir := Get_Declaration_Chain (Inst);
+      U_El, I_El : Iir;
+   begin
+      U_El := U_Chain;
+      I_El := I_Chain;
+      if I_El = Null_Iir then
+         return;
+      end if;
+      while U_El /= Null_Iir loop
+         case Get_Kind (U_El) is
+            when Iir_Kind_Function_Declaration
+              | Iir_Kind_Procedure_Declaration =>
+               Set_Use_Flag (I_El, Get_Use_Flag (U_El));
+            when others =>
+               null;
+         end case;
+         U_El := Get_Chain (U_El);
+         I_El := Get_Chain (I_El);
+      end loop;
+   end Package_Copy_Use_Flag;
+
    -- Names associations by position,
    -- reorder associations by name,
    -- create omitted association,
@@ -1149,17 +1177,17 @@ package body Vhdl.Canon is
                Chain_Append (N_Chain, Last, Assoc_El);
 
                case Iir_Kinds_Association_Element (Get_Kind (Assoc_El)) is
-                  when Iir_Kind_Association_Element_Open =>
-                     goto Done;
-                  when Iir_Kind_Association_Element_By_Expression
+                  when Iir_Kind_Association_Element_Open
+                     | Iir_Kind_Association_Element_By_Expression
                      | Iir_Kind_Association_Element_By_Name =>
                      if Get_Whole_Association_Flag (Assoc_El) then
                         goto Done;
                      end if;
                   when Iir_Kind_Association_Element_By_Individual =>
                      Found := True;
-                  when Iir_Kind_Association_Element_Package
-                    | Iir_Kind_Association_Element_Type
+                  when Iir_Kind_Association_Element_Package =>
+                     goto Done;
+                  when Iir_Kind_Association_Element_Type
                     | Iir_Kind_Association_Element_Subprogram
                     | Iir_Kind_Association_Element_Terminal =>
                      goto Done;
@@ -1188,6 +1216,7 @@ package body Vhdl.Canon is
                if Get_Kind (Default) /= Iir_Kind_Box_Name then
                   Default := Get_Named_Entity (Default);
                   if not Is_Error (Default) then
+                     --  Mark the associated subprogram as used.
                      Set_Use_Flag (Default, True);
                   end if;
                end if;
@@ -3429,6 +3458,8 @@ package body Vhdl.Canon is
       Pkg : constant Iir := Get_Uninstantiated_Package_Decl (Decl);
       Bod : Iir;
    begin
+      Package_Copy_Use_Flag (Pkg, Decl);
+
       --  Canon map aspect.
       Set_Generic_Map_Aspect_Chain
         (Decl,
@@ -3453,6 +3484,97 @@ package body Vhdl.Canon is
       end if;
    end Canon_Package_Instantiation_Declaration;
 
+   procedure Canon_Subprogram_Instantiation_Declaration (Decl : Iir)
+   is
+      Spec : constant Iir :=
+        Get_Named_Entity (Get_Uninstantiated_Subprogram_Name (Decl));
+      Bod : Iir;
+   begin
+      --  Canon map aspect.
+      Set_Generic_Map_Aspect_Chain
+        (Decl,
+         Canon_Association_Chain_And_Actuals
+           (Get_Generic_Chain (Decl),
+            Get_Generic_Map_Aspect_Chain (Decl), Decl));
+
+      --  Generate the body now.
+      --  Note: according to the LRM, if the instantiation occurs within a
+      --  package, the body of the instance should be appended to the package
+      --  body.
+      --  FIXME: generate only if generating code for this unit.
+      if Get_Macro_Expand_Flag (Spec)
+        and then Instantiation_Needs_Immediate_Body_P (Decl)
+      then
+         Bod := Sem_Inst.Instantiate_Subprogram_Body (Decl);
+         Set_Parent (Bod, Get_Parent (Decl));
+         Set_Instance_Subprogram_Body (Decl, Bod);
+
+         --  Insert body after DECL.
+         Set_Chain (Bod, Get_Chain (Decl));
+         Set_Chain (Decl, Bod);
+      end if;
+   end Canon_Subprogram_Instantiation_Declaration;
+
+   --  Add bodies or package or subprograms instantiation in package body BOD.
+   procedure Canon_Instantiation_Package_Body (Bod : Iir; Last_Decl : Iir)
+   is
+      Pkg : constant Iir := Get_Package (Bod);
+      Pkg_Decl : Iir;
+      Prev_Decl : Iir;
+      Spec : Iir;
+      Inst_Bod : Iir;
+   begin
+      Prev_Decl := Last_Decl;
+
+      --  For each declaration of the package
+      Pkg_Decl := Get_Declaration_Chain (Pkg);
+      while Pkg_Decl /= Null_Iir loop
+         Inst_Bod := Null_Iir;
+         case Get_Kind (Pkg_Decl) is
+            when Iir_Kind_Package_Instantiation_Declaration =>
+               --  This is a package instantiation...
+               Spec := Get_Uninstantiated_Package_Decl (Pkg_Decl);
+               if Get_Need_Body (Spec)
+                 and then Get_Macro_Expand_Flag (Spec)
+                 and then not Get_Immediate_Body_Flag (Pkg_Decl)
+               then
+                  --  ... that needs a body.  Create the body.
+                  Inst_Bod := Sem_Inst.Instantiate_Package_Body (Pkg_Decl);
+                  Set_Parent (Inst_Bod, Bod);
+                  pragma Assert
+                    (Get_Instance_Package_Body (Pkg_Decl) = Null_Iir);
+                  Set_Instance_Package_Body (Pkg_Decl, Inst_Bod);
+               end if;
+
+            when Iir_Kinds_Subprogram_Instantiation_Declaration =>
+               Spec := Get_Named_Entity
+                 (Get_Uninstantiated_Subprogram_Name (Pkg_Decl));
+               pragma Assert (Get_Macro_Expand_Flag (Spec));
+
+               Inst_Bod := Sem_Inst.Instantiate_Subprogram_Body (Pkg_Decl);
+               Set_Parent (Inst_Bod, Bod);
+               pragma Assert
+                 (Get_Instance_Subprogram_Body (Pkg_Decl) = Null_Iir);
+               Set_Instance_Subprogram_Body (Pkg_Decl, Inst_Bod);
+
+            when others =>
+               null;
+         end case;
+
+         if Inst_Bod /= Null_Iir then
+            --  Append.
+            if Prev_Decl = Null_Iir then
+               Set_Declaration_Chain (Bod, Inst_Bod);
+            else
+               Set_Chain (Prev_Decl, Inst_Bod);
+            end if;
+            Prev_Decl := Inst_Bod;
+         end if;
+
+         Pkg_Decl := Get_Chain (Pkg_Decl);
+      end loop;
+   end Canon_Instantiation_Package_Body;
+
    procedure Canon_Package_Body (Bod : Iir)
    is
       Decl : Iir;
@@ -3466,46 +3588,9 @@ package body Vhdl.Canon is
          Decl := Get_Chain (Prev_Decl);
       end loop;
 
-      --  Add bodies of package instantiations.
+      --  Add bodies of package and subprogram instantiations.
       if Vhdl_Std >= Vhdl_08 then
-         declare
-            Pkg : constant Iir := Get_Package (Bod);
-            Pkg_Decl : Iir;
-            Pkg_Spec : Iir;
-            Inst_Bod : Iir;
-         begin
-            --  For each declaration of the package
-            Pkg_Decl := Get_Declaration_Chain (Pkg);
-            while Pkg_Decl /= Null_Iir loop
-               if (Get_Kind (Pkg_Decl)
-                     = Iir_Kind_Package_Instantiation_Declaration)
-               then
-                  --  This is a package instantiation...
-                  Pkg_Spec := Get_Uninstantiated_Package_Decl (Pkg_Decl);
-                  if Get_Need_Body (Pkg_Spec)
-                    and then Get_Macro_Expand_Flag (Pkg_Spec)
-                    and then not Get_Immediate_Body_Flag (Pkg_Decl)
-                  then
-                     --  ... that needs a body.  Create the body.
-                     Inst_Bod := Sem_Inst.Instantiate_Package_Body (Pkg_Decl);
-                     Set_Parent (Inst_Bod, Bod);
-                     pragma Assert
-                       (Get_Instance_Package_Body (Pkg_Decl) = Null_Iir);
-                     Set_Instance_Package_Body (Pkg_Decl, Inst_Bod);
-
-                     --  Append.
-                     if Prev_Decl = Null_Iir then
-                        Set_Declaration_Chain (Bod, Inst_Bod);
-                     else
-                        Set_Chain (Prev_Decl, Inst_Bod);
-                     end if;
-                     Prev_Decl := Inst_Bod;
-                  end if;
-               end if;
-
-               Pkg_Decl := Get_Chain (Pkg_Decl);
-            end loop;
-         end;
+         Canon_Instantiation_Package_Body (Bod, Prev_Decl);
       end if;
    end Canon_Package_Body;
 
@@ -3517,30 +3602,33 @@ package body Vhdl.Canon is
       case Get_Kind (Decl) is
          when Iir_Kind_Procedure_Body
             | Iir_Kind_Function_Body =>
-            Canon_Declarations (Top, Decl, Null_Iir);
-            if Canon_Flag_Add_Suspend_State
-              and then Get_Kind (Decl) = Iir_Kind_Procedure_Body
-              and then Get_Suspend_Flag (Decl)
+            if Get_Kind (Get_Subprogram_Specification (Decl))
+              not in Iir_Kinds_Subprogram_Instantiation_Declaration
             then
-               Canon_Add_Suspend_State (Decl);
+               -- Do not re-canon subprogram instantiations.
+               Canon_Declarations (Top, Decl, Null_Iir);
+               if Canon_Flag_Add_Suspend_State
+                 and then Get_Kind (Decl) = Iir_Kind_Procedure_Body
+                 and then Get_Suspend_Flag (Decl)
+               then
+                  Canon_Add_Suspend_State (Decl);
+               end if;
+               if Canon_Flag_Sequentials_Stmts then
+                  Stmts := Get_Sequential_Statement_Chain (Decl);
+                  Stmts := Canon_Sequential_Stmts (Stmts);
+                  Set_Sequential_Statement_Chain (Decl, Stmts);
+               end if;
             end if;
-            if Canon_Flag_Sequentials_Stmts then
-               Stmts := Get_Sequential_Statement_Chain (Decl);
-               Stmts := Canon_Sequential_Stmts (Stmts);
-               Set_Sequential_Statement_Chain (Decl, Stmts);
-            end if;
+
+         when Iir_Kind_Subprogram_Instantiation_Body =>
+            null;
 
          when Iir_Kind_Procedure_Declaration
             | Iir_Kind_Function_Declaration =>
             null;
          when Iir_Kind_Function_Instantiation_Declaration
-            | Iir_Kind_Procedure_Instantiation_Declaration =>
-            --  Canon map aspect.
-            Set_Generic_Map_Aspect_Chain
-              (Decl,
-               Canon_Association_Chain_And_Actuals
-                 (Get_Generic_Chain (Decl),
-                  Get_Generic_Map_Aspect_Chain (Decl), Decl));
+           | Iir_Kind_Procedure_Instantiation_Declaration =>
+            Canon_Subprogram_Instantiation_Declaration (Decl);
 
          when Iir_Kind_Type_Declaration =>
             declare

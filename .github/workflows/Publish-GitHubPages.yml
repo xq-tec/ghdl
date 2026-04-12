@@ -27,40 +27,46 @@ jobs:
   PublishToGitHubPages:
     name: 📚 Publish to GH-Pages
     runs-on: ${{ inputs.ubuntu_image }}
+    permissions:
+      pages:    write   # to deploy to Pages
+      id-token: write   # to verify the deployment originates from an appropriate source
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      github_pages_url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - name: ⏬ Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: 📥 Download artifacts '${{ inputs.documentation }}' from 'Sphinx' job
-        uses: pyTooling/download-artifact@v4
+        uses: pyTooling/download-artifact@v7
         with:
           name: ${{ inputs.documentation }}
           path: public
 
       - name: 📥 Download artifacts '${{ inputs.coverage }}' from 'PublishCoverageResults' job
+        uses: pyTooling/download-artifact@v7
         if: ${{ inputs.coverage != '' }}
-        uses: pyTooling/download-artifact@v4
         with:
           name: ${{ inputs.coverage }}
           path: public/coverage
 
       - name: 📥 Download artifacts '${{ inputs.typing }}' from 'StaticTypeCheck' job
+        uses: pyTooling/download-artifact@v7
         if: ${{ inputs.typing != '' }}
-        uses: pyTooling/download-artifact@v4
         with:
           name: ${{ inputs.typing }}
           path: public/typing
 
-      - name: '📓 Publish site to GitHub Pages'
+      - name: 📑 Upload static files as artifact
         if: github.event_name != 'pull_request'
-        run: |
-          cd public
-          touch .nojekyll
-          git init
-          cp ../.git/config ./.git/config
-          git add .
-          git config --local user.email "BuildTheDocs@GitHubActions"
-          git config --local user.name "GitHub Actions"
-          git commit -a -m "update ${{ github.sha }}"
-          git push -u origin +HEAD:gh-pages
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: public/
+
+      - name: 📖 Deploy to GitHub Pages
+        id: deployment
+        if: github.event_name != 'pull_request'
+        uses: actions/deploy-pages@v4

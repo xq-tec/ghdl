@@ -67,7 +67,7 @@ from pyGHDL.dom import DOMMixin, Position, DOMException
 from pyGHDL.dom._Utils import GetNameOfNode, GetDocumentationOfNode
 from pyGHDL.dom._Translate import GetGenericsFromChainedNodes, GetPortsFromChainedNodes, GetName
 from pyGHDL.dom._Translate import GetDeclaredItemsFromChainedNodes, GetConcurrentStatementsFromChainedNodes
-from pyGHDL.dom.Names import SimpleName, AllName
+from pyGHDL.dom.Name import SimpleName, AllName
 from pyGHDL.dom.Symbol import (
     EntitySymbol,
     ContextReferenceSymbol,
@@ -80,15 +80,15 @@ from pyGHDL.dom.Symbol import (
 
 @export
 class LibraryClause(VHDLModel_LibraryClause, DOMMixin):
-    def __init__(self, libraryNode: Iir, symbols: Iterable[Symbol]):
-        super().__init__(symbols)
+    def __init__(self, libraryNode: Iir, symbols: Iterable[Symbol]) -> None:
+        super().__init__(symbols, None)
         DOMMixin.__init__(self, libraryNode)
 
 
 @export
 class UseClause(VHDLModel_UseClause, DOMMixin):
-    def __init__(self, useNode: Iir, symbols: Iterable[Symbol]):
-        super().__init__(symbols)
+    def __init__(self, useNode: Iir, symbols: Iterable[Symbol]) -> None:
+        super().__init__(symbols, None)
         DOMMixin.__init__(self, useNode)
 
     @classmethod
@@ -108,8 +108,8 @@ class UseClause(VHDLModel_UseClause, DOMMixin):
 
 @export
 class ContextReference(VHDLModel_ContextReference, DOMMixin):
-    def __init__(self, contextNode: Iir, symbols: Iterable[Symbol]):
-        super().__init__(symbols)
+    def __init__(self, contextNode: Iir, symbols: Iterable[Symbol]) -> None:
+        super().__init__(symbols, None)
         DOMMixin.__init__(self, contextNode)
 
     @classmethod
@@ -135,8 +135,10 @@ class Entity(VHDLModel_Entity, DOMMixin):
         declaredItems: Iterable = None,
         statements: Iterable["ConcurrentStatement"] = None,
         documentation: str = None,
-    ):
-        super().__init__(identifier, contextItems, genericItems, portItems, declaredItems, statements, documentation)
+    ) -> None:
+        super().__init__(
+            identifier, contextItems, genericItems, portItems, declaredItems, statements, documentation, None
+        )
         DOMMixin.__init__(self, node)
 
     @classmethod
@@ -166,8 +168,8 @@ class Architecture(VHDLModel_Architecture, DOMMixin):
         declaredItems: Iterable = None,
         statements: Iterable["ConcurrentStatement"] = None,
         documentation: str = None,
-    ):
-        super().__init__(identifier, entity, contextItems, declaredItems, statements, documentation)
+    ) -> None:
+        super().__init__(identifier, entity, contextItems, declaredItems, statements, documentation, None)
         DOMMixin.__init__(self, node)
 
     @classmethod
@@ -197,8 +199,8 @@ class Component(VHDLModel_Component, DOMMixin):
         genericItems: Iterable[GenericInterfaceItemMixin] = None,
         portItems: Iterable[PortInterfaceItemMixin] = None,
         documentation: str = None,
-    ):
-        super().__init__(identifier, genericItems, portItems, documentation)
+    ) -> None:
+        super().__init__(identifier, genericItems, portItems, documentation, None)
         DOMMixin.__init__(self, node)
 
     @classmethod
@@ -221,8 +223,8 @@ class Package(VHDLModel_Package, DOMMixin):
         genericItems: Iterable[GenericInterfaceItemMixin] = None,
         declaredItems: Iterable = None,
         documentation: str = None,
-    ):
-        super().__init__(identifier, contextItems, genericItems, declaredItems, documentation)
+    ) -> None:
+        super().__init__(identifier, contextItems, genericItems, declaredItems, documentation, None)
         DOMMixin.__init__(self, node)
 
     @classmethod
@@ -252,8 +254,8 @@ class PackageBody(VHDLModel_PackageBody, DOMMixin):
         contextItems: Iterable[VHDLModel_ContextUnion] = None,
         declaredItems: Iterable = None,
         documentation: str = None,
-    ):
-        super().__init__(packageSymbol, contextItems, declaredItems, documentation)
+    ) -> None:
+        super().__init__(packageSymbol, contextItems, declaredItems, documentation, None)
         DOMMixin.__init__(self, node)
 
     @classmethod
@@ -279,7 +281,7 @@ class PackageInstantiation(VHDLModel_PackageInstantiation, DOMMixin):
         uninstantiatedPackageName: Symbol,
         #        genericItems: List[GenericInterfaceItem] = None,
         documentation: str = None,
-    ):
+    ) -> None:
         super().__init__(identifier, uninstantiatedPackageName, documentation)
         DOMMixin.__init__(self, node)
 
@@ -305,8 +307,8 @@ class Context(VHDLModel_Context, DOMMixin):
         identifier: str,
         references: Iterable[VHDLModel_ContextUnion] = None,
         documentation: str = None,
-    ):
-        super().__init__(identifier, references, documentation)
+    ) -> None:
+        super().__init__(identifier, references, documentation, None)
         DOMMixin.__init__(self, node)
 
     @classmethod
@@ -341,8 +343,10 @@ class Context(VHDLModel_Context, DOMMixin):
 
 @export
 class Configuration(VHDLModel_Configuration, DOMMixin):
-    def __init__(self, node: Iir, identifier: str, contextItems: Iterable[Context] = None, documentation: str = None):
-        super().__init__(identifier, contextItems, documentation)
+    def __init__(
+        self, node: Iir, identifier: str, contextItems: Iterable[Context] = None, documentation: str = None
+    ) -> None:
+        super().__init__(identifier, contextItems, documentation, None)
         DOMMixin.__init__(self, node)
 
     @classmethod

@@ -1,4 +1,17 @@
-## [Next] 5.0
+## [2026-03-07] 6.0
+
+- Initial support of vhdl2019 (with --std=19)
+- --finteger64 fully supported (with jit backends)
+
+## [2025-06-17] 5.1
+
+- Improve release management
+- Add llvm-jit build
+
+## [2025-03-01] 5.0
+
+- Fix some crashes on errors on Windows x64 with mcode backend
+- Multiple minor fixes and improvements
 
 ## [2024-04-14] 4.1
 

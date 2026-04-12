@@ -17,7 +17,6 @@
 --  along with this program.  If not, see <gnu.org/licenses>.
 
 with Mutils;
-with Types_Utils; use Types_Utils;
 
 with Netlists.Gates; use Netlists.Gates;
 
@@ -77,15 +76,17 @@ package body Netlists.Utils is
       return Get_Id (Get_Module (Inst));
    end Get_Id;
 
-   function Get_Input_Name (M : Module; I : Port_Idx) return Sname is
-   begin
-      return Get_Input_Desc (M, I).Name;
-   end Get_Input_Name;
-
    function Get_Output_Name (M : Module; I : Port_Idx) return Sname is
    begin
       return Get_Output_Desc (M, I).Name;
    end Get_Output_Name;
+
+   --  GCOV_EXCL_START (called by libghdl)
+
+   function Get_Input_Name (M : Module; I : Port_Idx) return Sname is
+   begin
+      return Get_Input_Desc (M, I).Name;
+   end Get_Input_Name;
 
    function Get_Input_Width (M : Module; I : Port_Idx) return Width is
    begin
@@ -102,6 +103,18 @@ package body Netlists.Utils is
       return Get_Output_Desc (M, I).Dir = Port_Inout;
    end Get_Inout_Flag;
 
+   function Get_Param_Name (M : Module; I : Param_Idx) return Sname is
+   begin
+      return Get_Param_Desc (M, I).Name;
+   end Get_Param_Name;
+
+   function Get_Param_Type (M : Module; I : Param_Idx) return Param_Type is
+   begin
+      return Get_Param_Desc (M, I).Typ;
+   end Get_Param_Type;
+
+   --  GCOV_EXCL_STOP
+
    function Get_Input_Net (Inst : Instance; Idx : Port_Idx) return Net is
    begin
       return Get_Driver (Get_Input (Inst, Idx));
@@ -113,22 +126,12 @@ package body Netlists.Utils is
       return Get_Net_Parent (Get_Input_Net (Inst, Idx));
    end Get_Input_Instance;
 
-   function Get_Param_Name (M : Module; I : Param_Idx) return Sname is
-   begin
-      return Get_Param_Desc (M, I).Name;
-   end Get_Param_Name;
-
-   function Get_Param_Type (M : Module; I : Param_Idx) return Param_Type is
-   begin
-      return Get_Param_Desc (M, I).Typ;
-   end Get_Param_Type;
-
    function Is_Const_Net (N : Net) return Boolean is
    begin
       if Get_Width (N) = 0 then
          return True;
       end if;
-      return Get_Id (Get_Net_Parent (N)) in Constant_Module_Id;
+      return Get_Id (Get_Net_Parent (N)) in Constant_Defined_Module_Id;
    end Is_Const_Net;
 
    function Get_Net_Uns64 (N : Net) return Uns64
@@ -163,31 +166,6 @@ package body Netlists.Utils is
             raise Internal_Error;
       end case;
    end Get_Net_Uns64;
-
-   function Get_Net_Int64 (N : Net) return Int64 is
-   begin
-      return To_Int64 (Get_Net_Uns64 (N));
-   end Get_Net_Int64;
-
-   procedure Get_Net_Element
-     (N : Net; Off : Uns32; Va : out Uns32; Zx : out Uns32)
-   is
-      Inst : constant Instance := Get_Net_Parent (N);
-   begin
-      case Get_Id (Inst) is
-         when Id_Const_UB32 =>
-            declare
-               V : constant Uns32 := Get_Param_Uns32 (Inst, 0);
-               Wd : constant Width := Get_Width (N);
-            begin
-               pragma Assert (Off < 32);
-               Zx := 0;
-               Va := Shift_Right (V, Natural (Wd - Off)) and 1;
-            end;
-         when others =>
-            raise Internal_Error;
-      end case;
-   end Get_Net_Element;
 
    function Skip_Signal (N : Net) return Net
    is
@@ -310,4 +288,9 @@ package body Netlists.Utils is
    begin
       return Uns32 (Mutils.Clog2 (Uns64 (W)));
    end Clog2;
+
+   function Is_Pow2 (W : Width) return Boolean is
+   begin
+      return (W and (W - 1)) = 0;
+   end Is_Pow2;
 end Netlists.Utils;

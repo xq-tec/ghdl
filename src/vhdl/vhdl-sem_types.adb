@@ -115,10 +115,12 @@ package body Vhdl.Sem_Types is
                  Get_Elements_Declaration_List (Atype);
                El : Iir;
             begin
-               for I in Flist_First .. Flist_Last (El_List) loop
-                  El := Get_Nth_Element (El_List, I);
-                  Set_Type_Has_Signal (Get_Type (El));
-               end loop;
+               if El_List /= Null_Iir_Flist then
+                  for I in Flist_First .. Flist_Last (El_List) loop
+                     El := Get_Nth_Element (El_List, I);
+                     Set_Type_Has_Signal (Get_Type (El));
+                  end loop;
+               end if;
             end;
          when Iir_Kind_Error =>
             null;
@@ -827,7 +829,9 @@ package body Vhdl.Sem_Types is
          when Iir_Kinds_Scalar_Subtype_Definition
            | Iir_Kind_Enumeration_Type_Definition
            | Iir_Kind_File_Type_Definition
-           | Iir_Kind_File_Subtype_Definition =>
+           | Iir_Kind_File_Subtype_Definition
+           | Iir_Kind_Access_Type_Definition
+           | Iir_Kind_Access_Subtype_Definition =>
             return Fully_Constrained;
          when Iir_Kind_Error =>
             --  Why not ?

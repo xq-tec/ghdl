@@ -168,126 +168,10 @@ package body Netlists.Inference is
       end if;
    end Find_Longest_Loop;
 
-   procedure Extract_Clock_And (Ctxt : Context_Acc; Inst : Instance)
-   is
-   begin
-      pragma Assert (Get_Id (Inst) = Id_And);
-
-      declare
-         I0 : constant Input := Get_Input (Inst, 0);
-         N0 : constant Net := Get_Driver (I0);
-         Inst0 : constant Instance := Get_Net_Parent (N0);
-      begin
-         case Get_Id (Inst0) is
-            when Edge_Module_Id =>
-               null;
-            when Id_And =>
-               Extract_Clock_And (Ctxt, Inst0);
-
-               --  If we have:       AND      convert to:     AND
-               --                    / \                      / \
-               --                  N1  AND0       ==>     AND0   EDGE
-               --                      /  \               /  \
-               --                     N2  EDGE           N1   N2
-               declare
-                  I3 : constant Input := Get_Input (Inst0, 0);
-                  N3 : constant Net := Get_Driver (I3);
-                  Inst3 : constant Instance := Get_Net_Parent (N3);
-               begin
-                  if Get_Id (Inst3) in Edge_Module_Id then
-                     declare
-                        Can_Rotate : constant Boolean :=
-                          Has_One_Connection (N0);
-                        I2 : constant Input := Get_Input (Inst0, 1);
-                        N2 : constant Net := Get_Driver (I2);
-                        I1 : constant Input := Get_Input (Inst, 1);
-                        N1 : constant Net := Get_Driver (I1);
-                        N4 : Net;
-                     begin
-                        Disconnect (I0);
-                        Disconnect (I1);
-                        Connect (I0, N3);
-                        if Can_Rotate then
-                           Disconnect (I2);
-                           Disconnect (I3);
-
-                           Connect (I1, N0);
-                           Connect (I3, N2);
-                           Connect (I2, N1);
-                        else
-                           N4 := Build_Dyadic (Ctxt, Id_And, N2, N1);
-                           Copy_Location (N4, Inst);
-                           Connect (I1, N4);
-                        end if;
-                     end;
-                  end if;
-               end;
-            when others =>
-               null;
-         end case;
-      end;
-
-      declare
-         I0 : constant Input := Get_Input (Inst, 1);
-         N0 : constant Net := Get_Driver (I0);
-         Inst0 : constant Instance := Get_Net_Parent (N0);
-      begin
-         case Get_Id (Inst0) is
-            when Edge_Module_Id =>
-               --  Swap inputs 0 and 1.
-               declare
-                  I1 : constant Input := Get_Input (Inst, 0);
-                  N1 : constant Net := Get_Driver (I1);
-               begin
-                  Disconnect (I0);
-                  Disconnect (I1);
-                  Connect (I1, N0);
-                  Connect (I0, N1);
-               end;
-            when Id_And =>
-               Extract_Clock_And (Ctxt, Inst0);
-
-               --  If we have:       AND      convert to:     AND
-               --                    / \                      / \
-               --                 AND0  N1     ==>         AND0  EDGE
-               --                 /  \                     /  \
-               --                N2  EDGE                N2   N1
-               declare
-                  I3 : constant Input := Get_Input (Inst0, 0);
-                  N3 : constant Net := Get_Driver (I3);
-               begin
-                  if Get_Id (Get_Net_Parent (N3)) in Edge_Module_Id then
-                     declare
-                        Can_Rotate : constant Boolean :=
-                          Has_One_Connection (N0);
-                        I1 : constant Input := Get_Input (Inst, 0);
-                        N1 : constant Net := Get_Driver (I1);
-                        N4 : Net;
-                     begin
-                        Disconnect (I3);
-                        Disconnect (I1);
-                        Connect (I1, N3);
-                        if Can_Rotate then
-                           Connect (I3, N1);
-                        else
-                           N4 := Build_Dyadic
-                             (Ctxt, Id_And, N1, Get_Input_Net (Inst0, 1));
-                           Connect (I3, N4);
-                        end if;
-                     end;
-                  end if;
-               end;
-            when others =>
-               null;
-         end case;
-      end;
-   end Extract_Clock_And;
-
    --  Walk the And-net N, and extract clock (posedge/negedge) if found.
    --  ENABLE is N without the clock.
    --  If not found, CLK and ENABLE are set to No_Net.
-   procedure Extract_Clock
-     (Ctxt : Context_Acc; N : Net; Clk : out Net; Enable : out Net)
+   procedure Extract_Clock (N : Net; Clk : out Net; Enable : out Net)
    is
       Inst : constant Instance := Get_Net_Parent (N);
    begin
@@ -298,9 +182,6 @@ package body Netlists.Inference is
          when Edge_Module_Id =>
             Clk := N;
          when Id_And =>
-            --  Canonicalize conditions.
-            Extract_Clock_And (Ctxt, Inst);
-
             --  Condition should be in the form: CLK and EXPR
             declare
                I0 : constant Net := Get_Input_Net (Inst, 0);
@@ -363,7 +244,7 @@ package body Netlists.Inference is
         and then Can_Infere_RAM (Data, Prev_Val)
       then
          --  Maybe it is a RAM.
-         Ndata := Infere_RAM (Ctxt, Data, Els_Net, No_Net, Clk_Enable);
+         Ndata := Infere_RAM (Ctxt, Data, Els_Net, Clk_Enable);
       else
          if Clk_Enable /= No_Net then
             --  If there is a condition with the clock, that's an enable which
@@ -372,7 +253,8 @@ package body Netlists.Inference is
             declare
                Prev : Net;
             begin
-               Prev := Build2_Extract (Ctxt, Prev_Val, Off, Get_Width (Data));
+               Prev := Build2_Extract
+                 (Ctxt, Prev_Val, Off, Get_Width (Data), Loc);
 
                Ndata := Build_Mux2 (Ctxt, Clk_Enable, Prev, Data);
                Set_Location (Ndata, Loc);
@@ -445,6 +327,7 @@ package body Netlists.Inference is
                            W : Width)
    is
       Inst : constant Instance := Get_Net_Parent (Val);
+      Loc : constant Location_Type := Get_Location (Inst);
    begin
       case Get_Id (Inst) is
          when Id_Mux2 =>
@@ -459,14 +342,14 @@ package body Netlists.Inference is
                Push_Extract (Ctxt, I1, Off, Last_Mux, W);
                Res := Build_Mux2 (Ctxt, Get_Input_Net (Inst, 0), I0, I1);
                Mux := Get_Net_Parent (Res);
-               Set_Location (Mux, Get_Location (Inst));
+               Set_Location (Mux, Loc);
                if Inst = Last_Mux then
                   Last_Mux := Mux;
                end if;
                Val := Res;
             end;
          when others =>
-            Val := Build_Extract (Ctxt, Val, Off, W);
+            Val := Build2_Extract (Ctxt, Val, Off, W, Loc);
       end case;
    end Push_Extract;
 
@@ -505,7 +388,7 @@ package body Netlists.Inference is
             Els_Inst := Get_Net_Parent (Els2);
          end if;
          if Get_Id (Els_Inst) = Id_Mux2 then
-            Extract_Clock (Ctxt, Get_Driver (Get_Mux2_Sel (Els_Inst)),
+            Extract_Clock (Get_Driver (Get_Mux2_Sel (Els_Inst)),
                            Els_Clk, Els_En);
          else
             Els_Clk := No_Net;
@@ -533,7 +416,7 @@ package body Netlists.Inference is
 
       Data := Get_Driver (I1);
       if Get_Width (Data) > W then
-         Data := Build2_Extract (Ctxt, Data, Off, W);
+         Data := Build2_Extract (Ctxt, Data, Off, W, Mux_Loc);
          --  Do not disconnect as this mux is certainly used somewhere else.
       else
          Disconnect (Sel);
@@ -549,12 +432,19 @@ package body Netlists.Inference is
    --  Determine the kind of FF and extract the asynchronous reset.
    --  Build the FF (or the RAM).
    --
-   --  CLOCK_MUX is the mux whose input 0 is the loop and clock for selector.
-   --  It is the last mux of the chain.
+   --  CLOCK_MUX is the mux2 whose input 0 is the loop (so PREV_VAL)
+   --  and clock for selector.  It is the last mux of the chain.
+   --  There can be previous mux2 for asynchronous set/reset.
+   --
+   --  The selector of CLOCK_MUX is divided into CLK and CLK_ENABLE.
+   --  CLK is a posedge or a negedge, while CLK_ENABLE, if set, is a
+   --  synchronous enable.
    --
    --  VAL is the value to be assigned.
-   --  PREV_VAL is the output of the signal which is assigned but also the
-   --   value of the loop.  OFF is the offset in the signal.
+   --  PREV_VAL is the output of the gate (signal or output) whose input
+   --  should have been VAL (before the DFF is created).  It is also the loop
+   --  signal of VAL.
+   --  OFF is the offset in PREV_VAL (for partial assignments).
    function Infere_FF (Ctxt : Context_Acc;
                        Val : Net;
                        Prev_Val : Net;
@@ -581,26 +471,30 @@ package body Netlists.Inference is
    begin
       --  Create and return the DFF.
 
-      --  1. Remove the mux CLOCK_MUX that creates the loop (will be
-      --     replaced by the dff).
+      --  1. Remove the mux CLOCK_MUX that creates the loop, and create
+      --     the DFF.
       Infere_FF_Mux (Ctxt, Prev_Val, Off, W, Clock_Mux, Els, Data);
 
       --  If the signal declaration has an initial value, get it.
       Sig := Get_Net_Parent (Prev_Val);
       case Get_Id (Get_Module (Sig)) is
          when Id_Isignal
-           | Id_Ioutput =>
+           | Id_Ioutput
+           | Id_Iinout =>
             Init := Get_Input_Net (Sig, 1);
-            Init := Build2_Extract (Ctxt, Init, Off, Get_Width (O));
-         when others =>
+            Init := Build2_Extract (Ctxt, Init, Off, Get_Width (O), Loc);
+         when Id_Signal
+           | Id_Output
+           | Id_Inout =>
             Init := No_Net;
+         when others => raise Internal_Error;
       end case;
 
       --  As an enable signal, start with the enable extracted from the clock
       --  to handle conditions like: `rising_edge(clk) and en`
       Enable := Clk_Enable;
 
-      --  Look for asynchronous set/reset.  They are muxes after the loop
+      --  Look for asynchronous set/reset.  They are muxes before the clock
       --  mux.  In theory, there can be many set/reset with a defined order.
       Rst_Val := No_Net;
       Rst := No_Net;
@@ -644,8 +538,7 @@ package body Netlists.Inference is
                         Loop_Off := 0;
                         exit;
                      end if;
-                  when others =>
-                     raise Internal_Error;
+                  when others => raise Internal_Error;
                end case;
                Snk := Get_Next_Sink (Snk);
             end loop;
@@ -668,6 +561,9 @@ package body Netlists.Inference is
                      else
                         exit;
                      end if;
+                     --  So an output of a mux2 between the clock_mux and
+                     --  the final value is used somewhere else.
+                     --  We cannot collapse the asynchronous set/reset.
                      Error_Msg_Netlist
                        (Eloc, "intermediate value of the FF is read");
                      exit;
@@ -969,6 +865,7 @@ package body Netlists.Inference is
    end Infere_Latch_Create;
 
    --  Return a name for PREV_VAL (the target).
+   --  Used in error messages for latches.
    function Get_Prev_Val_Name (Prev_Val : Net) return Sname
    is
       Name : Sname;
@@ -985,6 +882,23 @@ package body Netlists.Inference is
             loop
                pragma Assert (Inp /= No_Input);
                Inst := Get_Input_Parent (Inp);
+
+               --  Handle partial assignment (records).
+               while Get_Id (Inst) = Id_Extract loop
+                  declare
+                     Eout : constant Net := Get_Output (Inst, 0);
+                     Einp : constant Input := Get_First_Sink (Eout);
+                  begin
+                     if Einp /= No_Input
+                       and then Get_Next_Sink (Einp) = No_Input
+                     then
+                        Inst := Get_Input_Parent (Einp);
+                     else
+                        exit;
+                     end if;
+                  end;
+               end loop;
+
                if Get_Id (Inst) >= Id_User_None then
                   Name := Get_Output_Desc (Get_Module (Inst),
                                            Get_Port_Idx (Inp)).Name;
@@ -1060,6 +974,39 @@ package body Netlists.Inference is
       return Infere_Latch_Create (Ctxt, Val, Prev_Val, Last_Mux, Loc);
    end Infere_Latch;
 
+   function Infere_Tri (Ctxt : Context_Acc;
+                        Val : Net) return Net
+   is
+      First_Mux : constant Instance := Get_Net_Parent (Val);
+      Nsel, N0, N1 : Net;
+      Res : Net;
+   begin
+      --  Infere tri-buf.
+      if Get_Id (First_Mux) /= Id_Mux2 then
+         return Val;
+      end if;
+
+      --  Check for VAL <= SEL ? N1 : 'Z'
+      if Get_Id (Get_Input_Instance (First_Mux, 1)) = Id_Const_Z then
+         --  Disconnect the mux.
+         Nsel := Disconnect_And_Get (First_Mux, 0);
+         N0 := Disconnect_And_Get (First_Mux, 1);
+         N1 := Disconnect_And_Get (First_Mux, 2);
+         --  Build the tri buf.
+         Res := Build_Tri (Ctxt, Nsel, N1);
+         --  Remove the 'Z' (shouldn't be connected).
+         Remove_Instance (Get_Net_Parent (N0));
+         --  Copy location.
+         Copy_Location (Res, First_Mux);
+         --  Redirect tri output.
+         Redirect_Inputs (Get_Output (First_Mux, 0), Res);
+         Remove_Instance (First_Mux);
+         return Res;
+      else
+         return Val;
+      end if;
+   end Infere_Tri;
+
    --  VAL is the value to be assigned to a wire at offset OFF.
    --  Note: PREV_VAL is the wire gate, so with full width and no offset.
    function Infere (Ctxt : Context_Acc;
@@ -1086,30 +1033,12 @@ package body Netlists.Inference is
       end if;
 
       --  Infere tri-buf.
-      First_Mux := Get_Net_Parent (Val);
-      if Get_Id (First_Mux) = Id_Mux2 then
-         declare
-            Nsel, N0, N1 : Net;
-         begin
-            --  Check for VAL <= SEL ? N1 : 'Z'
-            if Get_Id (Get_Input_Instance (First_Mux, 1)) = Id_Const_Z then
-               --  Disconnect the mux.
-               Nsel := Disconnect_And_Get (First_Mux, 0);
-               N0 := Disconnect_And_Get (First_Mux, 1);
-               N1 := Disconnect_And_Get (First_Mux, 2);
-               --  Build the tri buf.
-               Res := Build_Tri (Ctxt, Nsel, N1);
-               --  Remove the 'Z' (shouldn't be connected).
-               Remove_Instance (Get_Net_Parent (N0));
-               --  Copy location.
-               Copy_Location (Res, First_Mux);
-               --  Redirect tri output.
-               Redirect_Inputs (Get_Output (First_Mux, 0), Res);
-               Remove_Instance (First_Mux);
-               return Res;
-            end if;
-         end;
+      Res := Infere_Tri (Ctxt, Val);
+      if Res /= Val then
+         return Res;
       end if;
+
+      First_Mux := Get_Net_Parent (Val);
 
       if Last_Use
         and then Has_One_Connection (Prev_Val)
@@ -1156,7 +1085,7 @@ package body Netlists.Inference is
 
       --  So there is a logical loop.
       Sel := Get_Mux2_Sel (Last_Mux);
-      Extract_Clock (Ctxt, Get_Driver (Sel), Clk, Enable);
+      Extract_Clock (Get_Driver (Sel), Clk, Enable);
       if Clk = No_Net then
          --  No clock -> latch or combinational loop
          Res := Infere_Latch (Ctxt, Val2, Prev_Val, Last_Mux, Last_Use, Loc);
@@ -1232,10 +1161,9 @@ package body Netlists.Inference is
             when Id_Const_UB32
                | Id_Pmux =>
                return Val;
-            when others =>
-               raise Internal_Error;
+            when others => raise Internal_Error;
          end case;
-         Extract_Clock (Ctxt, Get_Input_Net (Inst, 0), Clk, En);
+         Extract_Clock (Get_Input_Net (Inst, 0), Clk, En);
          exit when Clk /= No_Net;
 
          --  No clock.  Try the father.
@@ -1330,5 +1258,75 @@ package body Netlists.Inference is
 
       return En;
    end Infere_Assert;
+
+   procedure Infere_On_Port (Ctxt : Context_Acc;
+                             Port : Input;
+                             Off : Uns32;
+                             Outp : Net;
+                             Inst : Instance)
+   is
+      Drv : constant Net := Get_Driver (Port);
+      Res : Net;
+   begin
+      Disconnect (Port);
+      Res := Infere (Ctxt, Drv, Off, Outp, Get_Location (Inst), True);
+      Connect (Port, Res);
+   end Infere_On_Port;
+
+   procedure Infere_On_Signal (Ctxt : Context_Acc; Inst : Instance)
+   is
+      Outp : constant Net := Get_Output (Inst, 0);
+      Inpp : constant Input := Get_Input (Inst, 0);
+      Inpd : constant Net := Get_Driver (Inpp);
+      Drv : Instance;
+   begin
+      if Inpd = No_Net then
+         return;
+      end if;
+
+      Drv := Get_Net_Parent (Inpd);
+      case Get_Id (Drv) is
+         when Id_Mem_Multiport =>
+            Infere_On_Port (Ctxt, Get_Input (Drv, 0), 0, Outp, Inst);
+            Infere_On_Port (Ctxt, Get_Input (Drv, 1), 0, Outp, Inst);
+         when Concat_Module_Id =>
+            declare
+               Off : Uns32;
+               Concp : Input;
+            begin
+               Off := Get_Width (Outp);
+               for I in 1 .. Get_Nbr_Inputs (Drv) loop
+                  Concp := Get_Input (Drv, I - 1);
+                  Off := Off - Get_Width (Get_Driver (Concp));
+                  Infere_On_Port (Ctxt, Concp, Off, Outp, Inst);
+               end loop;
+               pragma Assert (Off = 0);
+            end;
+         when others =>
+            Infere_On_Port (Ctxt, Get_Input (Inst, 0), 0, Outp, Inst);
+      end case;
+   end Infere_On_Signal;
+
+   procedure Infere_Pass (Ctxt : Context_Acc; M : Module)
+   is
+      Inst, Next_Inst : Instance;
+   begin
+      Inst := Get_First_Instance (M);
+      while Inst /= No_Instance loop
+         Next_Inst := Get_Next_Instance (Inst);
+         case Get_Id (Inst) is
+            when Id_Output
+              | Id_Ioutput
+              | Id_Inout
+              | Id_Iinout
+              | Id_Signal
+              | Id_Isignal =>
+               Infere_On_Signal (Ctxt, Inst);
+            when others =>
+               null;
+         end case;
+         Inst := Next_Inst;
+      end loop;
+   end Infere_Pass;
 
 end Netlists.Inference;

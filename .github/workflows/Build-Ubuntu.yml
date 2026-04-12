@@ -7,8 +7,16 @@ on:
         description: 'Version of the Ubuntu image.'
         required: true
         type: string
+      ghdl_backend:
+        description: 'GHDL backend'
+        required: true
+        type: string
+      ghdl_version:
+        description: 'GHDL version'
+        required: true
+        type: string
       testsuites:
-        description: 'GHDL testsuites to run'
+        description: "List of GHDL testsuites to execute while testing (space separated). Alternatively: 'all' or 'none'"
         required: true
         type: string
     # Parameters created build artifacts
@@ -61,6 +69,7 @@ on:
 jobs:
   Build:
     name: Build GHDL on 'ubuntu-${{ inputs.ubuntu_version }}'
+    if: true
     runs-on: ubuntu-${{ inputs.ubuntu_version }}
     outputs:
       ghdl_artifact: ${{ steps.artifact_name.outputs.ghdl_artifact }}
@@ -71,7 +80,7 @@ jobs:
 
     steps:
       - name: ⏬ Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           # The command 'git describe' (used for version) needs the history.
           fetch-depth: 0
@@ -86,76 +95,201 @@ jobs:
       - name: 🖉 Assemble artifact name
         id: artifact_name
         run: |
-          echo "ghdl_artifact=${{ inputs.ubuntu_artifact }}-mcode" >> $GITHUB_OUTPUT
-          echo "libghdl_artifact=${{ inputs.libghdl_artifact }}-mcode" >> $GITHUB_OUTPUT
+          tee "${GITHUB_OUTPUT}" <<EOF
+          ghdl_artifact=${{ inputs.ubuntu_artifact }}-${{ inputs.ghdl_backend }}
+          libghdl_artifact=${{ inputs.libghdl_artifact }}-${{ inputs.ghdl_backend }}
+          EOF
 
       - name: 🔧 Install dependencies
         run: |
+          APT_ARGS="gcc g++ gnat"
+          if ${{ startsWith(inputs.ghdl_backend, 'mcode') }}; then
+            APT_ARGS="$APT_ARGS"
+          elif ${{ startsWith(inputs.ghdl_backend, 'llvm') }}; then
+            APT_ARGS="$APT_ARGS llvm clang"
+          elif ${{ startsWith(inputs.ghdl_backend, 'gcc') }}; then
+            APT_ARGS="$APT_ARGS libgmp-dev libmpfr-dev libmpc-dev libgettextpo-dev flex"
+          else
+            printf "%s\n" "Unknown GHDL backend!"
+            printf "::error title=%s::%s\n" "Dependencies" "Unknown GHDL backend."
+            exit 1
+          fi
+          printf "APT_ARGS=%s\n" "$APT_ARGS"
+
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends gcc g++ gnat
+          sudo apt-get install -y --no-install-recommends $APT_ARGS
+
+      - name: Download GCC sources
+        if: inputs.ghdl_backend == 'gcc'
+        run: |
+          GCC_VERSION="13.3.0"
+          GCC_URL="https://github.com/gcc-mirror/gcc/archive/refs/tags/releases/gcc-${GCC_VERSION}.tar.gz"
+          printf "GCC download URL: %s\n" "$GCC_URL"
+          mkdir -p gcc-srcs
+          curl -L "$GCC_URL" | tar -xz -C gcc-srcs --strip-components=1
+          ls -lAh gcc-srcs
 
       - name: Prepare build environment
         run: |
-          mkdir -p build/mcode
+          mkdir -p build/${{ inputs.ghdl_backend }}
           ./configure --help
 
       - name: ⚙ Configure GHDL
         run: |
-          cd build/mcode
+          cd build/${{ inputs.ghdl_backend }}
+
+          if ${{ startsWith(inputs.ghdl_backend, 'mcode') }}; then
+            CONFIG_ARGS=""
+          elif ${{ startsWith(inputs.ghdl_backend, 'llvm') }}; then
+            CONFIG_ARGS="--with-llvm-config"
+            if ${{ endsWith(inputs.ghdl_backend, 'jit') }}; then
+              CONFIG_ARGS="$CONFIG_ARGS --with-llvm-jit"
+            fi
+            CONFIG_ARGS="$CONFIG_ARGS CXX=clang++"
+          elif ${{ startsWith(inputs.ghdl_backend, 'gcc') }}; then
+            CONFIG_ARGS="--with-gcc=../../gcc-srcs"
+          else
+            printf "%s\n" "Unknown backend!"
+            exit 1
+          fi
+          printf "CONFIG_ARGS=%s\n" "$CONFIG_ARGS"
 
           NPROC=$(nproc)
           GNATMAKE="gnatmake -j$NPROC" \
           MAKE="make -j$NPROC" \
-          ../../configure --prefix=$(pwd)/../../install
+          ../../configure --prefix=$(pwd)/../../install $CONFIG_ARGS
+
+      - name: Copy sources (only GCC backend)
+        if: inputs.ghdl_backend == 'gcc'
+        run: |
+          cd build/${{ inputs.ghdl_backend }}
+          make -j$(nproc) copy-sources
+
+      - name: ⚙ Configure GCC (only GCC backend)
+        if: inputs.ghdl_backend == 'gcc'
+        run: |
+          mkdir gcc-objs
+          cd gcc-objs
+
+          # ../gcc-srcs/configure --help
+          # ../gcc-srcs/gcc/configure --help
+
+          ../gcc-srcs/configure \
+            --prefix=$(pwd)/../install \
+            --enable-languages=c,vhdl \
+            --disable-bootstrap \
+            --disable-lto \
+            --disable-multilib \
+            --disable-libssp \
+            --disable-libgomp \
+            --disable-libquadmath \
+            --disable-libatomic \
+            --disable-plugin \
+            "$(gcc -v 2>&1 | grep -o -- --enable-default-pie)"
+
+      - name: 🏭 Make GCC (only GCC backend)
+        if: inputs.ghdl_backend == 'gcc'
+        run: |
+          cd gcc-objs
+          make -j$(nproc)
+
+      - name: 🏭 Install GCC (only GCC backend)
+        if: inputs.ghdl_backend == 'gcc'
+        run: |
+          cd gcc-objs
+          make -j$(nproc) install
+          # Cleanup: remove useless part
+          cd ../install
+          rm -rf share
+          rm -rf include
+          # Remove libraries and include
+          rm -rf lib/gcc lib64
+          # Keep only ghdl binary
+          for f in bin/*; do [ "$f" = "bin/ghdl" ] || rm $f; done
+          # Keep only ghdl1
+          for f in libexec/gcc/*/*/*; do case $f in */ghdl1) ;; *) rm -rf $f;; esac; done
+          ls -lR ../install
 
       - name: 🔨 Make GHDL
         run: |
-          cd build/mcode
+          cd build/${{ inputs.ghdl_backend }}
           make -j$(nproc)
+
+      - name: 🔨 Make ghdllib (only GCC backend)
+        if: inputs.ghdl_backend == 'gcc'
+        run: |
+          cd build/${{ inputs.ghdl_backend }}
+          make -j$(nproc) ghdllib
 
       - name: 📋 Install GHDL
         run: |
-          cd build/mcode
-          # sudo resets PATH (secure_path); install may rebuild the Rust adapter, so keep cargo on PATH.
-          sudo env "PATH=$PATH" make -j$(nproc) install
+          cd build/${{ inputs.ghdl_backend }}
+          sudo make -j$(nproc) install
 
       - name: 📋 Write requirements file
         id: requirements
         run: |
           GCC_VERSION="$(gcc --version | grep gcc)"
-          echo "gcc --version:         ${GCC_VERSION}"
+          printf "gcc --version:         %s\n" "${GCC_VERSION}"
           regex='gcc \((.*?)\) ([0-9]+)\.([0-9]+)\.([0-9]+)'
           if [[ "${GCC_VERSION}" =~ $regex ]]; then
-            # echo "GCC major version: ${BASH_REMATCH[2]}"
+            # printf "GCC major version: %s\n" "${BASH_REMATCH[2]}"
             GCC_MAJOR_VERSION=${BASH_REMATCH[2]}
           else
-            echo "Can't parse GCC's major version!"
-            echo "::error title=GCC Version::Can't parse GCC's major version."
+            printf "%s\n" "Can't parse GCC's major version!"
+            printf "::error title=%s::%s\n" "GCC Version" "Can't parse GCC's major version."
             exit 1
           fi
 
           GNAT_VERSION="$(gnatls --version | grep GNATLS)"
-          echo "gnatls --version:      ${GNAT_VERSION}"
+          printf "gnatls --version:      %s\n" "${GNAT_VERSION}"
           regex='GNATLS ([0-9]+)\.([0-9]+)\.([0-9]+)'
           if [[ "${GNAT_VERSION}" =~ $regex ]]; then
-            # echo "GNAT major version: ${BASH_REMATCH[1]}"
+            # printf "GNAT major version: %s\n" "${BASH_REMATCH[1]}"
             GNAT_MAJOR_VERSION=${BASH_REMATCH[1]}
           else
-            echo "Can't parse GNAT's major version!"
-            echo "::error title=GNAT Version::Can't parse GNAT's major version."
+            printf "%s\n" "Can't parse GNAT's major version!"
+            printf "::error title=%s::%s\n" "GNAT Version" "Can't parse GNAT's major version."
             exit 1
           fi
 
-          # Common GHDL dependencies (mcode backend)
-          echo "libgnat-${GNAT_MAJOR_VERSION}" >> ubuntu.requirements
+          # Common GHDL dependencies
+          printf "%s\n" "libgnat-${GNAT_MAJOR_VERSION}" >> ubuntu.requirements
 
-          echo -e "\e[36mCollected requirements:\e[0m"
-          cat ubuntu.requirements | while read -r line; do echo -e "\e[36m  ${line}\e[0m"; done
+          # LLVM specific dependencies
+          if ${{ startsWith(inputs.ghdl_backend, 'llvm') }}; then
+            LLVM_VERSION="$(llvm-config --version)"
+            printf "llvm-config --version: %s\n" "${LLVM_VERSION}"
+            regex='([0-9]+)\.([0-9]+)\.([0-9]+)'
+            if [[ "${LLVM_VERSION}" =~ $regex ]]; then
+              # printf "LLVM major version: %s\n" "${BASH_REMATCH[1]}"
+              LLVM_MAJOR_VERSION=${BASH_REMATCH[1]}
+            else
+              printf "%s\n" "Can't parse LLVM's major version!"
+              printf "::error title=%s::%s\n" "LLVM Version" "Can't parse LLVM's major version."
+              exit 1
+            fi
+
+            printf "%s\n" "libllvm${LLVM_MAJOR_VERSION}" >> ubuntu.requirements
+          fi
+
+          # For backend requiring compiler
+          if ${{ inputs.ghdl_backend == 'gcc' || inputs.ghdl_backend == 'llvm' }}; then
+            printf "%s\n" "gcc" >> ubuntu.requirements
+            printf "%s\n" "libc-dev" >> ubuntu.requirements
+            printf "%s\n" "zlib1g-dev" >> ubuntu.requirements
+          fi
+
+          printf "\x1b[36mCollected requirements:\x1b[0m\n"
+          cat ubuntu.requirements | while read -r line; do printf "\x1b[36m  %s\x1b[0m\n" "${line}"; done
 
           sudo install -m 644 -p ubuntu.requirements ./install/
 
-          echo "GCC_MAJOR_VERSION=${GCC_MAJOR_VERSION}" >> $GITHUB_OUTPUT
-          echo "GNAT_MAJOR_VERSION=${GNAT_MAJOR_VERSION}" >> $GITHUB_OUTPUT
+          tee "${GITHUB_OUTPUT}" <<EOF
+          GCC_MAJOR_VERSION=${GCC_MAJOR_VERSION}
+          GNAT_MAJOR_VERSION=${GNAT_MAJOR_VERSION}
+          LLVM_MAJOR_VERSION=${LLVM_MAJOR_VERSION}
+          EOF
 
       - name: "🚦 Run testsuite: 'sanity'"
         run: |
@@ -166,7 +300,7 @@ jobs:
           ./testsuite.sh sanity
 
       - name: 📤 Upload '${{ steps.artifact_name.outputs.ghdl_artifact }}' artifact
-        uses: pyTooling/upload-artifact@v4
+        uses: pyTooling/upload-artifact@v6
         if: inputs.ubuntu_artifact != ''
         with:
           name: ${{ steps.artifact_name.outputs.ghdl_artifact }}
@@ -175,8 +309,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: ✂ Remove binaries, libraries and other files for libghdl
-        if: inputs.ubuntu_version == '24.04'
+      - name: ✂ Remove binaries, libraries and other files for libghdl (only mcode backend)
+        if: inputs.ubuntu_version == '24.04' && inputs.ghdl_backend == 'mcode'
         run: |
           sudo chown -R runner:docker ./install
           rm -Rf ./install/bin
@@ -188,15 +322,15 @@ jobs:
           rm -Rf ./install/lib/libghw.so
           rm -Rf ./install/*.requirements
 
-      - name: Copy additional dependencies
-        if: inputs.ubuntu_version == '24.04'
+      - name: Copy additional dependencies (only mcode backend)
+        if: inputs.ubuntu_version == '24.04' && inputs.ghdl_backend == 'mcode'
         run: |
           # libgnat
           cp -v /lib/x86_64-linux-gnu/libgnat-${{ steps.requirements.outputs.GNAT_MAJOR_VERSION }}.so ./install/lib
 
-      - name: 📤 Upload '${{ steps.artifact_name.outputs.libghdl_artifact }}' artifact
-        uses: pyTooling/upload-artifact@v4
-        if: inputs.ubuntu_version == '24.04'
+      - name: 📤 Upload '${{ steps.artifact_name.outputs.libghdl_artifact }}' artifact (only mcode backend)
+        uses: pyTooling/upload-artifact@v6
+        if: inputs.ubuntu_version == '24.04' && inputs.ghdl_backend == 'mcode'
         with:
           name: ${{ steps.artifact_name.outputs.libghdl_artifact }}
           working-directory: install
@@ -204,37 +338,40 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Install libghdl into pyGHDL/lib
-        if: inputs.unittesting || inputs.coverage
+      - name: Install libghdl into pyGHDL/lib (only mcode backend)
+        if: (inputs.unittesting || inputs.coverage) && inputs.ghdl_backend == 'mcode'
         run: |
           cp -r -v ./install/lib/* ./pyGHDL/lib
 
-      - name: 🐍 Setup Python
-        uses: actions/setup-python@v5
-        if: inputs.unittesting || inputs.coverage
+      - name: 🐍 Setup Python (only mcode backend)
+        uses: actions/setup-python@v6
+        if: (inputs.unittesting || inputs.coverage) && inputs.ghdl_backend == 'mcode'
         with:
           python-version: ${{ inputs.python_version }}
 
-      - name: 🧰 Install dependencies
-        if: inputs.unittesting || inputs.coverage
+      - name: 🧰 Install dependencies (only mcode backend)
+        if: (inputs.unittesting || inputs.coverage) && inputs.ghdl_backend == 'mcode'
         run: |
           python -m pip install --disable-pip-version-check tomli
           python -m pip install --disable-pip-version-check -r testsuite/requirements.txt
 
       # TODO: replace with https://github.com/pyTooling/Actions/blob/dev/.github/workflows/ExtractConfiguration.yml
-      - name: 🔁 Extract configurations from pyproject.toml
-        if: inputs.coverage
+      - name: 🔁 Extract configurations from pyproject.toml (only mcode backend)
         id: getVariables
+        if: inputs.coverage && inputs.ghdl_backend == 'mcode'
         shell: python
         run: |
           from os       import getenv
           from pathlib  import Path
-          from sys      import version
+          from sys      import version, version_info
           from textwrap import dedent
 
           print(f"Python: {version}")
 
-          from tomli import load as tomli_load
+          if version_info < (3, 11):
+            from tomli import load as toml_load
+          else:
+            from tomllib import load as toml_load
 
           htmlDirectory = Path("htmlcov")
           xmlFile =  Path("./coverage.xml")
@@ -244,7 +381,7 @@ jobs:
           pyProjectFile =  Path("pyproject.toml")
           if pyProjectFile.exists():
             with pyProjectFile.open("rb") as file:
-              pyProjectSettings = tomli_load(file)
+              pyProjectSettings = toml_load(file)
 
             htmlDirectory = Path(pyProjectSettings["tool"]["coverage"]["html"]["directory"])
             xmlFile       = Path(pyProjectSettings["tool"]["coverage"]["xml"]["output"])
@@ -267,29 +404,29 @@ jobs:
 
           print(f"DEBUG:\n  html={htmlDirectory}\n  xml={xmlFile}\n  json={jsonFile}")
 
-      - name: "🚦 Testsuite: 'pyunit'"
-        if: inputs.unittesting || inputs.coverage
+      - name: "🚦 Testsuite: 'pyunit' (only mcode backend)"
+        if: (inputs.unittesting || inputs.coverage) && inputs.ghdl_backend == 'mcode'
         run: |
           export PYTHONPATH=$(pwd)
 
           [ -n '${{ inputs.unittest_xml_artifact }}' ] && PYTEST_ARGS='--junitxml=report/unit/TestReportSummary.xml' || unset PYTEST_ARGS
           if ${{ inputs.coverage }}; then
-            echo "coverage run --data-file=.coverage --rcfile=pyproject.toml -m pytest -raP $PYTEST_ARGS --color=yes ${{ inputs.pyunit_testsuites }}"
+            printf "%s\n" "coverage run --data-file=.coverage --rcfile=pyproject.toml -m pytest -raP $PYTEST_ARGS --color=yes ${{ inputs.pyunit_testsuites }}"
             coverage run --data-file=.coverage --rcfile=pyproject.toml -m pytest -raP $PYTEST_ARGS --color=yes ${{ inputs.pyunit_testsuites }}
           elif ${{ inputs.unittesting }}; then
-            echo "python -m pytest -raP $PYTEST_ARGS --color=yes ${{ inputs.pyunit_testsuites }}"
+            printf "%s\n" "python -m pytest -raP $PYTEST_ARGS --color=yes ${{ inputs.pyunit_testsuites }}"
             python -m pytest -raP $PYTEST_ARGS --color=yes ${{ inputs.pyunit_testsuites }}
           else
-            echo "::error title=InternalError::Reached impossible execution path."
+            printf "::error title=%s::%s\n" "InternalError" "Reached impossible execution path."
             exit 1
           fi
 
 # Upload test result artifacts
 
-      - name: 📤 Upload 'TestReportSummary.xml' artifact
-        if: inputs.unittesting && inputs.unittest_xml_artifact != ''
+      - name: 📤 Upload 'TestReportSummary.xml' artifact (only mcode backend)
+        uses: pyTooling/upload-artifact@v6
+        if: inputs.unittesting && inputs.ghdl_backend == 'mcode' && inputs.unittest_xml_artifact != ''
         continue-on-error: true
-        uses: pyTooling/upload-artifact@v4
         with:
           name: ${{ inputs.unittest_xml_artifact }}-Ubuntu-${{ inputs.ubuntu_version }}-${{ inputs.python_version }}
           working-directory: report/unit
@@ -299,14 +436,14 @@ jobs:
 
 # Convert and upload coverage results as artifact
 
-      - name: Report code coverage
-        if: inputs.coverage
+      - name: Report code coverage (only mcode backend)
+        if: inputs.coverage && inputs.ghdl_backend == 'mcode'
         run: coverage report --rcfile=pyproject.toml --data-file=.coverage
 
-      - name: 📤 Upload 'Coverage SQLite Database' artifact
-        if: inputs.coverage && inputs.coverage_sqlite_artifact != ''
+      - name: 📤 Upload 'Coverage SQLite Database' artifact (only mcode backend)
+        uses: pyTooling/upload-artifact@v6
+        if: inputs.coverage && inputs.ghdl_backend == 'mcode' && inputs.coverage_sqlite_artifact != ''
         continue-on-error: true
-        uses: pyTooling/upload-artifact@v4
         with:
           name: ${{ inputs.coverage_sqlite_artifact }}-Ubuntu-${{ inputs.ubuntu_version }}-${{ inputs.python_version }}
           path: .coverage
@@ -330,9 +467,11 @@ jobs:
       - Build
     if: inputs.ubuntu_artifact != ''
     with:
-      ubuntu_image:        ubuntu-${{ inputs.ubuntu_version }}
-      ghdl_artifact:       ${{ needs.Build.outputs.ghdl_artifact }}
-      ubuntu_version:      ${{ inputs.ubuntu_version }}
-      publish:             ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || contains(github.ref, 'refs/tags/')) }}
-      testsuites:          ${{ inputs.testsuites }}
+      ubuntu_image:   ubuntu-${{ inputs.ubuntu_version }}
+      ghdl_artifact:  ${{ needs.Build.outputs.ghdl_artifact }}
+      ubuntu_version: ${{ inputs.ubuntu_version }}
+      ghdl_backend:   ${{ inputs.ghdl_backend }}
+      ghdl_version:   ${{ inputs.ghdl_version }}
+      publish:        ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || contains(github.ref, 'refs/tags/')) }}
+      testsuites:     ${{ inputs.testsuites }}
     secrets: inherit

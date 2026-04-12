@@ -47,8 +47,10 @@ from pyVHDLModel.Sequential import OthersCase as VHDLModel_OthersCase
 from pyVHDLModel.Sequential import IfStatement as VHDLModel_IfStatement
 from pyVHDLModel.Sequential import CaseStatement as VHDLModel_CaseStatement
 from pyVHDLModel.Sequential import ForLoopStatement as VHDLModel_ForLoopStatement
+from pyVHDLModel.Sequential import WhileLoopStatement as VHDLModel_WhileLoopStatement
 from pyVHDLModel.Sequential import NullStatement as VHDLModel_NullStatement
 from pyVHDLModel.Sequential import WaitStatement as VHDLModel_WaitStatement
+from pyVHDLModel.Sequential import NextStatement as VHDLModel_NextStatement
 from pyVHDLModel.Sequential import ExitStatement as VHDLModel_ExitStatement
 from pyVHDLModel.Sequential import SequentialProcedureCall as VHDLModel_SequentialProcedureCall
 from pyVHDLModel.Sequential import SequentialSimpleSignalAssignment as VHDLModel_SequentialSimpleSignalAssignment
@@ -69,7 +71,7 @@ class IfBranch(VHDLModel_IfBranch, DOMMixin):
         branchNode: Iir,
         condition: ExpressionUnion,
         statements: Iterable[SequentialStatement] = None,
-    ):
+    ) -> None:
         super().__init__(condition, statements)
         DOMMixin.__init__(self, branchNode)
 
@@ -94,7 +96,7 @@ class ElsifBranch(VHDLModel_ElsifBranch, DOMMixin):
         branchNode: Iir,
         condition: ExpressionUnion,
         statements: Iterable[SequentialStatement] = None,
-    ):
+    ) -> None:
         super().__init__(condition, statements)
         DOMMixin.__init__(self, branchNode)
 
@@ -118,7 +120,7 @@ class ElseBranch(VHDLModel_ElseBranch, DOMMixin):
         self,
         branchNode: Iir,
         statements: Iterable[SequentialStatement] = None,
-    ):
+    ) -> None:
         super().__init__(statements)
         DOMMixin.__init__(self, branchNode)
 
@@ -143,7 +145,7 @@ class IfStatement(VHDLModel_IfStatement, DOMMixin):
         elsifBranches: Iterable[ElsifBranch] = None,
         elseBranch: ElseBranch = None,
         label: str = None,
-    ):
+    ) -> None:
         super().__init__(ifBranch, elsifBranches, elseBranch, label)
         DOMMixin.__init__(self, ifNode)
 
@@ -171,14 +173,14 @@ class IfStatement(VHDLModel_IfStatement, DOMMixin):
 
 @export
 class IndexedChoice(VHDLModel_IndexedChoice, DOMMixin):
-    def __init__(self, node: Iir, expression: ExpressionUnion):
+    def __init__(self, node: Iir, expression: ExpressionUnion) -> None:
         super().__init__(expression)
         DOMMixin.__init__(self, node)
 
 
 @export
 class RangedChoice(VHDLModel_RangedChoice, DOMMixin):
-    def __init__(self, node: Iir, rng: Range):
+    def __init__(self, node: Iir, rng: Range) -> None:
         super().__init__(rng)
         DOMMixin.__init__(self, node)
 
@@ -190,7 +192,7 @@ class Case(VHDLModel_Case, DOMMixin):
         node: Iir,
         choices: Iterable[SequentialChoice],
         statements: Iterable[SequentialStatement] = None,
-    ):
+    ) -> None:
         super().__init__(choices, statements)
         DOMMixin.__init__(self, node)
 
@@ -210,7 +212,7 @@ class OthersCase(VHDLModel_OthersCase, DOMMixin):
         self,
         caseNode: Iir,
         statements: Iterable[SequentialStatement] = None,
-    ):
+    ) -> None:
         super().__init__(statements)
         DOMMixin.__init__(self, caseNode)
 
@@ -236,7 +238,7 @@ class CaseStatement(VHDLModel_CaseStatement, DOMMixin):
         label: str,
         expression: ExpressionUnion,
         cases: Iterable[SequentialCase],
-    ):
+    ) -> None:
         super().__init__(expression, cases, label)
         DOMMixin.__init__(self, caseNode)
 
@@ -329,7 +331,7 @@ class ForLoopStatement(VHDLModel_ForLoopStatement, DOMMixin):
         rng: Range,
         statements: Iterable[SequentialStatement] = None,
         label: str = None,
-    ):
+    ) -> None:
         super().__init__(loopIndex, rng, statements, label)
         DOMMixin.__init__(self, loopNode)
 
@@ -367,6 +369,53 @@ class ForLoopStatement(VHDLModel_ForLoopStatement, DOMMixin):
 
 
 @export
+class WhileLoopStatement(VHDLModel_WhileLoopStatement, DOMMixin):
+    def __init__(
+        self,
+        loopNode: Iir,
+        condition: ExpressionUnion,
+        statements: Iterable[SequentialStatement] = None,
+        label: str = None,
+    ) -> None:
+        super().__init__(condition, statements, label)
+        DOMMixin.__init__(self, loopNode)
+
+    @classmethod
+    def parse(cls, loopNode: Iir, label: str) -> "WhileLoopStatement":
+        from pyGHDL.dom._Utils import GetNameOfNode, GetIirKindOfNode
+        from pyGHDL.dom._Translate import (
+            GetSequentialStatementsFromChainedNodes,
+            GetRangeFromNode,
+            GetName,
+        )
+
+        # spec = nodes.Get_Parameter_Specification(loopNode)
+        # loopIndex = GetNameOfNode(spec)
+        #
+        # discreteRange = nodes.Get_Discrete_Range(spec)
+        # rangeKind = GetIirKindOfNode(discreteRange)
+        # if rangeKind == nodes.Iir_Kind.Range_Expression:
+        #     rng = GetRangeFromNode(discreteRange)
+        # elif rangeKind in (
+        #     nodes.Iir_Kind.Attribute_Name,
+        #     nodes.Iir_Kind.Parenthesis_Name,
+        # ):
+        #     rng = GetName(discreteRange)
+        # else:
+        #     pos = Position.parse(loopNode)
+        #     raise DOMException(
+        #         f"Unknown discrete range kind '{rangeKind.name}' in for...loop statement at line {pos.Line}."
+        #     )
+
+        condition = None
+
+        statementChain = nodes.Get_Sequential_Statement_Chain(loopNode)
+        statements = GetSequentialStatementsFromChainedNodes(statementChain, "while", label)
+
+        return cls(loopNode, condition, statements, label)
+
+
+@export
 class SequentialSimpleSignalAssignment(VHDLModel_SequentialSimpleSignalAssignment, DOMMixin):
     def __init__(
         self,
@@ -374,7 +423,7 @@ class SequentialSimpleSignalAssignment(VHDLModel_SequentialSimpleSignalAssignmen
         target: Symbol,
         waveform: Iterable[WaveformElement],
         label: str = None,
-    ):
+    ) -> None:
         super().__init__(target, waveform, label)
         DOMMixin.__init__(self, assignmentNode)
 
@@ -400,7 +449,7 @@ class SequentialProcedureCall(VHDLModel_SequentialProcedureCall, DOMMixin):
         procedureName: Symbol,
         parameterMappings: Iterable[ParameterAssociationItem],
         label: str = None,
-    ):
+    ) -> None:
         super().__init__(procedureName, parameterMappings, label)
         DOMMixin.__init__(self, callNode)
 
@@ -426,7 +475,7 @@ class SequentialAssertStatement(VHDLModel_SequentialAssertStatement, DOMMixin):
         message: ExpressionUnion = None,
         severity: ExpressionUnion = None,
         label: str = None,
-    ):
+    ) -> None:
         super().__init__(condition, message, severity, label)
         DOMMixin.__init__(self, assertNode)
 
@@ -451,7 +500,7 @@ class SequentialReportStatement(VHDLModel_SequentialReportStatement, DOMMixin):
         message: ExpressionUnion,
         severity: ExpressionUnion = None,
         label: str = None,
-    ):
+    ) -> None:
         super().__init__(message, severity, label)
         DOMMixin.__init__(self, reportNode)
 
@@ -472,9 +521,21 @@ class NullStatement(VHDLModel_NullStatement, DOMMixin):
         self,
         waitNode: Iir,
         label: str = None,
-    ):
+    ) -> None:
         super().__init__(label)
         DOMMixin.__init__(self, waitNode)
+
+
+@export
+class NextStatement(VHDLModel_NextStatement, DOMMixin):
+    def __init__(
+        self,
+        exitNode: Iir,
+        label: str = None,
+    ) -> None:
+        super().__init__(condition=None, loopLabel=label)
+        DOMMixin.__init__(self, exitNode)
+        # TODO: parse condition
 
 
 @export
@@ -483,7 +544,7 @@ class ExitStatement(VHDLModel_ExitStatement, DOMMixin):
         self,
         exitNode: Iir,
         label: str = None,
-    ):
+    ) -> None:
         super().__init__(condition=None, loopLabel=label)
         DOMMixin.__init__(self, exitNode)
         # TODO: parse condition
@@ -498,7 +559,7 @@ class WaitStatement(VHDLModel_WaitStatement, DOMMixin):
         condition: ExpressionUnion = None,
         timeout: ExpressionUnion = None,
         label: str = None,
-    ):
+    ) -> None:
         super().__init__(sensitivityList, condition, timeout, label)
         DOMMixin.__init__(self, waitNode)
 

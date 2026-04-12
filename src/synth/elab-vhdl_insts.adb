@@ -16,6 +16,8 @@
 --  You should have received a copy of the GNU General Public License
 --  along with this program.  If not, see <gnu.org/licenses>.
 
+with Ada.Unchecked_Deallocation;
+
 with Types; use Types;
 with Libraries;
 with Areapools;
@@ -47,6 +49,9 @@ package body Elab.Vhdl_Insts is
    --  in sub-instances.
    --  Otherwise, sub-instances are elaborated at the end of each unit.
    Flag_Elab_Sub_Instances : constant Boolean := True;
+
+   --  Index of the last annotated element of Design_Units.
+   Last_Annotated_Unit : Integer;
 
    procedure Elab_Instance_Body (Syn_Inst : Synth_Instance_Acc);
    procedure Elab_Recurse_Instantiations
@@ -128,7 +133,10 @@ package body Elab.Vhdl_Insts is
          Inter := Get_Association_Interface (Assoc, Assoc_Inter);
          case Iir_Kinds_Interface_Declaration (Get_Kind (Inter)) is
             when Iir_Kind_Interface_Constant_Declaration =>
-               Inter_Type := Elab_Declaration_Type (Sub_Inst, Inter);
+               if Get_Whole_Association_Flag (Assoc) then
+                  --  Elab only once (for the first association).
+                  Inter_Type := Elab_Declaration_Type (Sub_Inst, Inter);
+               end if;
                Formal_Base := No_Valtyp;
 
                case Get_Kind (Assoc) is
@@ -146,7 +154,7 @@ package body Elab.Vhdl_Insts is
                            Formal : constant Node := Get_Formal (Assoc);
                            Dyn : Dyn_Name;
                         begin
-                           Synth_Assignment_Prefix
+                           Synth_Object_Name
                              (Syn_Inst, Sub_Inst, Formal,
                               Formal_Base, Formal_Typ, Formal_Offs, Dyn);
                            pragma Assert (Dyn = No_Dyn_Name);
@@ -158,8 +166,7 @@ package body Elab.Vhdl_Insts is
                      Val.Typ := Synth_Subtype_Indication
                        (Syn_Inst, Get_Actual_Type (Assoc));
                      Val := Create_Value_Memory (Val.Typ, Expr_Pool'Access);
-                  when others =>
-                     raise Internal_Error;
+                  when others => raise Internal_Error;
                end case;
 
                if Get_Whole_Association_Flag (Assoc) then
@@ -220,13 +227,18 @@ package body Elab.Vhdl_Insts is
                      Act_Typ := Synth_Subtype_Indication (Syn_Inst, Act);
                   else
                      --  An existing type.
-                     Act_Typ := Get_Subtype_Object (Syn_Inst, Act);
+                     Act_Typ := Get_Elaborated_Subtype_Indication
+                       (Syn_Inst, Act);
                   end if;
                   Act_Typ := Unshare (Act_Typ, Instance_Pool);
                   Create_Interface_Type
                     (Sub_Inst, Get_Interface_Type_Definition (Inter),
                      Act_Typ, Act);
                   Release_Expr_Pool (Marker);
+                  Elab_Generics_Association
+                    (Sub_Inst, Syn_Inst,
+                     Get_Interface_Type_Subprograms (Inter),
+                     Get_Subprogram_Association_Chain (Assoc));
                end;
 
             when Iir_Kind_Interface_Variable_Declaration
@@ -246,8 +258,7 @@ package body Elab.Vhdl_Insts is
                         Act := Get_Open_Actual (Assoc);
                      when Iir_Kind_Association_Element_Subprogram =>
                         Act := Get_Actual (Assoc);
-                     when others =>
-                        raise Internal_Error;
+                     when others => raise Internal_Error;
                   end case;
                   Act := Strip_Denoting_Name (Act);
                   Create_Interface_Subprg (Sub_Inst, Inter, Act);
@@ -435,8 +446,7 @@ package body Elab.Vhdl_Insts is
                   null;
                when Iir_Kinds_Verification_Unit =>
                   null;
-               when Iir_Kind_Foreign_Module =>
-                  raise Internal_Error;
+               when Iir_Kind_Foreign_Module => raise Internal_Error;
             end case;
          end if;
          Next (Dep_It);
@@ -497,13 +507,11 @@ package body Elab.Vhdl_Insts is
                      when Iir_Kind_Block_Statement =>
                         Set_Block_Block_Configuration (Sub_Blk, Item);
                         Count := Count + 1;
-                     when others =>
-                        Vhdl.Errors.Error_Kind
-                          ("apply_block_configuration(blk)", Sub_Blk);
+                     when others => Error_Kind ("apply_block_config(blk)",
+                                                Sub_Blk);
                   end case;
                end;
-            when others =>
-               Vhdl.Errors.Error_Kind ("apply_block_configuration", Item);
+            when others => Error_Kind ("apply_block_configuration", Item);
          end case;
          Item := Get_Chain (Item);
       end loop;
@@ -602,19 +610,186 @@ package body Elab.Vhdl_Insts is
       pragma Assert (Get_Kind (Res) = Iir_Kind_Component_Configuration);
    end Get_Next_Component_Configuration;
 
-   function Elab_Port_Association_Type (Sub_Inst : Synth_Instance_Acc;
-                                        Syn_Inst : Synth_Instance_Acc;
-                                        Inter : Node;
-                                        Assoc : Node) return Type_Acc
+   type Node_Couple_Type is record
+      Assoc : Node;
+      Formal : Node;
+   end record;
+
+   type Node_Couple_Array is array (Natural range <>) of Node_Couple_Type;
+   type Node_Couple_Arr_Acc is access Node_Couple_Array;
+
+   procedure Free_Node_Couple_Array is new Ada.Unchecked_Deallocation
+     (Node_Couple_Array, Node_Couple_Arr_Acc);
+
+   function Elab_Individual_Typ (Syn_Inst : Synth_Instance_Acc;
+                                 Assocs : Node_Couple_Array;
+                                 Typ : Type_Acc;
+                                 Depth : Natural) return Type_Acc
+   is
+      function Get_Name_Suffix_1 (Name : Node;
+                                  Pos : Positive;
+                                  Res : Node;
+                                  Res_Pos : Natural) return Node
+      is
+         Prev : Node;
+      begin
+         case Get_Kind (Name) is
+            when Iir_Kind_Selected_Element
+               | Iir_Kind_Indexed_Name =>
+               Prev := Get_Prefix (Name);
+               if Res_Pos = Pos then
+                  return Get_Name_Suffix_1
+                    (Prev, Pos, Get_Prefix (Res), Res_Pos);
+               else
+                  return Get_Name_Suffix_1 (Prev, Pos, Res, Res_Pos + 1);
+               end if;
+            when Iir_Kinds_Denoting_Name =>
+               if Res_Pos = Pos then
+                  return Res;
+               end if;
+               raise Internal_Error;
+            when others => raise Internal_Error;
+         end case;
+      end Get_Name_Suffix_1;
+
+      --  Get the POS-th suffix of NAME.
+      --  A suffix is a selected name, or an indexed name.
+      function Get_Name_Suffix (Name : Node; Pos : Positive) return Node is
+      begin
+         return Get_Name_Suffix_1 (Name, Pos, Name, 0);
+      end Get_Name_Suffix;
+
+   begin
+      case Typ.Kind is
+         when Type_Array_Unbounded =>
+            --  If one of the suffix denotes a whole object, get the type from
+            --  it.  Otherwise, recurse.
+            declare
+               Suff : Node;
+               Formal : Node;
+               El_Typ : Type_Acc;
+            begin
+               for I in Assocs'Range loop
+                  Formal := Assocs (I).Formal;
+                  Suff := Get_Name_Suffix (Formal, Depth + 1);
+                  if Suff = Formal then
+                     El_Typ := Exec_Name_Subtype
+                       (Syn_Inst, Get_Actual (Assocs (I).Assoc));
+                     return Create_Array_From_Array_Unbounded (Typ, El_Typ);
+                  end if;
+               end loop;
+               El_Typ := Elab_Individual_Typ
+                 (Syn_Inst, Assocs,
+                  Get_Array_Element_Multidim (Typ), Depth + 1);
+               return Create_Array_From_Array_Unbounded (Typ, El_Typ);
+            end;
+         when Type_Unbounded_Record =>
+            declare
+               Parent_Rec : constant Rec_El_Array_Acc := Typ.Rec;
+               Els : Rec_El_Array_Acc;
+               Formal : Node;
+               Suff : Node;
+               El : Node;
+               Sub_Assocs : Node_Couple_Arr_Acc;
+               Sub_Cnt : Natural;
+            begin
+               --  Create array of elements
+               Els := Create_Rec_El_Array (Parent_Rec.Len);
+               --  For each element:
+               for I in 1 .. Parent_Rec.Len loop
+                  Sub_Cnt := 0;
+                  for J in Assocs'Range loop
+                     Formal := Assocs (J).Formal;
+                     Suff := Get_Name_Suffix (Formal, Depth + 1);
+                     pragma Assert
+                       (Get_Kind (Suff) = Iir_Kind_Selected_Element);
+                     El := Get_Named_Entity (Suff);
+                     if Get_Element_Position (El) = Iir_Index32 (I - 1) then
+                        if Suff = Formal then
+                           Els.E (I).Typ := Exec_Name_Subtype
+                             (Syn_Inst,
+                              Get_Actual (Assocs (Natural (I)).Assoc));
+                           Sub_Cnt := 0;
+                           exit;
+                        else
+                           if Sub_Assocs = null then
+                              Sub_Assocs :=
+                                new Node_Couple_Array(1 .. Assocs'Length);
+                           end if;
+                           Sub_Cnt := Sub_Cnt + 1;
+                           Sub_Assocs (Sub_Cnt) := Assocs (J);
+                        end if;
+                     end if;
+                  end loop;
+                  if Sub_Cnt /= 0 then
+                     Els.E (I).Typ := Elab_Individual_Typ
+                       (Syn_Inst, Sub_Assocs (1 .. Sub_Cnt),
+                        Parent_Rec.E (I).Typ, Depth + 1);
+                  end if;
+               end loop;
+               if Sub_Assocs /= null then
+                  Free_Node_Couple_Array (Sub_Assocs);
+               end if;
+               return Create_Record_Type (Typ, Els);
+            end;
+         when others => raise Internal_Error;
+      end case;
+   end Elab_Individual_Typ;
+
+   function Elab_Individual_Subtype (Syn_Inst : Synth_Instance_Acc;
+                                     Assoc : Node) return Type_Acc
+   is
+      Res : Type_Acc;
+      Arr : Node_Couple_Arr_Acc;
+      Cnt : Natural;
+      El : Node;
+   begin
+      Res := Synth_Subtype_Indication (Syn_Inst, Get_Actual_Type (Assoc));
+      if Is_Bounded_Type (Res) then
+         return Res;
+      end if;
+
+      --  Count number of associations in the chain
+      El := Get_Chain (Assoc);
+      Cnt := 0;
+      while not Get_Whole_Association_Flag (El) loop
+         Cnt := Cnt + 1;
+         El := Get_Chain (El);
+         exit when El = Null_Node;
+      end loop;
+
+      --  Allocate and fill
+      Arr := new Node_Couple_Array(1 .. Cnt);
+      El := Get_Chain (Assoc);
+      for I in Arr'Range loop
+         Arr (I) := (El, Get_Formal (El));
+         El := Get_Chain (El);
+      end loop;
+
+      --  Complete the type.
+      Res := Elab_Individual_Typ (Syn_Inst, Arr.all, Res, 0);
+
+      Free_Node_Couple_Array (Arr);
+      return Res;
+   end Elab_Individual_Subtype;
+
+   procedure Elab_Port_Association_Type (Sub_Inst : Synth_Instance_Acc;
+                                         Syn_Inst : Synth_Instance_Acc;
+                                         Inter : Node;
+                                         Assoc : Node)
    is
       Marker : Mark_Type;
       Inter_Typ : Type_Acc;
       Val : Valtyp;
       Res : Type_Acc;
    begin
+      --  Elaborate subtype of the port.
       Inter_Typ := Elab_Declaration_Type (Sub_Inst, Inter);
 
       if not Is_Bounded_Type (Inter_Typ) then
+         --  The subtype is not bounded, so the bounds are (partially) set
+         --  by the actual(s).
+
          --  TODO
          --  Find the association for this interface
          --  * if individual assoc: get type
@@ -625,38 +800,100 @@ package body Elab.Vhdl_Insts is
 
          Mark_Expr_Pool (Marker);
 
-         if Get_Kind (Assoc) = Iir_Kind_Association_Element_By_Expression
-           and then not Get_Inertial_Flag (Assoc)
-         then
-            --  For expression: just compute the expression and associate.
-            Val := Synth_Expression_With_Type
-              (Syn_Inst, Get_Actual (Assoc), Inter_Typ);
-            Res := Val.Typ;
-            if Res /= null then
-               Res := Unshare (Res, Global_Pool'Access);
-            end if;
-         else
-            case Iir_Kinds_Association_Element_Parameters (Get_Kind (Assoc)) is
-               when Iir_Kinds_Association_Element_By_Actual =>
+         case Iir_Kinds_Association_Element_Parameters (Get_Kind (Assoc)) is
+            when Iir_Kind_Association_Element_By_Expression =>
+               if Get_Inertial_Flag (Assoc) then
                   Res := Exec_Name_Subtype (Syn_Inst, Get_Actual (Assoc));
-               when Iir_Kind_Association_Element_By_Individual =>
-                  Res := Synth_Subtype_Indication
-                    (Syn_Inst, Get_Actual_Type (Assoc));
-               when Iir_Kind_Association_Element_Open =>
-                  Res := Exec_Name_Subtype
-                    (Syn_Inst, Get_Default_Value (Inter));
-            end case;
+               else
+                  --  For expression: just compute the actual
+                  Val := Synth_Expression_With_Type
+                    (Syn_Inst, Get_Actual (Assoc), Inter_Typ);
+                  Res := Val.Typ;
+               end if;
+            when Iir_Kind_Association_Element_By_Name =>
+               Res := Exec_Name_Subtype (Syn_Inst, Get_Actual (Assoc));
+            when Iir_Kind_Association_Element_By_Individual =>
+               Res := Elab_Individual_Subtype (Syn_Inst, Assoc);
+            when Iir_Kind_Association_Element_Open =>
+               Res := Exec_Name_Subtype (Syn_Inst, Get_Default_Value (Inter));
+         end case;
 
-            if Res /= null then
-               Res := Unshare (Res, Global_Pool'Access);
-            end if;
+         if Res = null then
+            return;
          end if;
 
+         Inter_Typ := Unshare (Res, Global_Pool'Access);
+
          Release_Expr_Pool (Marker);
-         return Res;
-      else
-         return Inter_Typ;
       end if;
+
+      --  Check matching bounds.
+      if Get_Kind (Assoc) = Iir_Kind_Association_Element_By_Name
+        and then Get_Formal_Conversion (Assoc) = Null_Node
+        and then Get_Actual_Conversion (Assoc) = Null_Node
+      then
+         declare
+            use Synth.Vhdl_Stmts;
+            Marker : Mark_Type;
+            Actual : constant Node := Get_Actual (Assoc);
+            Actual_Base : Valtyp;
+            Actual_Typ : Type_Acc;
+            Actual_Offs : Value_Offsets;
+            Same : Boolean;
+         begin
+            Mark_Expr_Pool (Marker);
+
+            Synth_Object_Name
+              (Syn_Inst, Actual, Actual_Base, Actual_Typ, Actual_Offs);
+            case Inter_Typ.Kind is
+               when Type_All_Discrete =>
+                  Same := Inter_Typ.Drange = Actual_Typ.Drange;
+               when Type_Float =>
+                  Same := Inter_Typ.Frange = Actual_Typ.Frange;
+               when Type_Composite =>
+                  if not Check_Matching_Bounds (Syn_Inst, Inter_Typ,
+                    Actual_Typ, Assoc)
+                  then
+                     Set_Error (Sub_Inst);
+                  end if;
+                  Same := True;
+               when Type_Slice
+                 | Type_Protected
+                 | Type_Access
+                 | Type_File =>
+                  raise Internal_Error;
+            end case;
+            if not Same then
+               Error_Msg_Elab
+                 (Syn_Inst, Assoc,
+                  "range of formal %i is different from formal range", +Inter);
+               Set_Error (Sub_Inst);
+            end if;
+               Release_Expr_Pool (Marker);
+            end;
+      elsif Get_Kind (Assoc) = Iir_Kind_Association_Element_By_Individual then
+         --  Check matching bounds.
+         declare
+            Marker : Mark_Type;
+            Actual_Typ : Type_Acc;
+         begin
+            Mark_Expr_Pool (Marker);
+
+            --  Although actual type is defined in Syn_Inst, its
+            --  parent is defined in Sub_Inst.
+            Actual_Typ := Synth_Subtype_Indication
+              (Sub_Inst, Get_Actual_Type (Assoc));
+
+            if not Check_Matching_Bounds (Syn_Inst, Actual_Typ,
+              Inter_Typ, Assoc)
+            then
+               --  Error message already emitted.
+               null;
+            end if;
+            Release_Expr_Pool (Marker);
+         end;
+      end if;
+      Create_Signal (Sub_Inst, Inter, Inter_Typ);
    end Elab_Port_Association_Type;
 
    procedure Elab_Ports_Association_Type (Sub_Inst : Synth_Instance_Acc;
@@ -667,87 +904,13 @@ package body Elab.Vhdl_Insts is
       Inter : Node;
       Assoc : Node;
       Assoc_Inter : Node;
-      Inter_Typ : Type_Acc;
    begin
       Assoc := Assoc_Chain;
       Assoc_Inter := Inter_Chain;
       while Is_Valid (Assoc) loop
          Inter := Get_Association_Interface (Assoc, Assoc_Inter);
          if Get_Whole_Association_Flag (Assoc) then
-            Inter_Typ := Elab_Port_Association_Type
-              (Sub_Inst, Syn_Inst, Inter, Assoc);
-            if Inter_Typ /= null then
-               --  Check matching bounds.
-               if Get_Kind (Assoc) = Iir_Kind_Association_Element_By_Name
-                 and then Get_Formal_Conversion (Assoc) = Null_Node
-                 and then Get_Actual_Conversion (Assoc) = Null_Node
-               then
-                  declare
-                     use Synth.Vhdl_Stmts;
-                     Marker : Mark_Type;
-                     Actual : constant Node := Get_Actual (Assoc);
-                     Actual_Base : Valtyp;
-                     Actual_Typ : Type_Acc;
-                     Actual_Offs : Value_Offsets;
-                     Same : Boolean;
-                  begin
-                     Mark_Expr_Pool (Marker);
-
-                     Synth_Assignment_Prefix
-                       (Syn_Inst, Actual,
-                        Actual_Base, Actual_Typ, Actual_Offs);
-                     case Inter_Typ.Kind is
-                        when Type_All_Discrete =>
-                           Same := Inter_Typ.Drange = Actual_Typ.Drange;
-                        when Type_Float =>
-                           Same := Inter_Typ.Frange = Actual_Typ.Frange;
-                        when Type_Composite =>
-                           if not Check_Matching_Bounds (Syn_Inst, Inter_Typ,
-                                                         Actual_Typ, Assoc)
-                           then
-                              null;
-                           end if;
-                           Same := True;
-                        when Type_Slice
-                          | Type_Protected
-                          | Type_Access
-                          | Type_File =>
-                           raise Internal_Error;
-                     end case;
-                     if not Same then
-                        Error_Msg_Elab
-                          (Syn_Inst, Assoc,
-                           "range of formal %i is different from formal range",
-                           +Inter);
-                     end if;
-                     Release_Expr_Pool (Marker);
-                  end;
-               elsif (Get_Kind (Assoc)
-                        = Iir_Kind_Association_Element_By_Individual)
-               then
-                  --  Check matching bounds.
-                  declare
-                     Marker : Mark_Type;
-                     Actual_Typ : Type_Acc;
-                  begin
-                     Mark_Expr_Pool (Marker);
-
-                     --  Although actual type is defined in Syn_Inst, its
-                     --  parent is defined in Sub_Inst.
-                     Actual_Typ := Synth_Subtype_Indication
-                       (Sub_Inst, Get_Actual_Type (Assoc));
-
-                     if not Check_Matching_Bounds (Syn_Inst, Actual_Typ,
-                                                   Inter_Typ, Assoc)
-                     then
-                        --  Error message already emitted.
-                        null;
-                     end if;
-                     Release_Expr_Pool (Marker);
-                  end;
-               end if;
-               Create_Signal (Sub_Inst, Inter, Inter_Typ);
-            end if;
+            Elab_Port_Association_Type (Sub_Inst, Syn_Inst, Inter, Assoc);
          end if;
          Next_Association_Interface (Assoc, Assoc_Inter);
       end loop;
@@ -797,7 +960,7 @@ package body Elab.Vhdl_Insts is
                | Iir_Kind_Subtype_Declaration
                | Iir_Kind_Type_Declaration
                | Iir_Kind_Anonymous_Type_Declaration =>
-               Elab_Declaration (Unit_Inst, Item, False, Last_Type);
+               Elab_Declaration (Unit_Inst, Item, Last_Type);
             when Iir_Kinds_Concurrent_Signal_Assignment
                | Iir_Kinds_Process_Statement
                | Iir_Kinds_Generate_Statement
@@ -805,8 +968,7 @@ package body Elab.Vhdl_Insts is
                | Iir_Kind_Concurrent_Procedure_Call_Statement
                | Iir_Kind_Component_Instantiation_Statement =>
                Elab_Concurrent_Statement (Unit_Inst, Item, Cfgs);
-            when others =>
-               Error_Kind ("elab_verification_unit", Item);
+            when others => Error_Kind ("elab_verification_unit", Item);
          end case;
          Item := Get_Chain (Item);
       end loop;
@@ -1052,6 +1214,11 @@ package body Elab.Vhdl_Insts is
 
             pragma Assert (Get_Parent (E_Ent) = Null_Iir);
             Set_Parent (E_Ent, Stmt);
+
+            --  Change the formals to those of E_ENT.
+            Vhdl.Sem_Inst.Reassoc_Association_Formals
+              (Get_Port_Map_Aspect_Chain (Stmt),
+               Get_Port_Chain (Entity), Get_Port_Chain (E_Ent));
          end if;
       else
          E_Ent := Entity;
@@ -1267,25 +1434,30 @@ package body Elab.Vhdl_Insts is
         (Syn_Inst, Stmt, Ent, Arch, Config);
    end Elab_Design_Instantiation_Statement;
 
-   function Elab_Top_Unit (Config : Node) return Synth_Instance_Acc
-   is
-      Arch : Node;
-      Entity : Node;
-      Inter : Node;
-      Top_Inst : Synth_Instance_Acc;
+   procedure Elab_Top_Init is
    begin
-      Arch := Get_Named_Entity
-        (Get_Block_Specification (Get_Block_Configuration (Config)));
-      Entity := Get_Entity (Arch);
-
       Elab_Units.Init;
 
       --  Annotate units.
       Elab.Vhdl_Annotations.Initialize_Annotate;
       Elab.Vhdl_Annotations.Annotate (Vhdl.Std_Package.Std_Standard_Unit);
-      for I in Design_Units.First .. Design_Units.Last loop
+      Last_Annotated_Unit := Design_Units.First - 1;
+   end Elab_Top_Init;
+
+   procedure Elab_Top_Create (Config : Node;
+                              Entity : out Node;
+                              Arch : out Node;
+                              Top_Inst : out Synth_Instance_Acc) is
+   begin
+      for I in Last_Annotated_Unit + 1 .. Design_Units.Last loop
          Elab.Vhdl_Annotations.Annotate (Design_Units.Table (I));
       end loop;
+
+      Last_Annotated_Unit := Design_Units.Last;
+
+      Arch := Get_Named_Entity
+        (Get_Block_Specification (Get_Block_Configuration (Config)));
+      Entity := Get_Entity (Arch);
 
       --  Use global memory.
       Instance_Pool := Global_Pool'Access;
@@ -1303,37 +1475,17 @@ package body Elab.Vhdl_Insts is
 
       Elab_Dependencies (Root_Instance, Get_Design_Unit (Entity));
       Elab_Dependencies (Root_Instance, Get_Design_Unit (Arch));
-      Elab_Configuration_Declaration (Root_Instance, Config);
+      if not Get_Elab_Flag (Get_Design_Unit (Config)) then
+         Elab_Configuration_Declaration (Root_Instance, Config);
+      end if;
 
       pragma Assert (Is_Expr_Pool_Empty);
+   end Elab_Top_Create;
 
-      --  Compute generics.
-      Inter := Get_Generic_Chain (Entity);
-      while Is_Valid (Inter) loop
-         declare
-            Em : Mark_Type;
-            Val : Valtyp;
-            Inter_Typ : Type_Acc;
-            Defval : Node;
-         begin
-            Mark_Expr_Pool (Em);
-            Inter_Typ := Elab_Declaration_Type (Top_Inst, Inter);
-            Defval := Get_Default_Value (Inter);
-            if Defval /= Null_Node then
-               Val := Synth_Expression_With_Type (Top_Inst, Defval, Inter_Typ);
-            else
-               --  Only for simulation, expect override.
-               Val := Create_Value_Default (Inter_Typ);
-            end if;
-            pragma Assert (Is_Static (Val.Val));
-            Val := Unshare (Val, Instance_Pool);
-            Val.Typ := Unshare_Type_Instance (Val.Typ, Inter_Typ);
-            Create_Object (Top_Inst, Inter, Val);
-            Release_Expr_Pool (Em);
-         end;
-         Inter := Get_Chain (Inter);
-      end loop;
-
+   procedure Elab_Top_Ports (Entity : Node; Top_Inst : Synth_Instance_Acc)
+   is
+      Inter : Node;
+   begin
       pragma Assert (Is_Expr_Pool_Empty);
 
       --  Elaborate port types.
@@ -1346,6 +1498,9 @@ package body Elab.Vhdl_Insts is
                Inter_Typ : Type_Acc;
             begin
                Inter_Typ := Elab_Declaration_Type (Top_Inst, Inter);
+               if Is_Error (Top_Inst) then
+                  return;
+               end if;
                Create_Signal (Top_Inst, Inter, Inter_Typ);
             end;
          else
@@ -1362,6 +1517,9 @@ package body Elab.Vhdl_Insts is
                Val := Unshare (Val, Instance_Pool);
                Val.Typ := Unshare_Type_Instance (Val.Typ, Inter_Typ);
                Release_Expr_Pool (Marker);
+               if Is_Error (Top_Inst) then
+                  return;
+               end if;
                Create_Signal (Top_Inst, Inter, Val.Typ);
             end;
          end if;
@@ -1369,7 +1527,16 @@ package body Elab.Vhdl_Insts is
       end loop;
 
       pragma Assert (Is_Expr_Pool_Empty);
+   end Elab_Top_Ports;
 
+   procedure Elab_Top_Finish (Config : Node;
+                              Entity : Node;
+                              Arch : Node;
+                              Top_Inst : Synth_Instance_Acc) is
+   begin
+      pragma Assert (Is_Expr_Pool_Empty);
+
+      --  Set Top_Instance for external names
       Top_Instance := Top_Inst;
 
       Add_To_Elab_Units (Entity);
@@ -1400,7 +1567,10 @@ package body Elab.Vhdl_Insts is
             end if;
          end;
       end loop;
+   end Elab_Top_Finish;
 
+   procedure Elab_Top_Clear is
+   begin
       --  Clear elab flag.
       for I in Elab_Units.First .. Elab_Units.Last loop
          declare
@@ -1416,9 +1586,79 @@ package body Elab.Vhdl_Insts is
             end if;
          end;
       end loop;
+   end Elab_Top_Clear;
+
+   procedure Elab_Top_Interface_Constant
+     (Inst : Synth_Instance_Acc; Inter : Node)
+   is
+      Em : Mark_Type;
+      Val : Valtyp;
+      Inter_Typ : Type_Acc;
+      Defval : Node;
+   begin
+      Mark_Expr_Pool (Em);
+      Inter_Typ := Elab_Declaration_Type (Inst, Inter);
+      Defval := Get_Default_Value (Inter);
+      if Defval /= Null_Node then
+         Val := Synth_Expression_With_Type (Inst, Defval, Inter_Typ);
+      else
+         --  Only for simulation, expect override.
+         Val := Create_Value_Default (Inter_Typ);
+      end if;
+      if Val /= No_Valtyp then
+         pragma Assert (Is_Static (Val.Val));
+         Val := Unshare (Val, Instance_Pool);
+         Val.Typ := Unshare_Type_Instance (Val.Typ, Inter_Typ);
+         Create_Object (Inst, Inter, Val);
+      end if;
+      Release_Expr_Pool (Em);
+   end Elab_Top_Interface_Constant;
+
+   function Elab_Top_Unit (Config : Node) return Synth_Instance_Acc
+   is
+      Arch : Node;
+      Entity : Node;
+      Inter : Node;
+      Top_Inst : Synth_Instance_Acc;
+   begin
+      Elab_Top_Init;
+      Elab_Top_Create (Config, Entity, Arch, Top_Inst);
+
+      --  Compute generics.
+      Inter := Get_Generic_Chain (Entity);
+      while Is_Valid (Inter) loop
+         case Get_Kind (Inter) is
+            when Iir_Kind_Interface_Constant_Declaration =>
+               Elab_Top_Interface_Constant (Top_Inst, Inter);
+            when Iir_Kind_Interface_Package_Declaration =>
+               Elab_Package_Instantiation (Top_Inst, Inter);
+            when others =>
+               Error_Kind ("elab_top_unit", Inter);
+         end case;
+         Inter := Get_Chain (Inter);
+      end loop;
+
+      pragma Assert (Is_Expr_Pool_Empty);
+
+      if Is_Error (Top_Inst) then
+         return null;
+      end if;
+
+      Elab_Top_Ports (Entity, Top_Inst);
+
+      if Is_Error (Top_Inst) then
+         return null;
+      end if;
+
+      Elab_Top_Finish (Config, Entity, Arch, Top_Inst);
+
+      if Is_Error (Top_Inst) then
+         return null;
+      end if;
+
+      Elab_Top_Clear;
 
       return Top_Inst;
-
    exception
       when Elaboration_Error =>
          return null;

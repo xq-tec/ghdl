@@ -29,6 +29,7 @@ with Str_Table;
 with Std_Names; use Std_Names;
 with Files_Map;
 with File_Comments;
+with Libraries;
 
 with Vhdl.Types; use Vhdl.Types;
 with Vhdl.Errors; use Vhdl.Errors;
@@ -187,6 +188,7 @@ package body Vhdl.Prints is
         and then not Is_Character (Id)
         and then Loc /= No_Location
         and then Loc /= Std_Package.Std_Location
+        and then Loc /= Libraries.Command_Line_Location
       then
          Disp_From_Source
            (Ctxt, Loc, Int32 (Get_Name_Length (Id)), Tok_Identifier);
@@ -1709,12 +1711,20 @@ package body Vhdl.Prints is
       if Get_Kind (Subprg) in Iir_Kinds_Subprogram_Declaration then
          Inter := Get_Generic_Chain (Subprg);
          if Inter /= Null_Iir then
+            --  Put 'generic' on a new line.
+            Close_Hbox (Ctxt);
+            Start_Hbox (Ctxt);
             Disp_Token (Ctxt, Tok_Generic);
             Disp_Interface_Chain (Ctxt, Inter, True);
+            Close_Hbox (Ctxt);
+            Start_Hbox (Ctxt);
          end if;
       end if;
 
       if Get_Has_Parameter (Subprg) then
+         --  Put 'parameter' on a new line.
+         Close_Hbox (Ctxt);
+         Start_Hbox (Ctxt);
          Disp_Token (Ctxt, Tok_Parameter);
       end if;
 
@@ -2683,6 +2693,8 @@ package body Vhdl.Prints is
                Disp_Token (Ctxt, Tok_Is);
                Close_Hbox (Ctxt);
                Disp_Subprogram_Body (Ctxt, Decl);
+            when Iir_Kind_Subprogram_Instantiation_Body =>
+               null;
             when Iir_Kinds_Subprogram_Instantiation_Declaration =>
                Disp_Subprogram_Instantiation_Declaration (Ctxt, Decl);
             when Iir_Kind_Protected_Type_Body =>
@@ -3919,46 +3931,79 @@ package body Vhdl.Prints is
    is
       Str_Id : constant String8_Id := Get_String8_Id (Str);
       Len : constant Nat32 := Get_String_Length (Str);
+      Base : constant Number_Base_Type := Get_Bit_String_Base (Str);
       Literal_List : Iir_Flist;
       Pos : Nat8;
       Lit : Iir;
       Id : Name_Id;
       C : Character;
    begin
-      if Get_Bit_String_Base (Str) /= Base_None then
+      if Base /= Base_None then
          Start_Lit (Ctxt, Tok_Bit_String);
          if Get_Has_Length (Str) then
             Disp_Int32 (Ctxt, Iir_Int32 (Get_String_Length (Str)));
          end if;
-         Disp_Char (Ctxt, 'b');
       else
          Start_Lit (Ctxt, Tok_String);
       end if;
 
-      Disp_Char (Ctxt, '"');
+      if Base = Base_16 and then El_Type = Null_Iir and then Len mod 4 = 0 then
+         Disp_Char (Ctxt, 'x');
 
-      if El_Type /= Null_Iir then
-         Literal_List :=
-           Get_Enumeration_Literal_List (Get_Base_Type (El_Type));
+         Disp_Char (Ctxt, '"');
+
+         declare
+            P : Nat32;
+            V : Natural;
+         begin
+            P := 1;
+            while P <= Len loop
+               V := 0;
+               for I in 1 .. 4 loop
+                  Pos := Str_Table.Element_String8 (Str_Id, P);
+                  V := V * 2 + Natural (Pos - Character'Pos ('0'));
+                  P := P + 1;
+               end loop;
+               if V <= 9 then
+                  C := Character'Val (Character'Pos ('0') + V);
+               else
+                  C := Character'Val (Character'Pos ('a') + V - 10);
+               end if;
+
+               Disp_Char (Ctxt, C);
+            end loop;
+         end;
       else
-         Literal_List := Null_Iir_Flist;
-      end if;
+         if Base /= Base_None then
+            --  Other bases are not handled, use 'b' for a bit string.
+            Disp_Char (Ctxt, 'b');
+         end if;
 
-      for I in 1 .. Len loop
-         Pos := Str_Table.Element_String8 (Str_Id, I);
-         if Literal_List /= Null_Iir_Flist then
-            Lit := Get_Nth_Element (Literal_List, Natural (Pos));
-            Id := Get_Identifier (Lit);
+         Disp_Char (Ctxt, '"');
+
+         if El_Type /= Null_Iir then
+            Literal_List :=
+              Get_Enumeration_Literal_List (Get_Base_Type (El_Type));
          else
-            Id := Name_Table.Get_Identifier (Character'Val (Pos));
+            Literal_List := Null_Iir_Flist;
          end if;
-         pragma Assert (Name_Table.Is_Character (Id));
-         C := Name_Table.Get_Character (Id);
-         if C = '"' then
+
+         for I in 1 .. Len loop
+            Pos := Str_Table.Element_String8 (Str_Id, I);
+            if Literal_List /= Null_Iir_Flist then
+               Lit := Get_Nth_Element (Literal_List, Natural (Pos));
+               Id := Get_Identifier (Lit);
+            else
+               Id := Name_Table.Get_Identifier (Character'Val (Pos));
+            end if;
+            pragma Assert (Name_Table.Is_Character (Id));
+            C := Name_Table.Get_Character (Id);
+            if C = '"' then
+               Disp_Char (Ctxt, C);
+            end if;
             Disp_Char (Ctxt, C);
-         end if;
-         Disp_Char (Ctxt, C);
-      end loop;
+         end loop;
+      end if;
 
       Disp_Char (Ctxt, '"');
       Close_Lit (Ctxt);
@@ -4815,6 +4860,8 @@ package body Vhdl.Prints is
          when Iir_Kind_Design_Unit =>
             Start_Node (Ctxt, N);
             Disp_Design_Unit (Ctxt, N);
+         when Iir_Kind_Component_Declaration =>
+            Disp_Component_Declaration (Ctxt, N);
          when Iir_Kind_Enumeration_Type_Definition =>
             Disp_Enumeration_Type_Definition (Ctxt, N);
          when Iir_Kind_Concurrent_Conditional_Signal_Assignment =>

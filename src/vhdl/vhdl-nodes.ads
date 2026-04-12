@@ -304,6 +304,7 @@ package Vhdl.Nodes is
    --  After analysis, this is the position of each literal.
    --   Get/Set_String8_Id (Field5)
    --
+   --  Number of characters in the string literal (given by the scanner).
    --   Get/Set_Literal_Length (Field0)
    --
    --  Used for computed literals.  Literal_Origin contains the expression
@@ -1240,6 +1241,7 @@ package Vhdl.Nodes is
    --
    --   Get/Set_Has_Is (Flag7)
    --
+   --  Should always be true
    --   Get/Set_End_Has_Reserved_Id (Flag8)
    --
    --   Get/Set_End_Has_Identifier (Flag9)
@@ -1474,6 +1476,7 @@ package Vhdl.Nodes is
    --   Get/Set_Has_Disconnect_Flag (Flag1)
    --
    -- Only for Iir_Kind_Interface_Signal_Declaration:
+   -- Only for Iir_Kind_Interface_View_Declaration:
    --   Get/Set_Has_Active_Flag (Flag2)
    --
    --   Get/Set_Has_Identifier_List (Flag3)
@@ -1542,6 +1545,7 @@ package Vhdl.Nodes is
    --
    --   Get/Set_Identifier (Field3)
    --
+   --  Chain of extra interfaces for = and /=.
    --   Get/Set_Interface_Type_Subprograms (Field4)
    --
    --   Get/Set_Has_Identifier_List (Flag3)
@@ -1644,11 +1648,11 @@ package Vhdl.Nodes is
    --
    --   Get/Set_Subprogram_Hash (Field4)
    --
-   --   Get/Set_Interface_Declaration_Chain (Field5)
-   --
    --   Get/Set_Generic_Chain (Field6)
    --
    --  --Get/Set_Generic_Map_Aspect_Chain (Field8)
+   --
+   --   Get/Set_Interface_Declaration_Chain (Field5)
    --
    --   Get/Set_Implicit_Definition (Field7)
    --
@@ -1666,11 +1670,7 @@ package Vhdl.Nodes is
    --
    --   Get/Set_Seen_Flag (Flag1)
    --
-   -- Only for Iir_Kind_Function_Declaration:
-   --   Get/Set_Pure_Flag (Flag2)
-   --
-   -- Only for Iir_Kind_Procedure_Declaration:
-   --   Get/Set_Passive_Flag (Flag2)
+   --   Get/Set_Macro_Expand_Flag (Flag2)
    --
    --   Get/Set_Foreign_Flag (Flag3)
    --
@@ -1702,6 +1702,12 @@ package Vhdl.Nodes is
    --  an implicit operation of a type.
    --   Get/Set_Hide_Implicit_Flag (Flag12)
    --
+   -- Only for Iir_Kind_Function_Declaration:
+   --   Get/Set_Pure_Flag (Flag14)
+   --
+   -- Only for Iir_Kind_Procedure_Declaration:
+   --   Get/Set_Passive_Flag (Flag14)
+   --
    --   Get/Set_Wait_State (State1)
    --
    -- Only for Iir_Kind_Procedure_Declaration:
@@ -1711,6 +1717,7 @@ package Vhdl.Nodes is
 
    -- Iir_Kind_Function_Body (Medium)
    -- Iir_Kind_Procedure_Body (Medium)
+   -- Iir_Kind_Subprogram_Instantiation_Body (Medium)
    --
    --  LRM08 4.3 Subprogram bodies
    --
@@ -1747,6 +1754,7 @@ package Vhdl.Nodes is
    --   Get/Set_End_Has_Identifier (Flag9)
    --
    -- Only for Iir_Kind_Procedure_Body:
+   -- Only for Iir_Kind_Subprogram_Instantiation_Body:
    --   Get/Set_Suspend_Flag (Flag11)
 
    -- Iir_Kind_Function_Instantiation_Declaration (Medium)
@@ -1754,21 +1762,21 @@ package Vhdl.Nodes is
    --
    --   Get/Set_Parent (Field0)
    --
-   -- Only for Iir_Kind_Function_Instantiation_Declaration:
-   --   Get/Set_Return_Type (Field1)
-   --
-   -- Only for Iir_Kind_Function_Instantiation_Declaration:
-   --   Get/Set_Type (Alias Field1)
-   --
    --   Get/Set_Chain (Field2)
    --
    --   Get/Set_Identifier (Field3)
    --
    --   Get/Set_Subprogram_Hash (Field4)
    --
+   --   Get/Set_Generic_Chain (Field6)
+   --
    --   Get/Set_Interface_Declaration_Chain (Field5)
    --
-   --   Get/Set_Generic_Chain (Field6)
+   -- Only for Iir_Kind_Function_Instantiation_Declaration:
+   --   Get/Set_Return_Type (Field1)
+   --
+   -- Only for Iir_Kind_Function_Instantiation_Declaration:
+   --   Get/Set_Type (Alias Field1)
    --
    --  A signature or a simple name.
    --   Get/Set_Uninstantiated_Subprogram_Name (Field7)
@@ -1777,7 +1785,25 @@ package Vhdl.Nodes is
    --
    --   Get/Set_Instance_Source_File (Field10)
    --
+   --   Get/Set_Instance_Subprogram_Body (Field11)
+   --
+   --   Get/Set_Overload_Number (Field12)
+   --
+   --   Get/Set_Seen_Flag (Flag1)
+   --
+   --   Get/Set_Foreign_Flag (Flag3)
+   --
    --   Get/Set_Visible_Flag (Flag4)
+   --
+   --   Get/Set_Use_Flag (Flag6)
+   --
+   --   Get/Set_Wait_State (State1)
+   --
+   -- Only for Iir_Kind_Procedure_Instantiation_Declaration:
+   --   Get/Set_Suspend_Flag (Flag11)
+   --
+   -- Only for Iir_Kind_Function_Instantiation_Declaration:
+   --   Get/Set_Pure_Flag (Flag14)
 
    -- Iir_Kind_Interface_Function_Declaration (Medium)
    -- Iir_Kind_Interface_Procedure_Declaration (Medium)
@@ -1828,7 +1854,7 @@ package Vhdl.Nodes is
    --   Get/Set_Seen_Flag (Flag1)
    --
    -- Only for Iir_Kind_Interface_Function_Declaration:
-   --   Get/Set_Pure_Flag (Flag2)
+   --   Get/Set_Pure_Flag (Flag14)
    --
    --   Get/Set_Foreign_Flag (Flag3)
    --
@@ -3478,8 +3504,6 @@ package Vhdl.Nodes is
    --
    --   Get/Set_Seen_Flag (Flag1)
    --
-   --   Get/Set_Passive_Flag (Flag2)
-   --
    --   Get/Set_Postponed_Flag (Flag3)
    --
    --   Get/Set_Visible_Flag (Flag4)
@@ -3499,10 +3523,12 @@ package Vhdl.Nodes is
    --
    --  Set when std.env.stop/finish is called.  Prevents the infinite loop
    --  warning.
-   --   Get/Set_Stop_Flag (Flag13)
+   --   Get/Set_Stop_Flag (Flag2)
    --
    -- Only for Iir_Kind_Sensitized_Process_Statement:
    --   Get/Set_Is_Ref (Flag12)
+   --
+   --   Get/Set_Passive_Flag (Flag14)
 
    -- Iir_Kind_Concurrent_Assertion_Statement (Short)
    --
@@ -4576,11 +4602,11 @@ package Vhdl.Nodes is
 
    -- Iir_Kind_Simple_Name (Short)
    --
-   --   Get/Set_Type (Field1)
-   --
    --   Get/Set_Identifier (Field3)
    --
    --   Get/Set_Named_Entity (Field4)
+   --
+   --   Get/Set_Type (Field1)
    --
    --   Get/Set_Base_Name (Field5)
    --
@@ -4682,6 +4708,12 @@ package Vhdl.Nodes is
    --
    -- Only for Iir_Kind_External_Signal_Name:
    --   Get/Set_After_Drivers_Flag (Flag5)
+   --
+   -- Only for Iir_Kind_External_Signal_Name:
+   --   Get/Set_Guarded_Signal_Flag (Flag8)
+   --
+   -- Only for Iir_Kind_External_Signal_Name:
+   --   Get/Set_Signal_Kind (Flag9)
    --
    --   Get/Set_Expr_Staticness (State1)
    --
@@ -5266,6 +5298,7 @@ package Vhdl.Nodes is
       Iir_Kind_Procedure_Declaration,           --  Subprg, Proc
       Iir_Kind_Function_Body,
       Iir_Kind_Procedure_Body,
+      Iir_Kind_Subprogram_Instantiation_Body,
       Iir_Kind_Function_Instantiation_Declaration,
       Iir_Kind_Procedure_Instantiation_Declaration,
 
@@ -6279,6 +6312,161 @@ package Vhdl.Nodes is
 
       --  numeric_bit
 
+      Iir_Predefined_Ieee_Numeric_Bit_Not_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Not_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Abs_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Neg_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Add_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Add_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Add_Nat_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Add_Uns_Bit,
+      Iir_Predefined_Ieee_Numeric_Bit_Add_Bit_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Add_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Add_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Add_Int_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Add_Sgn_Bit,
+      Iir_Predefined_Ieee_Numeric_Bit_Add_Bit_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Sub_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Sub_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Sub_Nat_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Sub_Uns_Bit,
+      Iir_Predefined_Ieee_Numeric_Bit_Sub_Bit_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Sub_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Sub_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Sub_Int_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Sub_Sgn_Bit,
+      Iir_Predefined_Ieee_Numeric_Bit_Sub_Bit_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Mul_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Mul_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Mul_Nat_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Mul_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Mul_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Mul_Int_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Div_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Div_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Div_Nat_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Div_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Div_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Div_Int_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Rem_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Rem_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Rem_Nat_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Rem_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Rem_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Rem_Int_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Mod_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Mod_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Mod_Nat_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Mod_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Mod_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Mod_Int_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Gt_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Gt_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Gt_Nat_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Gt_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Gt_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Gt_Int_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Lt_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Lt_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Lt_Nat_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Lt_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Lt_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Lt_Int_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Le_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Le_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Le_Nat_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Le_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Le_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Le_Int_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Ge_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Ge_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Ge_Nat_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Ge_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Ge_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Ge_Int_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Eq_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Eq_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Eq_Nat_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Eq_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Eq_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Eq_Int_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Ne_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Ne_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Ne_Nat_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Ne_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Ne_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Ne_Int_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Gt_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Gt_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Gt_Nat_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Gt_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Gt_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Gt_Int_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Lt_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Lt_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Lt_Nat_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Lt_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Lt_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Lt_Int_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Le_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Le_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Le_Nat_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Le_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Le_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Le_Int_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Ge_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Ge_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Ge_Nat_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Ge_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Ge_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Ge_Int_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Eq_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Eq_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Eq_Nat_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Eq_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Eq_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Eq_Int_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Ne_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Ne_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Ne_Nat_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Ne_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Ne_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Match_Ne_Int_Sgn,
+
+      --  Shift and rotate functions.
+      Iir_Predefined_Ieee_Numeric_Bit_Shf_Left_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Shf_Right_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Shf_Left_Sgn_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Shf_Right_Sgn_Nat,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Rot_Left_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Rot_Right_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Rot_Left_Sgn_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Rot_Right_Sgn_Nat,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Resize_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Resize_Sgn_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Resize_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Resize_Sgn_Sgn,
+
       --  To_Integer, To_Unsigned, to_Signed
       Iir_Predefined_Ieee_Numeric_Bit_Toint_Uns_Nat,
       Iir_Predefined_Ieee_Numeric_Bit_Toint_Sgn_Int,
@@ -6286,6 +6474,82 @@ package Vhdl.Nodes is
       Iir_Predefined_Ieee_Numeric_Bit_Touns_Nat_Uns_Uns,
       Iir_Predefined_Ieee_Numeric_Bit_Tosgn_Int_Nat_Sgn,
       Iir_Predefined_Ieee_Numeric_Bit_Tosgn_Int_Sgn_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_And_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_And_Uns_Bit,
+      Iir_Predefined_Ieee_Numeric_Bit_And_Bit_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_And_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_And_Sgn_Bit,
+      Iir_Predefined_Ieee_Numeric_Bit_And_Bit_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Nand_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Nand_Uns_Bit,
+      Iir_Predefined_Ieee_Numeric_Bit_Nand_Bit_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Nand_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Nand_Sgn_Bit,
+      Iir_Predefined_Ieee_Numeric_Bit_Nand_Bit_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Or_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Or_Uns_Bit,
+      Iir_Predefined_Ieee_Numeric_Bit_Or_Bit_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Or_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Or_Sgn_Bit,
+      Iir_Predefined_Ieee_Numeric_Bit_Or_Bit_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Nor_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Nor_Uns_Bit,
+      Iir_Predefined_Ieee_Numeric_Bit_Nor_Bit_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Nor_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Nor_Sgn_Bit,
+      Iir_Predefined_Ieee_Numeric_Bit_Nor_Bit_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Xor_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Xor_Uns_Bit,
+      Iir_Predefined_Ieee_Numeric_Bit_Xor_Bit_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Xor_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Xor_Sgn_Bit,
+      Iir_Predefined_Ieee_Numeric_Bit_Xor_Bit_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Xnor_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Xnor_Uns_Bit,
+      Iir_Predefined_Ieee_Numeric_Bit_Xnor_Bit_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Xnor_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Xnor_Sgn_Bit,
+      Iir_Predefined_Ieee_Numeric_Bit_Xnor_Bit_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Sll_Uns_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Sll_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Srl_Uns_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Srl_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Sla_Uns_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Sla_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Sra_Uns_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Sra_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Rol_Uns_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Rol_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Ror_Uns_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Ror_Sgn_Int,
+
+      --  Find.
+      Iir_Predefined_Ieee_Numeric_Bit_Find_Leftmost_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Find_Rightmost_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Find_Leftmost_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Find_Rightmost_Sgn,
+
+      --  Min and Max.
+      Iir_Predefined_Ieee_Numeric_Bit_Min_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Min_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Min_Nat_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Min_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Min_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Min_Int_Sgn,
+
+      Iir_Predefined_Ieee_Numeric_Bit_Max_Uns_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Max_Uns_Nat,
+      Iir_Predefined_Ieee_Numeric_Bit_Max_Nat_Uns,
+      Iir_Predefined_Ieee_Numeric_Bit_Max_Sgn_Sgn,
+      Iir_Predefined_Ieee_Numeric_Bit_Max_Sgn_Int,
+      Iir_Predefined_Ieee_Numeric_Bit_Max_Int_Sgn,
 
       --  Numeric_Std_Unsigned (ieee2008)
       Iir_Predefined_Ieee_Numeric_Std_Unsigned_Add_Slv_Slv,
@@ -6737,7 +7001,13 @@ package Vhdl.Nodes is
    --    set to IMPURE.  Only at the end of body analysis and only if the
    --    callee list is empty, the state can be set either to MAYBE_IMPURE or
    --    PURE.
-   type Iir_Pure_State is (Unknown, Pure, Maybe_Impure, Impure);
+   type Iir_Pure_State is
+     (
+      Unknown,
+      Pure,
+      Maybe_Impure,
+      Impure
+     );
 
    --  State of subprograms for validity of use in all-sensitized process.
    --  INVALID_SIGNAL means that the subprogram is in a package and
@@ -6754,7 +7024,12 @@ package Vhdl.Nodes is
    --    all-sensitized process but there is no need to track this call.
    --  UNKNOWN means that the state is not yet defined.
    type Iir_All_Sensitized is
-     (Unknown, No_Signal, Read_Signal, Invalid_Signal);
+     (
+      Unknown,
+      No_Signal,
+      Read_Signal,
+      Invalid_Signal
+     );
 
    --  Constraint state of a type.
    --  See LRM08 5.1 for definition.
@@ -8361,6 +8636,11 @@ package Vhdl.Nodes is
    function Get_Owned_Instance_Package_Body (Pkg : Iir) return Iir;
    procedure Set_Owned_Instance_Package_Body (Pkg : Iir; Decl : Iir);
 
+   --  The subprogram body corresponding to the subprogram declaration.
+   --  Field: Field11 Forward_Ref
+   function Get_Instance_Subprogram_Body (Pkg : Iir) return Iir;
+   procedure Set_Instance_Subprogram_Body (Pkg : Iir; Decl : Iir);
+
    --  Field: Flag1
    function Get_Need_Body (Decl : Iir_Package_Declaration) return Boolean;
    procedure Set_Need_Body (Decl : Iir_Package_Declaration; Flag : Boolean);
@@ -9051,7 +9331,7 @@ package Vhdl.Nodes is
    --   TRUE if the process must be passive.
    --   FALSE if the process may be not passive.
    --  For a procedure declaration, set if it is passive.
-   --  Field: Flag2
+   --  Field: Flag14
    function Get_Passive_Flag (Proc : Iir) return Boolean;
    procedure Set_Passive_Flag (Proc : Iir; Flag : Boolean);
 
@@ -9091,7 +9371,7 @@ package Vhdl.Nodes is
    --  Get/Set the pure flag of a function.
    --  TRUE if the function is declared pure.
    --  FALSE if the function is declared impure.
-   --  Field: Flag2
+   --  Field: Flag14
    function Get_Pure_Flag (Func : Iir) return Boolean;
    procedure Set_Pure_Flag (Func : Iir; Flag : Boolean);
 
@@ -9818,7 +10098,7 @@ package Vhdl.Nodes is
    function Get_Covered_Flag (Stmt : Iir) return Boolean;
    procedure Set_Covered_Flag (Stmt : Iir; Flag : Boolean);
 
-   --  Field: Flag13
+   --  Field: Flag2
    function Get_Stop_Flag (Stmt : Iir) return Boolean;
    procedure Set_Stop_Flag (Stmt : Iir; Flag : Boolean);
 

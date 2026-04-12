@@ -317,24 +317,24 @@ package body Grt.Signals is
          Disconnect_Time => Bad_Time);
    end Ghdl_Signal_Create_Resolution;
 
-   procedure Display_Signal_And_Sources (Sig : in Ghdl_Signal_Ptr) is
+   procedure Display_Signal_And_Sources (Sig : in Ghdl_Signal_Ptr)
+   is
+      use Grt.Astdio;
    begin
-      Grt.Astdio.Put(Grt.Stdio.stderr, "Signal ");
+      Put (Grt.Stdio.stderr, "Signal ");
       Disp_Signals.Put_Signal_Name(Grt.Stdio.stderr, Sig);
-      Grt.Astdio.Put(Grt.Stdio.stderr, " is driven by :");
-      Grt.Astdio.New_Line(Grt.Stdio.stderr);
+      Put (Grt.Stdio.stderr, " is driven by :");
+      New_Line (Grt.Stdio.stderr);
       if Sig.S.Nbr_Drivers /= 0 then
-         for I in 0 .. Sig.S.Nbr_Drivers - 1
-         loop
-            Grt.Processes.Disp_Process_Name(
-              Grt.Stdio.stderr,
-              Sig.S.Drivers.all(I).Proc);
-            Grt.Astdio.New_Line(Grt.Stdio.stderr);
+         for I in 0 .. Sig.S.Nbr_Drivers - 1 loop
+            Disp_Process_Name_Hook.all
+              (Grt.Stdio.stderr, Sig.S.Drivers.all(I).Proc);
+            New_Line (Grt.Stdio.stderr);
          end loop;
       end if;
       if Sig.Nbr_Ports /= 0 then
-         Grt.Astdio.Put(Grt.Stdio.stderr, "At least one port.");
-         Grt.Astdio.New_Line(Grt.Stdio.stderr);
+         Put (Grt.Stdio.stderr, "At least one port.");
+         New_Line (Grt.Stdio.stderr);
       end if;
    end Display_Signal_And_Sources;
 
@@ -836,7 +836,7 @@ package body Grt.Signals is
                --  Set the last transaction of the driver.
                Driver.Last_Trans := Last;
                --  Cut the chain.  This is not strickly necessary, since
-               --  it will be overriden below, by appending TRANS to the
+               --  it will be overridden below, by appending TRANS to the
                --  driver.
                Last.Next := null;
                --  Free removed transactions.
@@ -3966,15 +3966,21 @@ package body Grt.Signals is
                --  propagation.
                case Fv.Mode is
                   when Force_Driving =>
-                     if not Sig.Flags.Is_Drv_Forced then
+                     if not Sig.Flags.Is_Drv_Forced
+                       or else Sig.Flags.Is_Drv_Deposit
+                     then
                         Sig.Flags.Is_Drv_Forced := True;
+                        Sig.Flags.Is_Drv_Deposit := True;
                         Sig.Driving_Value := Fv.Val;
                      else
                         Discard := True;
                      end if;
                   when Force_Effective =>
-                     if not Sig.Flags.Is_Eff_Forced then
+                     if not Sig.Flags.Is_Eff_Forced
+                       or else Sig.Flags.Is_Eff_Deposit
+                     then
                         Sig.Flags.Is_Eff_Forced := True;
+                        Sig.Flags.Is_Eff_Deposit := True;
                         Set_Effective_Value (Sig, Fv.Val);
                      else
                         Discard := True;
@@ -3983,6 +3989,8 @@ package body Grt.Signals is
 
                Next_Fv := Fv.Next;
 
+               --  Keep the transaction to clear Is_XX_Forced flags, but
+               --  only if it was used (as it will clear the Forced flags)
                if Discard then
                   Free (Fv);
                else
@@ -4020,6 +4028,7 @@ package body Grt.Signals is
       end loop;
 
       if Deposite_Chain.First /= null then
+         --  Clear Is_XX_Forced flags
          declare
             Fv : Force_Value_Acc;
             Next_Fv : Force_Value_Acc;
@@ -4030,8 +4039,10 @@ package body Grt.Signals is
                case Fv.Mode is
                   when Force_Driving =>
                      Sig.Flags.Is_Drv_Forced := False;
+                     Sig.Flags.Is_Drv_Deposit := False;
                   when Force_Effective =>
                      Sig.Flags.Is_Eff_Forced := False;
+                     Sig.Flags.Is_Eff_Deposit := False;
                end case;
 
                Next_Fv := Fv.Next;

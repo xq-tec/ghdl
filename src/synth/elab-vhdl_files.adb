@@ -49,6 +49,7 @@ package body Elab.Vhdl_Files is
      (Syn_Inst : Synth_Instance_Acc; Loc : Node; Status : Op_Status) is
    begin
       pragma Assert (Status /= Op_Ok);
+      Set_Error (Syn_Inst);
       Error_Msg_Synth (Syn_Inst, Loc, "file operation failed");
    end File_Error;
 
@@ -227,8 +228,7 @@ package body Elab.Vhdl_Files is
                File_Mode := Grt.Files.Read_Mode;
             when Iir_Out_Mode =>
                File_Mode := Grt.Files.Write_Mode;
-            when others =>
-               raise Internal_Error;
+            when others => raise Internal_Error;
          end case;
       end if;
 
@@ -248,10 +248,10 @@ package body Elab.Vhdl_Files is
 
       if Status /= Op_Ok then
          if Status = Op_Name_Error then
+            Set_Error (Syn_Inst);
             Error_Msg_Elab
               (Syn_Inst, Decl,
                "cannot open file: " & C_Name (1 .. C_Name_Len));
-            Set_Error (Syn_Inst);
          else
             File_Error (Syn_Inst, Decl, Status);
          end if;
@@ -273,7 +273,7 @@ package body Elab.Vhdl_Files is
          return True;
       else
          File_Error (Syn_Inst, Loc, Status);
-         return False;
+         return True;
       end if;
    end Endfile;
 
@@ -309,10 +309,10 @@ package body Elab.Vhdl_Files is
 
       if Status /= Op_Ok then
          if Status = Op_Name_Error then
+            Set_Error (Syn_Inst);
             Error_Msg_Elab
               (Syn_Inst, Loc,
                "cannot open file: " & C_Name (1 .. C_Name_Len));
-            raise File_Execution_Error;
          else
             File_Error (Syn_Inst, Loc, Status);
          end if;
@@ -365,17 +365,7 @@ package body Elab.Vhdl_Files is
            | Op_Signature_Error
            | Op_Filename_Error =>
             Vstatus := Name_Error;
-         when Op_End_Of_File
-           | Op_Ungetc_Error
-           | Op_Not_Open
-           | Op_Close_Error
-           | Op_Read_Write_File
-           | Op_Write_Read_File
-           | Op_Read_Error
-           | Op_Write_Error
-           | Op_Bad_Index
-           | Op_Bad_Mode =>
-            raise File_Execution_Error;
+         when others => raise Internal_Error;
       end case;
 
       if Is_Static (Ostatus.Val) then
@@ -400,7 +390,7 @@ package body Elab.Vhdl_Files is
       end if;
 
       if Status /= Op_Ok then
-         File_Error (Syn_Inst, Loc, Status);
+         File_Error (Syn_Inst, Loc, Status); -- GCOV_EXCL_LINE
       end if;
    end Synth_File_Close;
 
@@ -432,10 +422,10 @@ package body Elab.Vhdl_Files is
       Param3 : constant Node := Get_Chain (Param2);
       Param_Len : constant Valtyp := Get_Value (Syn_Inst, Param3);
       Buf : String (1 .. Natural (Str.Typ.Abound.Len));
-      Len : Std_Integer;
+      Len : Ghdl_Index_Type;
       Status : Op_Status;
    begin
-      Len := Std_Integer (Buf'Last);
+      Len := Ghdl_Index_Type (Buf'Last);
       Ghdl_Untruncated_Text_Read
         (File, To_Ghdl_C_String (Buf'Address), Len, Status);
       if Status /= Op_Ok then
@@ -487,15 +477,7 @@ package body Elab.Vhdl_Files is
                    Val.Mem + Val.Typ.Rec.E (I).Offs.Mem_Off),
                   Loc);
             end loop;
-         when Type_Unbounded_Record
-            | Type_Array_Unbounded
-            | Type_Unbounded_Array
-            | Type_Unbounded_Vector
-            | Type_Protected
-            | Type_Slice
-            | Type_File
-            | Type_Access =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end File_Read_Value;
 
@@ -518,7 +500,7 @@ package body Elab.Vhdl_Files is
                Ghdl_Read_Scalar (File, Ghdl_Ptr (Mem'Address),
                                  Ghdl_Index_Type (Typ.Sz), Status);
                if Status /= Op_Ok then
-                  File_Error (Syn_Inst, Loc, Status);
+                  File_Error (Syn_Inst, Loc, Status);   -- GCOV_EXCL_LINE
                end if;
             end;
          when Type_Vector
@@ -534,15 +516,7 @@ package body Elab.Vhdl_Files is
             for I in Typ.Rec.E'Range loop
                File_Skip_Value (Syn_Inst, File, Typ.Rec.E (I).Typ, Loc);
             end loop;
-         when Type_Unbounded_Record
-            | Type_Array_Unbounded
-            | Type_Unbounded_Array
-            | Type_Unbounded_Vector
-            | Type_Protected
-            | Type_Slice
-            | Type_File
-            | Type_Access =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end File_Skip_Value;
 
@@ -563,14 +537,14 @@ package body Elab.Vhdl_Files is
                                           Length : Valtyp;
                                           Loc : Node)
    is
-      Bnd : aliased Std_String_Bound;
-      Str : aliased Std_String;
       Status : Op_Status;
-      Len : Std_Integer;
+      Len : Ghdl_Index_Type;
+      Str_Base : Std_String_Basep;
+      Str_Len : Ghdl_Index_Type;
    begin
-      Str := (Base => To_Std_String_Basep (Value.Val.Mem.all'Address),
-              Bounds => Bnd'Unrestricted_Access);
-      Ghdl_Text_Read_Length (File, Str'Unrestricted_Access, Status, Len);
+      Str_Base := To_Std_String_Basep (Value.Val.Mem.all'Address);
+      Str_Len := Ghdl_Index_Type (Value.Typ.Abound.Len);
+      Ghdl_Text_Read_Length (File, Str_Base, Str_Len, Status, Len);
       if Status /= Op_Ok then
          File_Error (Syn_Inst, Loc, Status);
          Len := 0;
@@ -598,11 +572,14 @@ package body Elab.Vhdl_Files is
       if Is_Text then
          Synth_File_Text_Read_Length (Syn_Inst, File, Value, Length, Loc);
       else
+         --  Read length.
          Ghdl_Read_Scalar (File, Ghdl_Ptr (Len'Address), 4, Status);
          if Status /= Op_Ok then
             File_Error (Syn_Inst, Loc, Status);
             return;
          end if;
+
+         --  Read elements.
          Off := 0;
          for I in 1 .. Len loop
             if I <= Value.Typ.Abound.Len then
@@ -634,7 +611,7 @@ package body Elab.Vhdl_Files is
             Ghdl_Write_Scalar (File, Ghdl_Ptr (Val.Mem.all'Address),
                               Ghdl_Index_Type (Val.Typ.Sz), Status);
             if Status /= Op_Ok then
-               File_Error (Syn_Inst, Loc, Status);
+               File_Error (Syn_Inst, Loc, Status);   -- GCOV_EXCL_LINE
             end if;
          when Type_Vector
             | Type_Array =>
@@ -656,46 +633,22 @@ package body Elab.Vhdl_Files is
                                   Val.Mem + Val.Typ.Rec.E (I).Offs.Mem_Off),
                                  Loc);
             end loop;
-         when Type_Unbounded_Record
-            | Type_Array_Unbounded
-            | Type_Unbounded_Array
-            | Type_Unbounded_Vector
-            | Type_Protected
-            | Type_Slice
-            | Type_File
-            | Type_Access =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end File_Write_Value;
-
-   function Dir_To_Dir (Dir : Direction_Type) return Ghdl_Dir_Type is
-   begin
-      case Dir is
-         when Dir_To =>
-            return Grt.Vhdl_Types.Dir_To;
-         when Dir_Downto =>
-            return Grt.Vhdl_Types.Dir_Downto;
-      end case;
-   end Dir_To_Dir;
 
    procedure File_Write_Text (Syn_Inst : Synth_Instance_Acc;
                               File : File_Index;
                               Val : Memtyp;
                               Loc : Node)
    is
-      B : Bound_Type;
       Status : Op_Status;
-      Str : Std_String;
-      Bnd : Std_String_Bound;
+      Str_Base : Std_String_Basep;
+      Str_Len : Ghdl_Index_Type;
    begin
-      B := Val.Typ.Abound;
-      Bnd.Dim_1 := (Left => Ghdl_I32 (B.Left),
-                    Right => Ghdl_I32 (B.Right),
-                    Dir => Dir_To_Dir (B.Dir),
-                    Length => Ghdl_Index_Type (B.Len));
-      Str := (Base => To_Std_String_Basep (Val.Mem.all'Address),
-              Bounds => To_Std_String_Boundp (Bnd'Address));
-      Ghdl_Text_Write (File, To_Std_String_Ptr (Str'Address), Status);
+      Str_Base := To_Std_String_Basep (Val.Mem.all'Address);
+      Str_Len := Ghdl_Index_Type (Val.Typ.Abound.Len);
+      Ghdl_Text_Write (File, Str_Base, Str_Len, Status);
       if Status /= Op_Ok then
          File_Error (Syn_Inst, Loc, Status);
       end if;
@@ -709,11 +662,12 @@ package body Elab.Vhdl_Files is
       Is_Text : constant Boolean := Get_Text_File_Flag (File_Type);
       File : constant File_Index := Get_Value (Syn_Inst, Inters).Val.File;
       Param2 : constant Node := Get_Chain (Inters);
-      Value : constant Valtyp := Get_Value (Syn_Inst, Param2);
+      Value : Valtyp;
       Type_Mark : Node;
       Len : Uns32;
       Status : Op_Status;
    begin
+      Value := Strip_Alias_Const (Get_Value (Syn_Inst, Param2));
       if Is_Text then
          File_Write_Text (Syn_Inst, File, (Value.Typ, Value.Val.Mem), Loc);
       else
@@ -724,7 +678,7 @@ package body Elab.Vhdl_Files is
             Len := Value.Typ.Abound.Len;
             Ghdl_Write_Scalar (File, Ghdl_Ptr (Len'Address), 4, Status);
             if Status /= Op_Ok then
-               File_Error (Syn_Inst, Loc, Status);
+               File_Error (Syn_Inst, Loc, Status);   -- GCOV_EXCL_LINE
             end if;
          end if;
          File_Write_Value (Syn_Inst, File, (Value.Typ, Value.Val.Mem), Loc);
@@ -743,7 +697,7 @@ package body Elab.Vhdl_Files is
          Ghdl_File_Close (File, Status);
       end if;
       if Status /= Op_Ok then
-         File_Error (Syn_Inst, Decl, Status);
+         File_Error (Syn_Inst, Decl, Status);   -- GCOV_EXCL_LINE
       end if;
       if Is_Text then
          Ghdl_Text_File_Finalize (File, Status);
@@ -751,7 +705,7 @@ package body Elab.Vhdl_Files is
          Ghdl_File_Finalize (File, Status);
       end if;
       if Status /= Op_Ok then
-         File_Error (Syn_Inst, Decl, Status);
+         File_Error (Syn_Inst, Decl, Status);   -- GCOV_EXCL_LINE
       end if;
    end Finalize_File;
 end Elab.Vhdl_Files;

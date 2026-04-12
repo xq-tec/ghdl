@@ -186,10 +186,8 @@ package body Synth.Verilog_Insts is
       Build => Build,
       Equal => Equal);
 
-   function Synth_Foreign_Module_Instance
-     (Sub_Inst : Synth_Instance_Acc; Foreign_Module : Node) return Module
+   function Synth_Foreign_Module_Instance (Foreign_Module : Node) return Module
    is
-      pragma Unreferenced (Sub_Inst);
       use Vhdl.Nodes;
       Vhd_Unit : constant Vhdl_Node :=
         Vhdl_Node (Get_Foreign_Node (Foreign_Module));
@@ -242,16 +240,16 @@ package body Synth.Verilog_Insts is
       Nbr_Inputs : Port_Nbr;
       Nbr_Outputs : Port_Nbr;
    begin
-      --  Allocate obj_id for parameters/localparam and compute their
-      --   expressions.
-      Sub_Inst := Elaborate_Sub_Instance_Params (Parent_Inst, Inst_Module);
-
       if Get_Kind (Inst_Module) = N_Foreign_Module then
          --  Create the vhdl instance,
          --  with the vhdl value of the generics,
          --  and vhdl types of generics and ports.
-         M := Synth_Foreign_Module_Instance (Sub_Inst, Inst_Module);
+         M := Synth_Foreign_Module_Instance (Inst_Module);
       else
+         --  Allocate obj_id for parameters/localparam and compute their
+         --   expressions.
+         Sub_Inst := Elaborate_Sub_Instance_Params (Parent_Inst, Inst_Module);
+
          --  Check for existing module with same name and same parameters
          --    or create a new module and put it in a list.
          Obj := Insts_Interning.Get (Inst_Params'(M => Inst_Module,
@@ -275,7 +273,6 @@ package body Synth.Verilog_Insts is
       --  TODO: assume same order
       --  TODO: non-ANSI style
       while Conn /= Null_Node loop
-         pragma Assert (Get_Kind (Conn) = N_Port_Connection);
          Port := Get_Port (Conn);
          if Get_Kind (Port) = N_Port then
             Port := Get_Expression (Port);
@@ -308,8 +305,7 @@ package body Synth.Verilog_Insts is
                   end;
                end if;
                Nbr_Outputs := Nbr_Outputs + 1;
-            when others =>
-               Error_Kind ("synth_module_instance", Port);
+            when others => Error_Kind ("synth_module_instance", Port);
          end case;
          Conn := Get_Chain (Conn);
       end loop;
@@ -331,6 +327,10 @@ package body Synth.Verilog_Insts is
    is
       Attr : Node;
    begin
+      pragma Assert (Get_Kind (M) = N_Module);
+      if Get_Blackbox_Flag (M) then
+         return True;
+      end if;
       Attr := Get_Attributes_Chain (M);
       while Attr /= Null_Node loop
          if Get_Identifier (Attr) = Std_Names.Name_Syn_Black_Box
@@ -352,7 +352,7 @@ package body Synth.Verilog_Insts is
    begin
       if Expr = Null_Node then
          --  Default value is 1.
-         Ptype := Param_Uns32;
+         Ptype := Param_Pval_Boolean;
          --  TODO: create the value only once ?
          Pv := Create_Pval2 (1);
          Write_Pval (Pv, 0, (Val => 1, Zx => 0));
@@ -384,11 +384,13 @@ package body Synth.Verilog_Insts is
       declare
          Inports : Port_Desc_Array (1 .. Nbr_Inputs);
          Outports : Port_Desc_Array (1 .. Nbr_Outputs);
+         Order : Uns32;
          Port : Node;
          Decl : Node;
       begin
          Nbr_Inputs := 0;
          Nbr_Outputs := 0;
+         Order := 0;
 
          Port := Ports;
          while Port /= Null_Node loop
@@ -400,13 +402,15 @@ package body Synth.Verilog_Insts is
                   Inports (Nbr_Inputs) :=
                     (Name => New_Sname_User (Get_Identifier (Decl), No_Sname),
                      Dir => Port_In,
+                     Order => Order,
                      W => Get_Type_Bitwidth (Get_Type_Data_Type (Decl)));
                when N_Output =>
                   Set_Obj_Port (Scope, Decl, Nbr_Outputs);
                   Nbr_Outputs := Nbr_Outputs + 1;
                   Outports (Nbr_Outputs) :=
                     (Name => New_Sname_User (Get_Identifier (Decl), No_Sname),
-                    Dir => Port_Out,
+                     Dir => Port_Out,
+                     Order => Order,
                      W => Get_Type_Bitwidth (Get_Type_Data_Type (Decl)));
                when N_Wire
                   | N_Wire_Direct
@@ -418,10 +422,10 @@ package body Synth.Verilog_Insts is
                   | N_Parameter =>
                   --  Skip non-port items.
                   null;
-               when others =>
-                  Error_Kind ("build_module", Port);
+               when others => Error_Kind ("build_module", Port);
             end case;
             Port := Get_Chain (Port);
+            Order := Order + 1;
          end loop;
 
          pragma Assert (Nbr_Inputs = Inports'Last);
@@ -488,7 +492,7 @@ package body Synth.Verilog_Insts is
                begin
                   if Label = Null_Identifier then
                      --  TODO: uniq name.
-                     Name := New_Sname_Artificial (Std_Names.Name_Generate);
+                     Name := New_Sname_System (Std_Names.Name_Generate);
                   else
                      Name := New_Sname_User (Label, Get_Sname (Inst));
                   end if;
@@ -630,8 +634,7 @@ package body Synth.Verilog_Insts is
          when N_Specify =>
             null;
 
-         when others =>
-            Error_Kind ("synth_decl_item", N);
+         when others => Error_Kind ("synth_decl_item", N);
       end case;
    end Synth_Decl_Item;
 
@@ -681,8 +684,7 @@ package body Synth.Verilog_Insts is
 
          when N_Specify =>
             null;
-         when others =>
-            Error_Kind ("synth_initial_item", N);
+         when others => Error_Kind ("synth_initial_item", N);
       end case;
    end Synth_Initial_Item;
 
@@ -735,8 +737,7 @@ package body Synth.Verilog_Insts is
          when N_Specify =>
             null;
 
-         when others =>
-            Error_Kind ("synth_always_item", N);
+         when others => Error_Kind ("synth_always_item", N);
       end case;
    end Synth_Always_Item;
 
@@ -854,8 +855,7 @@ package body Synth.Verilog_Insts is
             null;
          when N_Specify =>
             null;
-         when others =>
-            Error_Kind ("synth_finalize_item", N);
+         when others => Error_Kind ("synth_finalize_item", N);
       end case;
    end Synth_Finalize_Item;
 
@@ -1128,8 +1128,7 @@ package body Synth.Verilog_Insts is
                return Back_Elab_Vector_Type (T, Logic_Type);
             when N_Bit_Packed_Array_Cst =>
                return Back_Elab_Vector_Type (T, Bit_Type);
-            when others =>
-               Error_Kind ("back_elab_type", T);
+            when others => Error_Kind ("back_elab_type", T);
          end case;
       end Back_Elab_Type;
 

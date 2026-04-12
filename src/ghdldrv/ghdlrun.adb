@@ -36,7 +36,6 @@ with Vhdl.Std_Package;
 with Vhdl.Sem;
 with Vhdl.Canon;
 with Vhdl.Ieee.Std_Logic_1164;
-with Vhdl.Back_End;
 with Vhdl.Nodes_GC;
 with Vhdl.Utils;
 with Vhdl.Configuration;
@@ -50,7 +49,7 @@ with Ortho_Nodes; use Ortho_Nodes;
 with Trans_Decls;
 with Translation;
 with Trans_Link;
-with Trans_Foreign;
+with Trans_Foreign_Jit;
 with Trans.Coverage;
 
 with Simul.Main;
@@ -99,10 +98,6 @@ package body Ghdlrun is
 
    Run_Mode : Run_Mode_Kind := Run_Jit;
 
-   procedure Foreign_Hook (Decl : Iir;
-                           Info : Vhdl.Back_End.Foreign_Info_Type;
-                           Ortho : O_Dnode);
-
    procedure Compile_Init (Analyze_Only : Boolean) is
    begin
       Common_Compile_Init (Analyze_Only);
@@ -110,8 +105,8 @@ package body Ghdlrun is
          return;
       end if;
 
-      Translation.Foreign_Hook := Foreign_Hook'Access;
-      Trans_Foreign.Init;
+      Translation.Foreign_Hook := Trans_Foreign_Jit.Foreign_Hook'Access;
+      Trans_Foreign_Jit.Init;
 
       --  FIXME: add a flag to force unnesting.
       --  Translation.Flag_Unnest_Subprograms := True;
@@ -129,7 +124,7 @@ package body Ghdlrun is
       end case;
    end Compile_Init;
 
-   procedure Compile_Elab_Setup (Config : Iir) is
+   function Compile_Elab_Setup (Config : Iir) return Boolean is
    begin
       if Time_Resolution = 'a' then
          Time_Resolution := Vhdl.Std_Package.Get_Minimal_Time_Resolution;
@@ -197,7 +192,7 @@ package body Ghdlrun is
                Vhdl.Configuration.Check_Entity_Declaration_Top (Top, False);
 
                if Errorout.Nbr_Errors > 0 then
-                  raise Errorout.Compilation_Error;
+                  return False;
                end if;
 
                if Run_Mode = Run_Jit then
@@ -211,7 +206,7 @@ package body Ghdlrun is
                Inst := Elab.Vhdl_Insts.Elab_Top_Unit (Lib_Unit);
 
                if Errorout.Nbr_Errors > 0 then
-                  raise Errorout.Compilation_Error;
+                  return False;
                end if;
 
                --  Finish elaboration: gather processes, signals.
@@ -224,12 +219,14 @@ package body Ghdlrun is
 
       if Errorout.Nbr_Errors > 0 then
          --  This may happen (bad entity for example).
-         raise Compilation_Error;
+         return False;
       end if;
 
       if Flags.Check_Ast_Level > 0 then
          Vhdl.Nodes_GC.Report_Unreferenced;
       end if;
+
+      return True;
    end Compile_Elab_Setup;
 
    procedure Compile_Elab
@@ -261,7 +258,9 @@ package body Ghdlrun is
          end loop;
       end if;
 
-      Compile_Elab_Setup (Config);
+      if not Compile_Elab_Setup (Config) then
+         raise Compilation_Error;
+      end if;
    end Compile_Elab;
 
    --  Set options.
@@ -308,18 +307,6 @@ package body Ghdlrun is
 
    procedure Def (Decl : O_Dnode; Addr : Address)
      renames Ortho_Jit.Set_Address;
-
-   procedure Foreign_Hook (Decl : Iir;
-                           Info : Vhdl.Back_End.Foreign_Info_Type;
-                           Ortho : O_Dnode)
-   is
-      Res : Address;
-   begin
-      Res := Trans_Foreign.Get_Foreign_Address (Decl, Info);
-      if Res /= Null_Address then
-         Def (Ortho, Res);
-      end if;
-   end Foreign_Hook;
 
    procedure Register_Modules is
    begin
@@ -410,7 +397,7 @@ package body Ghdlrun is
                return;
             end if;
 
-            Synth.Flags.Severity_Level := Grt.Options.Severity_Level;
+            Synth.Flags.Severity_Level := Grt.Options.Severity_Stop_Level;
 
             if Run_Mode = Run_Jit then
                Elaborate_Proc := Simul.Vhdl_Compile.Elaborate'Access;
@@ -420,6 +407,9 @@ package body Ghdlrun is
                Simul.Vhdl_Compile.Simulation;
             else
                Elaborate_Proc := Simul.Vhdl_Simul.Runtime_Elaborate'Access;
+
+               Simul.Fst.Register;
+
                Simul.Vhdl_Simul.Simulation;
             end if;
       end case;

@@ -32,10 +32,9 @@ with Grt.Algos;
 with Netlists; use Netlists;
 with Netlists.Builders; use Netlists.Builders;
 with Netlists.Concats;
-with Netlists.Folds;
+with Netlists.Folds; use Netlists.Folds;
+with Netlists.Locations; use Netlists.Locations;
 
-with Elab.Vhdl_Objtypes; use Elab.Vhdl_Objtypes;
-with Elab.Vhdl_Values; use Elab.Vhdl_Values;
 
 with Vhdl.Utils; use Vhdl.Utils;
 with Vhdl.Errors;
@@ -44,6 +43,8 @@ with Vhdl.Ieee.Math_Real;
 with Vhdl.Std_Package;
 
 with Elab.Memtype; use Elab.Memtype;
+with Elab.Vhdl_Objtypes; use Elab.Vhdl_Objtypes;
+with Elab.Vhdl_Values; use Elab.Vhdl_Values;
 with Elab.Vhdl_Files;
 with Elab.Debugger;
 with Elab.Vhdl_Errors;
@@ -69,6 +70,8 @@ package body Synth.Vhdl_Insts is
                                     Entity : Node;
                                     Arch : Node);
 
+   function Last_Inst_Index return Uns32;
+
    function Mode_To_Port_Kind (Mode : Iir_Mode) return Port_Kind is
    begin
       case Mode is
@@ -79,9 +82,7 @@ package body Synth.Vhdl_Insts is
             return Port_Out;
          when Iir_Inout_Mode =>
             return Port_Inout;
-         when Iir_Linkage_Mode
-           | Iir_Unknown_Mode =>
-            raise Synth_Error;
+         when Iir_Linkage_Mode | Iir_Unknown_Mode => raise Internal_Error;
       end case;
    end Mode_To_Port_Kind;
 
@@ -132,13 +133,28 @@ package body Synth.Vhdl_Insts is
       end if;
       Inter := Get_Generic_Chain (Params.Decl);
       while Inter /= Null_Node loop
-         pragma Assert (Get_Kind (Inter)
-                          = Iir_Kind_Interface_Constant_Declaration);
-         if not Is_Equal (Get_Value (Obj.Syn_Inst, Inter),
-                          Get_Value (Params.Syn_Inst, Inter))
-         then
-            return False;
-         end if;
+         case Get_Kind (Inter) is
+            when Iir_Kind_Interface_Constant_Declaration =>
+               if not Is_Equal (Get_Value (Obj.Syn_Inst, Inter),
+                               Get_Value (Params.Syn_Inst, Inter))
+               then
+                  return False;
+               end if;
+            when Iir_Kind_Interface_Type_Declaration =>
+               declare
+                  Type_Def : constant Node :=
+                    Get_Interface_Type_Definition (Inter);
+               begin
+                  if not Are_Types_Equal
+                    (Get_Subtype_Object (Obj.Syn_Inst, Type_Def),
+                     Get_Subtype_Object (Params.Syn_Inst, Type_Def))
+                  then
+                     return False;
+                  end if;
+               end;
+            -- Other kinds of generics not supported yet.
+            when others => Vhdl.Errors.Error_Kind ("inst_object.equal", Inter);
+         end case;
          Inter := Get_Chain (Inter);
       end loop;
 
@@ -215,8 +231,11 @@ package body Synth.Vhdl_Insts is
          when Type_Bit
            | Type_Logic =>
             null;
-         when others =>
-            raise Internal_Error;
+         when Type_Discrete =>
+            Hash_Uns64 (C, Direction_Type'Pos (Typ.Drange.Dir));
+            Hash_Uns64 (C, To_Uns64 (Typ.Drange.Left));
+            Hash_Uns64 (C, To_Uns64 (Typ.Drange.Right));
+         when others => raise Internal_Error;
       end case;
    end Hash_Bounds;
 
@@ -224,29 +243,12 @@ package body Synth.Vhdl_Insts is
                          Val : Value_Acc;
                          Typ : Type_Acc) is
    begin
-      case Val.Kind is
-         when Value_Memory =>
-            Hash_Memory (C, Val.Mem, Typ);
-         when Value_Const =>
-            Hash_Const (C, Val.C_Val, Typ);
-         when Value_Alias =>
-            if Val.A_Off /= (0, 0) then
-               raise Internal_Error;
-            end if;
-            Hash_Const (C, Val.A_Obj, Typ);
-         when Value_Net
-           | Value_Wire
-           | Value_Signal
-           | Value_File
-           | Value_Quantity
-           | Value_Terminal
-           | Value_Dyn_Alias
-           | Value_Sig_Val =>
-            raise Internal_Error;
-      end case;
+      pragma Assert (Val.Kind = Value_Memory);
+      Hash_Memory (C, Val.Mem, Typ);
    end Hash_Const;
 
-   function Create_Module_Name (Params : Inst_Params) return Sname
+   function Create_Module_Name_Hash (Params : Inst_Params;
+                                     Arch_Id : Name_Id) return Sname
    is
       use GNAT.SHA1;
       Decl : constant Node := Params.Decl;
@@ -265,7 +267,12 @@ package body Synth.Vhdl_Insts is
       --  Append the hash if any.
       use Name_Table;
       Id_Len : constant Natural := Get_Name_Length (Id);
-      Str_Len : constant Natural := Id_Len + 512;
+      Arch_Id_Len : constant Natural := Get_Name_Length (Arch_Id);
+      Lib_Id : constant Name_Id := Get_Identifier
+        (Get_Library (Get_Design_File (Get_Design_Unit (Decl))));
+      Lib_Id_Len : constant Natural := Get_Name_Length (Lib_Id);
+      Str_Len : constant Natural :=
+        Id_Len + 2 + Arch_Id_Len + 2 + Lib_Id_Len + 512;
 
       --  True in practice (and used to set the length of STR, but doesn't work
       --  anymore with gcc/gnat 11.
@@ -273,91 +280,124 @@ package body Synth.Vhdl_Insts is
       Str : String (1 .. Str_Len + 41);
       Len : Natural;
 
+      --  If true, add a uniq number because of non-(easily-)hashable generic
+      Add_Uniq : Boolean;
+
       Gen_Decl : Node;
       Gen : Valtyp;
    begin
+      Add_Uniq := False;
+
+      --  Put entity name.
       Len := Id_Len;
       Str (1 .. Len) := Get_Name_Ptr (Id) (1 .. Len);
 
+      --  Append architecture name.
+      Str (Len + 1 .. Len + 2) := "_B";
+      Len := Len + 2;
+      Str (Len + 1 .. Len + Arch_Id_Len) :=
+        Get_Name_Ptr (Arch_Id)(1 .. Arch_Id_Len);
+      Len := Len + Arch_Id_Len;
+
+      --  Append library name.
+      if Lib_Id /= Std_Names.Name_Work then
+         Str (Len + 1 .. Len + 2) := "_L";
+         Len := Len + 2;
+         Str (Len + 1 .. Len + Lib_Id_Len) :=
+           Get_Name_Ptr (Lib_Id)(1 .. Lib_Id_Len);
+         Len := Len + Lib_Id_Len;
+      end if;
+
       Has_Hash := False;
 
-      case Params.Encoding is
-         when Name_Hash =>
-            Ctxt := GNAT.SHA1.Initial_Context;
+      Ctxt := GNAT.SHA1.Initial_Context;
 
-            Gen_Decl := Generics;
-            while Gen_Decl /= Null_Node loop
-               if Get_Kind (Gen_Decl) = Iir_Kind_Interface_Constant_Declaration
-               then
-                  Gen := Get_Value (Params.Syn_Inst, Gen_Decl);
-                  Strip_Const (Gen);
-                  case Gen.Typ.Kind is
-                     when Type_Discrete =>
-                        declare
-                           S : constant String :=
-                             Uns64'Image (To_Uns64 (Read_Discrete (Gen)));
-                        begin
-                           if Len + S'Length > Str_Len then
-                              Has_Hash := True;
-                              Hash_Const (Ctxt, Gen.Val, Gen.Typ);
-                           else
-                              Str (Len + 1 .. Len + S'Length) := S;
-                              pragma Assert (Str (Len + 1) = ' ');
-                              Str (Len + 1) := '_';  --  Overwrite the space.
-                              Len := Len + S'Length;
-                           end if;
-                        end;
-                     when others =>
+      Gen_Decl := Generics;
+      while Gen_Decl /= Null_Node loop
+         if Get_Kind (Gen_Decl) = Iir_Kind_Interface_Constant_Declaration then
+            Gen := Get_Value (Params.Syn_Inst, Gen_Decl);
+            Strip_Const (Gen);
+            case Gen.Typ.Kind is
+               when Type_Discrete =>
+                  declare
+                     S : constant String :=
+                       Uns64'Image (To_Uns64 (Read_Discrete (Gen)));
+                  begin
+                     if Len + S'Length > Str_Len then
                         Has_Hash := True;
                         Hash_Const (Ctxt, Gen.Val, Gen.Typ);
-                  end case;
-               else
-                  --  TODO: add a unique number (index)
-                  null;
-               end if;
-               Gen_Decl := Get_Chain (Gen_Decl);
-            end loop;
+                     else
+                        Str (Len + 1 .. Len + S'Length) := S;
+                        pragma Assert (Str (Len + 1) = ' ');
+                        Str (Len + 1) := '_';  --  Overwrite the space.
+                        Len := Len + S'Length;
+                     end if;
+                  end;
+               when others =>
+                  Has_Hash := True;
+                  Hash_Const (Ctxt, Gen.Val, Gen.Typ);
+            end case;
+         else
+            --  For non-constant generic, simply add a uniq id.
+            Add_Uniq := True;
+         end if;
+         Gen_Decl := Get_Chain (Gen_Decl);
+      end loop;
 
-            declare
-               Port_Decl : Node;
-               Port_Typ : Type_Acc;
-            begin
-               Port_Decl := Ports;
-               while Port_Decl /= Null_Node loop
-                  if not Is_Fully_Constrained_Type (Get_Type (Port_Decl)) then
-                     Port_Typ := Get_Value (Params.Syn_Inst, Port_Decl).Typ;
-                     Has_Hash := True;
-                     Hash_Bounds (Ctxt, Port_Typ);
-                  end if;
-                  Port_Decl := Get_Chain (Port_Decl);
-               end loop;
-            end;
-            if not Has_Hash and then Generics = Null_Node then
-               --  Simple case: same name.
-               --  TODO: what about two entities with the same identifier but
-               --   declared in two different libraries ?
-               --  TODO: what about extended identifiers ?
-               return New_Sname_User (Id, No_Sname);
+      declare
+         Port_Decl : Node;
+         Port_Typ : Type_Acc;
+      begin
+         Port_Decl := Ports;
+         while Port_Decl /= Null_Node loop
+            if not Is_Fully_Constrained_Type (Get_Type (Port_Decl)) then
+               Port_Typ := Get_Value (Params.Syn_Inst, Port_Decl).Typ;
+               Has_Hash := True;
+               Hash_Bounds (Ctxt, Port_Typ);
             end if;
+            Port_Decl := Get_Chain (Port_Decl);
+         end loop;
+      end;
 
-            if Has_Hash then
-               Str (Len + 1) := '_';
-               Len := Len + 1;
-               Str (Len + 1 .. Len + 40) := GNAT.SHA1.Digest (Ctxt);
-               Len := Len + 40;
+      if Add_Uniq then
+         declare
+            Img : constant String := Uns32'Image (Last_Inst_Index + 1);
+         begin
+            Str (Len + 1) := '_';
+            Len := Len + 1;
+            Str (Len + 1 .. Len + Img'Length - 1) := Img (2 .. Img'Last);
+            Len := Len + Img'Last - 1;
+         end;
+      elsif Has_Hash then
+         Str (Len + 1) := '_';
+         Len := Len + 1;
+         Str (Len + 1 .. Len + 40) := GNAT.SHA1.Digest (Ctxt);
+         Len := Len + 40;
+      end if;
+
+      return New_Sname_User (Get_Identifier (Str (1 .. Len)), No_Sname);
+   end Create_Module_Name_Hash;
+
+   function Create_Module_Name (Params : Inst_Params) return Sname
+   is
+      Arch_Id : Name_Id;
+   begin
+      case Params.Encoding is
+         when Name_Hash =>
+            if Params.Arch = Null_Node then
+               Arch_Id := Null_Identifier;
+            else
+               Arch_Id := Get_Identifier (Params.Arch);
             end if;
+            return Create_Module_Name_Hash (Params, Arch_Id);
 
          when Name_Asis
            | Name_Parameters =>
-            return New_Sname_User (Get_Source_Identifier (Decl), No_Sname);
+            return New_Sname_User
+              (Get_Source_Identifier (Params.Decl), No_Sname);
 
-         when Name_Index =>
-            --  TODO.
-            raise Internal_Error;
+         when Name_Index => raise Internal_Error; --  TODO.
       end case;
-
-
-      return New_Sname_User (Get_Identifier (Str (1 .. Len)), No_Sname);
    end Create_Module_Name;
 
    --  Create the name of an interface.
@@ -380,46 +420,29 @@ package body Synth.Vhdl_Insts is
       return New_Sname_User (Get_Encoded_Name_Id (Decl, Enc), No_Sname);
    end Create_Inter_Name;
 
+   --  Record interfaces
+   function Can_Expand_Interface (Inter : Node) return Boolean
+   is
+      Inter_Type : constant Node := Get_Base_Type (Get_Type (Inter));
+   begin
+      return Get_Kind (Inter_Type) = Iir_Kind_Record_Type_Definition;
+   end Can_Expand_Interface;
+
    --  Return the number of ports for a type.  A record type create one
    --  port per immediate subelement.  Sub-records are not expanded.
-   function Count_Nbr_Ports (Typ : Type_Acc) return Port_Nbr is
+   function Count_Nbr_Ports (Inter : Node; Typ : Type_Acc) return Port_Nbr is
    begin
-      case Typ.Kind is
-         when Type_Bit
-           | Type_Logic
-           | Type_Discrete
-           | Type_Float
-           | Type_Vector
-           | Type_Unbounded_Vector
-           | Type_Array
-           | Type_Array_Unbounded
-           | Type_Unbounded_Array =>
-            return 1;
-         when Type_Record
-           | Type_Unbounded_Record =>
-            return Port_Nbr (Typ.Rec.Len);
-         when Type_Slice
-           | Type_Access
-           | Type_File
-           | Type_Protected =>
-            raise Internal_Error;
-      end case;
-   end Count_Nbr_Ports;
-
-   function Get_Type2 (N : Node) return Node
-   is
-      Res : Node;
-   begin
-      Res := Get_Type (N);
-      if Get_Kind (Res) = Iir_Kind_Interface_Type_Definition then
-         Res := Get_Associated_Type (Res);
+      if Can_Expand_Interface (Inter) then
+         return Port_Nbr (Typ.Rec.Len);
+      else
+         return 1;
       end if;
-      return Res;
-   end Get_Type2;
+   end Count_Nbr_Ports;
 
    procedure Build_Ports_Desc (Descs : in out Port_Desc_Array;
                                Idx : in out Port_Nbr;
                                Pkind : Port_Kind;
+                               Order : Uns32;
                                Encoding : Name_Encoding;
                                Typ : Type_Acc;
                                Inter : Node)
@@ -428,43 +451,30 @@ package body Synth.Vhdl_Insts is
    begin
       Port_Sname := Create_Inter_Name (Inter, Encoding);
 
-      case Typ.Kind is
-         when Type_Bit
-           | Type_Logic
-           | Type_Discrete
-           | Type_Float
-           | Type_Vector
-           | Type_Unbounded_Vector
-           | Type_Array
-           | Type_Array_Unbounded
-           | Type_Unbounded_Array =>
-            Idx := Idx + 1;
-            Descs (Idx) := (Name => Port_Sname,
-                            Dir => Pkind,
-                            W => Get_Type_Width (Typ));
-         when Type_Record
-           | Type_Unbounded_Record =>
-            declare
-               Els : constant Node_Flist := Get_Elements_Declaration_List
-                 (Get_Type2 (Inter));
-               El : Node;
-            begin
-               for I in Typ.Rec.E'Range loop
-                  El := Get_Nth_Element (Els, Natural (I - 1));
-                  Idx := Idx + 1;
-                  Descs (Idx) :=
-                    (Name => New_Sname_User
-                       (Get_Encoded_Name_Id (El, Encoding), Port_Sname),
-                     Dir => Pkind,
-                     W => Get_Type_Width (Typ.Rec.E (I).Typ));
-               end loop;
-            end;
-         when Type_Slice
-           | Type_Access
-           | Type_File
-           | Type_Protected =>
-            raise Internal_Error;
-      end case;
+      if Can_Expand_Interface (Inter) then
+         declare
+            Els : constant Node_Flist :=
+              Get_Elements_Declaration_List (Get_Type (Inter));
+            El : Node;
+         begin
+            for I in Typ.Rec.E'Range loop
+               El := Get_Nth_Element (Els, Natural (I - 1));
+               Idx := Idx + 1;
+               Descs (Idx) :=
+                 (Name => New_Sname_Field
+                   (Get_Encoded_Name_Id (El, Encoding), Port_Sname),
+                 Dir => Pkind,
+                 Order => Order,
+                 W => Get_Type_Width (Typ.Rec.E (I).Typ));
+            end loop;
+         end;
+      else
+         Idx := Idx + 1;
+         Descs (Idx) := (Name => Port_Sname,
+                         Dir => Pkind,
+                         Order => Order,
+                         W => Get_Type_Width (Typ));
+      end if;
    end Build_Ports_Desc;
 
    function Build (Params : Inst_Params) return Inst_Object
@@ -501,12 +511,12 @@ package body Synth.Vhdl_Insts is
          case Mode_To_Port_Kind (Get_Mode (Inter)) is
             when Port_In =>
                Val := Create_Value_Net (No_Net, Inter_Typ);
-               Nbr_Inputs := Nbr_Inputs + Count_Nbr_Ports (Inter_Typ);
+               Nbr_Inputs := Nbr_Inputs + Count_Nbr_Ports (Inter, Inter_Typ);
             when Port_Out
               | Port_Inout =>
                Val := Create_Value_Wire
                  (No_Wire_Id, Inter_Typ, Current_Pool);
-               Nbr_Outputs := Nbr_Outputs + Count_Nbr_Ports (Inter_Typ);
+               Nbr_Outputs := Nbr_Outputs + Count_Nbr_Ports (Inter, Inter_Typ);
          end case;
          Replace_Signal (Params.Syn_Inst, Inter, Val);
          Inter := Get_Chain (Inter);
@@ -537,7 +547,8 @@ package body Synth.Vhdl_Insts is
             Nbr_Params := 0;
             while Inter /= Null_Node loop
                --  Bounds or range of the type.
-               Ptype := Type_To_Param_Type (Get_Type (Inter));
+               Inter_Typ := Get_Value (Params.Syn_Inst, Inter).Typ;
+               Ptype := Type_To_Param_Type (Get_Type (Inter), Inter_Typ);
                Nbr_Params := Nbr_Params + 1;
                Descs (Nbr_Params) :=
                  (Name => Create_Inter_Name (Inter, Params.Encoding),
@@ -554,10 +565,12 @@ package body Synth.Vhdl_Insts is
          Outports : Port_Desc_Array (1 .. Nbr_Outputs);
          Pkind : Port_Kind;
          Vt : Valtyp;
+         Order : Uns32;
       begin
          Inter := Get_Port_Chain (Decl);
          Nbr_Inputs := 0;
          Nbr_Outputs := 0;
+         Order := 0;
          while Is_Valid (Inter) loop
             Pkind := Mode_To_Port_Kind (Get_Mode (Inter));
             Vt := Get_Value (Params.Syn_Inst, Inter);
@@ -565,15 +578,16 @@ package body Synth.Vhdl_Insts is
             case Pkind is
                when Port_In =>
                   Build_Ports_Desc (Inports, Nbr_Inputs,
-                                    Pkind, Params.Encoding,
+                                    Pkind, Order, Params.Encoding,
                                     Vt.Typ, Inter);
                when Port_Out
                  | Port_Inout =>
                   Build_Ports_Desc (Outports, Nbr_Outputs,
-                                    Pkind, Params.Encoding,
+                                    Pkind, Order, Params.Encoding,
                                     Vt.Typ, Inter);
             end case;
             Inter := Get_Chain (Inter);
+            Order := Order + 1;
          end loop;
          pragma Assert (Nbr_Inputs = Inports'Last);
          pragma Assert (Nbr_Outputs = Outports'Last);
@@ -596,6 +610,13 @@ package body Synth.Vhdl_Insts is
       Hash => Hash,
       Build => Build,
       Equal => Equal);
+
+   Next_Synth_Instance : Insts_Interning.Index_Type;
+
+   function Last_Inst_Index return Uns32 is
+   begin
+      return Uns32 (Insts_Interning.Last_Index);
+   end Last_Inst_Index;
 
    function Is_Arch_Black_Box (Inst : Synth_Instance_Acc; Arch : Node)
                               return Boolean
@@ -704,8 +725,8 @@ package body Synth.Vhdl_Insts is
                Act := Synth_Function_Conversion (Syn_Inst, Actual, Conv);
             when Iir_Kind_Type_Conversion =>
                Act := Synth_Type_Conversion (Syn_Inst, Conv);
-            when others =>
-               Vhdl.Errors.Error_Kind ("synth_single_input_assoc", Conv);
+            when others => Vhdl.Errors.Error_Kind ("synth_single_input_assoc",
+                                                   Conv);
          end case;
       elsif Actual = Null_Node then
          --  No actual, no default value.
@@ -802,7 +823,7 @@ package body Synth.Vhdl_Insts is
       end loop;
 
       --   3. connect
-      Build (Ctxt, Concat, N);
+      Build (Ctxt, Concat, Get_Location (Assoc), N);
 
       Value_Offset_Tables.Free (Els);
       return N;
@@ -879,6 +900,7 @@ package body Synth.Vhdl_Insts is
 
          --   2. Extract the value.
          O := Build_Extract (Get_Build (Syn_Inst), Port, Offs.Net_Off, Typ.W);
+         Set_Location (O, Get_Location (Iassoc));
          V := Create_Value_Net (O, Typ);
 
          --   3. Assign.
@@ -931,78 +953,52 @@ package body Synth.Vhdl_Insts is
 
    procedure Inst_Input_Connect (Syn_Inst : Synth_Instance_Acc;
                                  Inst : Instance;
+                                 Inter : Node;
                                  Port : in out Port_Idx;
                                  Inter_Typ : Type_Acc;
                                  N : Net) is
    begin
-      case Inter_Typ.Kind is
-         when Type_Bit
-           | Type_Logic
-           | Type_Discrete
-           | Type_Float
-           | Type_Vector
-           | Type_Unbounded_Vector
-           | Type_Array
-           | Type_Array_Unbounded
-           | Type_Unbounded_Array =>
+      if Can_Expand_Interface (Inter) then
+         for I in Inter_Typ.Rec.E'Range loop
             if N /= No_Net then
-               Connect (Get_Input (Inst, Port), N);
+               Connect (Get_Input (Inst, Port),
+                        Build2_Extract (Get_Build (Syn_Inst), N,
+                                        Inter_Typ.Rec.E (I).Offs.Net_Off,
+                                        Inter_Typ.Rec.E (I).Typ.W,
+                                        Get_Location (Inst)));
             end if;
             Port := Port + 1;
-         when Type_Record
-           | Type_Unbounded_Record =>
-            for I in Inter_Typ.Rec.E'Range loop
-               if N /= No_Net then
-                  Connect (Get_Input (Inst, Port),
-                           Build_Extract (Get_Build (Syn_Inst), N,
-                                          Inter_Typ.Rec.E (I).Offs.Net_Off,
-                                          Inter_Typ.Rec.E (I).Typ.W));
-               end if;
-               Port := Port + 1;
-            end loop;
-         when Type_Slice
-           | Type_Access
-           | Type_File
-           | Type_Protected =>
-            raise Internal_Error;
-      end case;
+         end loop;
+      else
+         if N /= No_Net then
+            Connect (Get_Input (Inst, Port), N);
+         end if;
+         Port := Port + 1;
+      end if;
    end Inst_Input_Connect;
 
    procedure Inst_Output_Connect (Syn_Inst : Synth_Instance_Acc;
                                   Inst : Instance;
+                                  Inter : Node;
                                   Idx : in out Port_Idx;
                                   Inter_Typ : Type_Acc;
                                   N : out Net) is
    begin
-      case Inter_Typ.Kind is
-         when Type_Bit
-           | Type_Logic
-           | Type_Discrete
-           | Type_Float
-           | Type_Vector
-           | Type_Unbounded_Vector
-           | Type_Array
-           | Type_Array_Unbounded
-           | Type_Unbounded_Array =>
-            N := Get_Output (Inst, Idx);
-            Idx := Idx + 1;
-         when Type_Record
-           | Type_Unbounded_Record =>
-            declare
-               Nets : Net_Array (1 .. Nat32 (Inter_Typ.Rec.Len));
-            begin
-               for I in Inter_Typ.Rec.E'Range loop
-                  Nets (Nat32 (I)) := Get_Output (Inst, Idx);
-                  Idx := Idx + 1;
-               end loop;
-               N := Folds.Build2_Concat (Get_Build (Syn_Inst), Nets);
-            end;
-         when Type_Slice
-           | Type_Access
-           | Type_File
-           | Type_Protected =>
-            raise Internal_Error;
-      end case;
+      if Can_Expand_Interface (Inter) then
+         declare
+            Nets : Net_Array (1 .. Nat32 (Inter_Typ.Rec.Len));
+         begin
+            for I in Inter_Typ.Rec.E'Range loop
+               Nets (Nat32 (I)) := Get_Output (Inst, Idx);
+               Idx := Idx + 1;
+            end loop;
+            N := Build2_Concat
+              (Get_Build (Syn_Inst), Nets, Get_Location (Inst));
+         end;
+      else
+         N := Get_Output (Inst, Idx);
+         Idx := Idx + 1;
+      end if;
    end Inst_Output_Connect;
 
    --  Subprogram used for instantiation (direct or by component).
@@ -1048,12 +1044,12 @@ package body Synth.Vhdl_Insts is
                   N := Synth_Input_Assoc
                     (Syn_Inst, Assoc, Ent_Inst, Inter, Inter_Typ);
                   Inst_Input_Connect
-                    (Syn_Inst, Inst, Nbr_Inputs, Inter_Typ, N);
+                    (Syn_Inst, Inst, Inter, Nbr_Inputs, Inter_Typ, N);
 
                when Port_Out
                  | Port_Inout =>
                   Inst_Output_Connect
-                    (Syn_Inst, Inst, Nbr_Outputs, Inter_Typ, N);
+                    (Syn_Inst, Inst, Inter, Nbr_Outputs, Inter_Typ, N);
 
                   Synth_Output_Assoc
                     (N, Syn_Inst, Assoc, Ent_Inst, Inter, True);
@@ -1309,8 +1305,7 @@ package body Synth.Vhdl_Insts is
               (Ctxt, New_Internal_Name (Ctxt, Pfx_Name), W);
             Set_Location (Value, Loc);
             Set_Wire_Gate (Get_Value_Wire (Val.Val), Value);
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Create_Component_Wire;
 
@@ -1324,7 +1319,6 @@ package body Synth.Vhdl_Insts is
       Component : constant Node :=
         Get_Named_Entity (Get_Instantiated_Unit (Stmt));
       Bind : constant Node := Get_Binding_Indication (Config);
-      Aspect : constant Node := Get_Entity_Aspect (Bind);
 
       Marker : Mark_Type;
       Ent : Node;
@@ -1339,7 +1333,6 @@ package body Synth.Vhdl_Insts is
    begin
       Mark_Expr_Pool (Marker);
       pragma Assert (Is_Expr_Pool_Empty);
-      pragma Assert (Get_Kind (Aspect) = Iir_Kind_Entity_Aspect_Entity);
 
       Inst_Name := New_Sname_User (Get_Identifier (Stmt),
                                    Get_Sname (Syn_Inst));
@@ -1568,8 +1561,7 @@ package body Synth.Vhdl_Insts is
             null;
          when Iir_Kinds_Verification_Unit =>
             null;
-         when Iir_Kind_Foreign_Module =>
-            raise Internal_Error;
+         when Iir_Kind_Foreign_Module => raise Internal_Error;
       end case;
    end Synth_Dependency;
 
@@ -1592,46 +1584,50 @@ package body Synth.Vhdl_Insts is
       end loop;
    end Synth_Dependencies;
 
-   procedure Synth_Top_Entity (Base : Base_Instance_Acc;
-                               Design_Unit : Node;
-                               Encoding : Name_Encoding;
-                               Syn_Inst : Synth_Instance_Acc)
+   procedure Set_Base_Instance (Base : Base_Instance_Acc)
    is
-      Lib_Unit : constant Node := Get_Library_Unit (Design_Unit);
-      Arch : Node;
-      Entity : Node;
-      Config : Node;
-      Inst_Obj : Inst_Object;
+      use Insts_Interning;
    begin
-      --  Extract architecture from design.
-      case Get_Kind (Lib_Unit) is
-         when Iir_Kind_Architecture_Body =>
-            Arch := Lib_Unit;
-            Config := Get_Library_Unit
-              (Get_Default_Configuration_Declaration (Arch));
-         when Iir_Kind_Configuration_Declaration =>
-            Config := Lib_Unit;
-            Arch := Get_Named_Entity
-              (Get_Block_Specification (Get_Block_Configuration (Lib_Unit)));
-         when others =>
-            raise Internal_Error;
-      end case;
-      Entity := Get_Entity (Arch);
-
-      Make_Base_Instance (Base);
+      Vhdl_Context.Set_Base_Instance (Base);
 
       Global_Base_Instance := Base;
 
       Insts_Interning.Init;
 
+      Next_Synth_Instance := First_Index;
+   end Set_Base_Instance;
+
+   procedure Free_Base_Instance is
+   begin
+      Vhdl_Context.Free_Extra;
+      Global_Base_Instance := null;
+      Elab.Vhdl_Context.Free_Base_Instance;
+      Insts_Interning.Free;
+   end Free_Base_Instance;
+
+   function Synth_Top_Entity (Design_Unit : Node;
+                              Encoding : Name_Encoding;
+                              Syn_Inst : Synth_Instance_Acc)
+                             return Synth_Instance_Acc
+   is
+      Config : constant Node := Get_Library_Unit (Design_Unit);
+      Blk_Conf : constant Node := Get_Block_Configuration (Config);
+      Arch : Node;
+      Entity : Node;
+      Inst_Obj : Inst_Object;
+   begin
       if Flags.Flag_Debug_Init then
-         Elab.Debugger.Debug_Elab (Syn_Inst);
+         Elab.Debugger.Debug_Elab (Syn_Inst);  -- GCOV_EXCL_LINE
       end if;
 
       pragma Assert (Is_Expr_Pool_Empty);
 
-      Set_Extra
-        (Syn_Inst, Base, New_Sname_User (Get_Identifier (Entity), No_Sname));
+      --  Extract architecture from design.
+      Arch := Get_Named_Entity (Get_Block_Specification (Blk_Conf));
+      Entity := Get_Entity (Arch);
+
+      Set_Extra (Syn_Inst, Global_Base_Instance,
+                 New_Sname_User (Get_Identifier (Entity), No_Sname));
 
       --  Search if corresponding module has already been used.
       --  If not create a new module
@@ -1641,16 +1637,18 @@ package body Synth.Vhdl_Insts is
       Inst_Obj := Insts_Interning.Get
         ((Decl => Entity,
           Arch => Arch,
-          Config => Get_Block_Configuration (Config),
+          Config => Blk_Conf,
           Syn_Inst => Syn_Inst,
           Encoding => Encoding));
-      pragma Unreferenced (Inst_Obj);
 
       pragma Assert (Is_Expr_Pool_Empty);
+
+      return Inst_Obj.Syn_Inst;
    end Synth_Top_Entity;
 
    procedure Create_Input_Wire (Syn_Inst : Synth_Instance_Acc;
                                 Self_Inst : Instance;
+                                Inter : Node;
                                 Idx : in out Port_Idx;
                                 Val : Valtyp)
    is
@@ -1658,7 +1656,7 @@ package body Synth.Vhdl_Insts is
    begin
       pragma Assert (Val.Val.Kind = Value_Net);
       --  Get the net from the port(s).
-      Inst_Output_Connect (Syn_Inst, Self_Inst, Idx, Val.Typ, N);
+      Inst_Output_Connect (Syn_Inst, Self_Inst, Inter, Idx, Val.Typ, N);
       Set_Value_Net (Val.Val, N);
    end Create_Input_Wire;
 
@@ -1723,7 +1721,7 @@ package body Synth.Vhdl_Insts is
       Set_Location (Value, Inter);
       Set_Wire_Gate (Get_Value_Wire (Val.Val), Value);
 
-      Inst_Input_Connect (Syn_Inst, Self_Inst, Idx, Val.Typ, Vout);
+      Inst_Input_Connect (Syn_Inst, Self_Inst, Inter, Idx, Val.Typ, Vout);
    end Create_Output_Wire;
 
    procedure Synth_Verification_Units (Syn_Inst : Synth_Instance_Acc)
@@ -1845,8 +1843,7 @@ package body Synth.Vhdl_Insts is
             --  TODO: generics ?
             Finalize_Package_Declarations
               (Inst, Get_Declaration_Chain (Pkg));
-         when others =>
-            Vhdl.Errors.Error_Kind ("finalize_package", Pkg);
+         when others => Vhdl.Errors.Error_Kind ("finalize_package", Pkg);
       end case;
    end Finalize_Package;
 
@@ -1895,7 +1892,7 @@ package body Synth.Vhdl_Insts is
          Vt := Get_Value (Syn_Inst, Inter);
          case Mode_To_Port_Kind (Get_Mode (Inter)) is
             when Port_In =>
-               Create_Input_Wire (Syn_Inst, Self_Inst, Nbr_Inputs, Vt);
+               Create_Input_Wire (Syn_Inst, Self_Inst, Inter, Nbr_Inputs, Vt);
             when Port_Out
               | Port_Inout =>
                Create_Output_Wire
@@ -1931,10 +1928,11 @@ package body Synth.Vhdl_Insts is
       use Insts_Interning;
       Idx : Index_Type;
    begin
-      Idx := First_Index;
+      Idx := Next_Synth_Instance;
       while Idx <= Last_Index loop
          Synth_Instance (Get_By_Index (Idx));
          Idx := Idx + 1;
       end loop;
+      Next_Synth_Instance := Last_Index + 1;
    end Synth_All_Instances;
 end Synth.Vhdl_Insts;

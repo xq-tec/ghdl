@@ -93,18 +93,6 @@ package body Synth.Environment is
       Wire_Id_Table.Table (Wid).Gate := Gate;
    end Set_Wire_Gate;
 
-   procedure Replace_Wire_Gate (Wid : Wire_Id; Gate : Net)
-   is
-      Old : constant Net := Wire_Id_Table.Table (Wid).Gate;
-      Inst : constant Instance := Get_Net_Parent (Old);
-   begin
-      Redirect_Inputs (Old, Gate);
-      Remove_Instance (Inst);
-      Set_Location (Get_Net_Parent (Gate), Get_Location (Inst));
-      --  FIXME: attributes ?
-      Wire_Id_Table.Table (Wid).Gate := Gate;
-   end Replace_Wire_Gate;
-
    function Get_Wire_Gate (Wid : Wire_Id) return Net is
    begin
       return Wire_Id_Table.Table (Wid).Gate;
@@ -231,8 +219,7 @@ package body Synth.Environment is
                when Wire_Variable =>
                   --  In case of error.
                   null;
-               when others =>
-                  raise Internal_Error;
+               when others => raise Internal_Error;
             end case;
          end;
       end loop;
@@ -252,7 +239,7 @@ package body Synth.Environment is
 
    --  Concatenate when possible partial assignments of HEAD.
    procedure Merge_Partial_Assignments
-     (Ctxt : Context_Acc; Head : Seq_Assign_Value)
+     (Ctxt : Context_Acc; Head : Seq_Assign_Value; Loc : Location_Type)
    is
       use Netlists.Concats;
       First : Partial_Assign;
@@ -298,7 +285,7 @@ package body Synth.Environment is
                First_Record : Partial_Assign_Record renames
                  Partial_Assign_Table.Table (First);
             begin
-               Build (Ctxt, Concat, First_Record.Value);
+               Build (Ctxt, Concat, Loc, First_Record.Value);
                First_Record.Next := Next;
 
             end;
@@ -418,8 +405,7 @@ package body Synth.Environment is
       pragma Assert (Get_Input_Net (Get_Net_Parent (Outport), 0) = No_Net);
 
       case Asgn_Rec.Val.Is_Static is
-         when Unknown =>
-            raise Internal_Error;
+         when Unknown => raise Internal_Error;
          when True =>
             --  Create a net.  No inference to do.
             Res := Static_To_Net (Ctxt, Asgn_Rec.Val.Val);
@@ -440,12 +426,8 @@ package body Synth.Environment is
                      --  Possibly infere a idff/iadff.
                      pragma Assert (Pa.Offset = 0);
                      pragma Assert (Pa.Next = No_Partial_Assign);
-                     if Synth.Flags.Flag_Debug_Noinference then
-                        Res := Pa.Value;
-                     else
-                        Res := Inference.Infere_Assert
-                          (Ctxt, Pa.Value, Outport, Loc);
-                     end if;
+                     Res := Inference.Infere_Assert
+                       (Ctxt, Pa.Value, Outport, Loc);
                      Connect (Get_Input (Get_Net_Parent (Outport), 0), Res);
                   else
                      Add_Conc_Assign (Wid, Pa.Value, Pa.Offset, Loc);
@@ -574,8 +556,7 @@ package body Synth.Environment is
               or else Wire_Id_Table.Table (Wid).Kind = Wire_Enable
             then
                case Asgn_Rec.Val.Is_Static is
-                  when Unknown =>
-                     raise Internal_Error;
+                  when Unknown => raise Internal_Error;
                   when True =>
                      Phi_Assign_Static (Wid, Asgn_Rec.Val.Val);
                   when False =>
@@ -659,8 +640,7 @@ package body Synth.Environment is
                   --  Unset kind so that it can be set in normal processes.
                   Wire_Rec.Kind := Wire_Unset;
 
-               when others =>
-                  raise Internal_Error;
+               when others => raise Internal_Error;
             end case;
             Asgn := Asgn_Rec.Chain;
          end;
@@ -733,23 +713,38 @@ package body Synth.Environment is
       end if;
    end Sort_Conc_Assign;
 
-   function Is_Proto_Memory (N : Net) return Boolean
+   function Is_Proto_Memory (N : Net; Prev : Net) return Boolean
    is
       use Netlists.Gates;
-      Inst, Inst1 : Instance;
-      Inp : Input;
+      Inst : Instance;
+      Src, Src1, Src2 : Net;
    begin
       Inst := Get_Net_Parent (N);
       case Get_Id (Inst) is
          when Id_Dff
            | Id_Idff =>
-            Inp := Get_Input (Inst, 1);
+            Src := Get_Input_Net (Inst, 1);
+            Inst := Get_Net_Parent (Src);
+         when Id_Mux2 =>
+            Src := Get_Input_Net (Inst, 2);
+            loop
+               Inst := Get_Net_Parent (Src);
+               exit when Get_Id (Inst) /= Id_Mux2;
+               Src1 := Get_Input_Net (Inst, 1);
+               Src2 := Get_Input_Net (Inst, 2);
+               if Src1 = Prev then
+                  Src := Src2;
+               elsif Src2 = Prev then
+                  Src := Src1;
+               else
+                  return False;
+               end if;
+            end loop;
          when others =>
             return False;
       end case;
 
-      Inst1 := Get_Net_Parent (Get_Driver (Inp));
-      case Get_Id (Inst1) is
+      case Get_Id (Inst) is
          when Id_Dyn_Insert
            | Id_Dyn_Insert_En =>
             null;
@@ -795,6 +790,9 @@ package body Synth.Environment is
       --  They will be sorted by offset and width.
       Asgn : Conc_Assign;
 
+      --  Target
+      Targ : Net;
+
       --  Width of the target.
       Wire_Width : Width;
 
@@ -827,7 +825,7 @@ package body Synth.Environment is
          N := Get_Conc_Value (Conc);
          if Is_Tribuf_Net (N) then
             Last := Tristate;
-         elsif Is_Proto_Memory (N) then
+         elsif Is_Proto_Memory (N, Data.Targ) then
             Last := Multiport;
          else
             return Unknown;
@@ -915,6 +913,7 @@ package body Synth.Environment is
                                           Value : out Net)
    is
       Gate : constant Instance := Get_Net_Parent (Wire_Rec.Gate);
+      Loc : constant Location_Type := Get_Location (Wire_Rec.Decl);
       Inp : Conc_Assign;
       Inp_Off : Uns32;
       Inp_Wd : Width;
@@ -925,28 +924,25 @@ package body Synth.Environment is
       Data : Finalize_Assignment_Data;
       Cls : Finalize_Assignment_Kind;
    begin
-      --  Do inferences.
-      if not Synth.Flags.Flag_Debug_Noinference then
-         declare
-            Asgn : Conc_Assign;
-         begin
-            Asgn := Wire_Rec.Final_Assign;
-            while Asgn /= No_Conc_Assign loop
-               declare
-                  Ca : Conc_Assign_Record renames
-                    Conc_Assign_Table.Table (Asgn);
-               begin
-                  Ca.Value := Inference.Infere
-                    (Ctxt, Ca.Value, Ca.Offset, Wire_Rec.Gate, Ca.Loc,
-                     Wire_Rec.Kind = Wire_Variable);
-                  Asgn := Ca.Next;
-               end;
-            end loop;
-         end;
-      end if;
+      --  Do Tri-state inferences.
+      declare
+         Asgn : Conc_Assign;
+      begin
+         Asgn := Wire_Rec.Final_Assign;
+         while Asgn /= No_Conc_Assign loop
+            declare
+               Ca : Conc_Assign_Record renames
+                 Conc_Assign_Table.Table (Asgn);
+            begin
+               Ca.Value := Inference.Infere_Tri (Ctxt, Ca.Value);
+               Asgn := Ca.Next;
+            end;
+         end loop;
+      end;
 
       --  Sort assignments by offset.
       Data := (Asgn => Wire_Rec.Final_Assign,
+               Targ => Wire_Rec.Gate,
                Wire_Width => Get_Width (Wire_Rec.Gate),
                First_Assign => No_Conc_Assign,
                Last_Assign => No_Conc_Assign,
@@ -1034,7 +1030,8 @@ package body Synth.Environment is
                declare
                   V : Net;
                begin
-                  V := Build2_Extract (Ctxt, Inp_Net, Inp_Src_Off, Inp_Wd);
+                  V := Build2_Extract
+                    (Ctxt, Inp_Net, Inp_Src_Off, Inp_Wd, Loc);
                   Finalize_Assignment_Append (Data, V);
                end;
             else
@@ -1050,7 +1047,7 @@ package body Synth.Environment is
                         --  more efficient to recreate a const gate.
                         Unk := Build2_Extract
                           (Ctxt, Get_Input_Net (Gate, 1),
-                           Data.Res_Off, Inp_Off - Data.Res_Off);
+                           Data.Res_Off, Inp_Off - Data.Res_Off, Loc);
                      when others =>
                         Warning_No_Assignment
                           (Wire_Rec.Decl, Data.Res_Off, Inp_Off - 1);
@@ -1070,26 +1067,26 @@ package body Synth.Environment is
             if Cls = Unknown then
                Error_Multiple_Assignments
                  (Wire_Rec.Decl, Data.Res_Off, Data.Res_Off + Inp_Wd - 1);
-               Finalize_Assignment_Skip (Data, Inp_Wd);
+               Finalize_Assignment_Append (Data, Build_Const_X (Ctxt, Inp_Wd));
             else
                declare
                   Res, Vc, V : Net;
                   Voff : Uns32;
                   Conc : Conc_Assign;
                begin
-                  Res := Build2_Extract (Ctxt, Inp_Net, Inp_Src_Off, Inp_Wd);
+                  Res := Build2_Extract
+                    (Ctxt, Inp_Net, Inp_Src_Off, Inp_Wd, Loc);
                   Conc := Get_Conc_Chain (Inp);
                   for I in 2 .. Inp_Nbr loop
                      Vc := Get_Conc_Value (Conc);
                      Voff := Data.Res_Off - Get_Conc_Offset (Conc);
-                     V := Build2_Extract (Ctxt, Vc, Voff, Inp_Wd);
+                     V := Build2_Extract (Ctxt, Vc, Voff, Inp_Wd, Loc);
                      case Cls is
                         when Tristate =>
                            Res := Build_Resolver (Ctxt, Res, V);
                         when Multiport =>
                            Res := Build_Mem_Multiport (Ctxt, Res, V);
-                        when Unknown =>
-                           raise Internal_Error;
+                        when Unknown => raise Internal_Error;
                      end case;
                      Set_Location (Res, Get_Conc_Location (Conc));
 
@@ -1109,9 +1106,11 @@ package body Synth.Environment is
          Value := Build_Concat2 (Ctxt,
                                  Get_Conc_Value (Data.Last_Assign),
                                  Get_Conc_Value (Data.First_Assign));
+         Set_Location (Value, Loc);
       else
          Value := Build_Concatn
            (Ctxt, Data.Wire_Width, Uns32 (Data.Nbr_Assign));
+         Set_Location (Value, Loc);
          declare
             Inst : constant Instance := Get_Net_Parent (Value);
             Asgn : Conc_Assign;
@@ -1158,13 +1157,9 @@ package body Synth.Environment is
                then
                   --  Single and full assignment.
                   Value := Conc_Asgn.Value;
-                  if not Synth.Flags.Flag_Debug_Noinference then
-                     pragma Assert (Wire_Rec.Kind /= Wire_Enable);
-                     pragma Assert (Conc_Asgn.Offset = 0);
-                     Value := Inference.Infere
-                       (Ctxt, Value, 0, Wire_Rec.Gate, Conc_Asgn.Loc,
-                        Wire_Rec.Kind = Wire_Variable);
-                  end if;
+                  pragma Assert (Wire_Rec.Kind /= Wire_Enable);
+                  pragma Assert (Conc_Asgn.Offset = 0);
+                  Value := Inference.Infere_Tri (Ctxt, Value);
                else
                   --  Partial assignment.
                   Finalize_Complex_Assignment (Ctxt, Wire_Rec, Value);
@@ -1277,8 +1272,7 @@ package body Synth.Environment is
          when Wire_Signal | Wire_Output | Wire_Inout
            | Wire_Variable | Wire_Unset =>
             null;
-         when Wire_Input | Wire_Enable | Wire_None =>
-            raise Internal_Error;
+         when Wire_Input | Wire_Enable | Wire_None => raise Internal_Error;
       end case;
 
       if Asgn_Rec.Val.Is_Static = True then
@@ -1300,30 +1294,6 @@ package body Synth.Environment is
 
       return Get_Current_Assign_Value (Ctxt, Asgn_Rec.Id, 0, W);
    end Get_Assign_Value;
-
-   function Get_Gate_Value (Wid : Wire_Id) return Net
-   is
-      Wire_Rec : Wire_Id_Record renames Wire_Id_Table.Table (Wid);
-      pragma Assert (Wire_Rec.Kind /= Wire_None);
-   begin
-      return Wire_Rec.Gate;
-   end Get_Gate_Value;
-
-   function Get_Assigned_Value (Ctxt : Builders.Context_Acc; Wid : Wire_Id)
-                               return Net
-   is
-      Wire_Rec : Wire_Id_Record renames Wire_Id_Table.Table (Wid);
-      pragma Assert (Wire_Rec.Kind /= Wire_None);
-   begin
-      if Wire_Rec.Cur_Assign = No_Seq_Assign then
-         --  The variable was never assigned, so the variable value is
-         --  the initial value.
-         --  FIXME: use initial value directly ?
-         return Wire_Rec.Gate;
-      else
-         return Get_Assign_Value (Ctxt, Wire_Rec.Cur_Assign);
-      end if;
-   end Get_Assigned_Value;
 
    function Get_Current_Value (Ctxt : Builders.Context_Acc; Wid : Wire_Id)
                               return Net
@@ -1348,18 +1318,17 @@ package body Synth.Environment is
          when Wire_Unset =>
             pragma Assert (Wire_Rec.Cur_Assign = No_Seq_Assign);
             return Wire_Rec.Gate;
-         when Wire_None =>
-            raise Internal_Error;
+         when Wire_None => raise Internal_Error;
       end case;
    end Get_Current_Value;
 
    --  Get the current value of W for WD bits at offset OFF.
    function Get_Current_Assign_Value
-     (Ctxt : Context_Acc; Wid : Wire_Id; Off : Uns32; Wd : Width)
-     return Net
+     (Ctxt : Context_Acc; Wid : Wire_Id; Off : Uns32; Wd : Width) return Net
    is
       Wire_Rec : Wire_Id_Record renames Wire_Id_Table.Table (Wid);
       pragma Assert (Wire_Rec.Kind /= Wire_None);
+      Loc : constant Location_Type := Get_Location (Wire_Rec.Decl);
       First_Seq : Seq_Assign;
    begin
       --  Latest seq assign
@@ -1367,7 +1336,7 @@ package body Synth.Environment is
 
       --  If no seq assign, return current value.
       if First_Seq = No_Seq_Assign then
-         return Build2_Extract (Ctxt, Wire_Rec.Gate, Off, Wd);
+         return Build2_Extract (Ctxt, Wire_Rec.Gate, Off, Wd, Loc);
       end if;
 
       --  If the current value is static, just return it.
@@ -1429,7 +1398,7 @@ package body Synth.Environment is
                         Append
                           (Vec,
                            Build2_Extract (Ctxt, Pr.Value,
-                                           Cur_Off - Pr.Offset, Cur_Wd));
+                                           Cur_Off - Pr.Offset, Cur_Wd, Loc));
                      end if;
                      exit;
                   end if;
@@ -1455,7 +1424,7 @@ package body Synth.Environment is
                      if Seq = No_Seq_Assign then
                         --  Extract from gate.
                         Append (Vec, Build2_Extract (Ctxt, Wire_Rec.Gate,
-                                                     Cur_Off, Cur_Wd));
+                                                     Cur_Off, Cur_Wd, Loc));
                         exit;
                      end if;
                      if Get_Assign_Is_Static (Seq) then
@@ -1476,7 +1445,7 @@ package body Synth.Environment is
          end loop;
 
          --  Concat
-         Build (Ctxt, Vec, Res);
+         Build (Ctxt, Vec, Get_Location (Wire_Rec.Decl), Res);
          return Res;
       end;
    end Get_Current_Assign_Value;
@@ -1589,6 +1558,7 @@ package body Synth.Environment is
                         P (I).Asgns := Get_Partial_Next (Asgn);
                      else
                         N (I) := Build_Extract (Ctxt, Val, Off - P_Off, Wd);
+                        Copy_Location (N (I), Val);
                         if P_Off + P_W = Off + Wd then
                            P (I).Asgns := Get_Partial_Next (Asgn);
                         end if;
@@ -1859,8 +1829,8 @@ package body Synth.Environment is
          end if;
          --  Merge partial assigns as much as possible.  This reduce
          --  propagation of splits.
-         Merge_Partial_Assignments (Ctxt, Fv);
-         Merge_Partial_Assignments (Ctxt, Tv);
+         Merge_Partial_Assignments (Ctxt, Fv, Loc);
+         Merge_Partial_Assignments (Ctxt, Tv, Loc);
          if not Merge_Static_Assigns (W, Tv, Fv) then
             Merge_Assigns (Ctxt, W, Sel, Fv, Tv, Loc);
          end if;
@@ -1901,10 +1871,8 @@ package body Synth.Environment is
       N : Net;
       Asgn : Seq_Assign;
    begin
-      if Last = No_Phi_Id then
-         --  Can be called only when a phi is created.
-         raise Internal_Error;
-      end if;
+      --  Can be called only when a phi is created.
+      pragma Assert (Last /= No_Phi_Id);
       if Last = No_Phi_Id + 1 then
          --  That's the first phi, which is always enabled.
          return No_Net;
@@ -1974,9 +1942,9 @@ package body Synth.Environment is
                  renames Partial_Assign_Table.Table (El);
             begin
                --  Check no overlap.
-               if Cur.Offset < Prev.Offset + Get_Width (Prev.Value) then
-                  raise Internal_Error;
-               end if;
+               pragma Assert
+                 (Cur.Offset >= Prev.Offset + Get_Width (Prev.Value));
+               null;
             end;
             Prev_El := El;
          end;
@@ -1989,6 +1957,8 @@ package body Synth.Environment is
      (Ctxt : Builders.Context_Acc; Seq : Seq_Assign; Asgn : Partial_Assign)
    is
       Seq_Asgn : Seq_Assign_Record renames Assign_Table.Table (Seq);
+      Loc : constant Location_Type :=
+        Get_Location (Wire_Id_Table.Table (Seq_Asgn.Id).Decl);
       El, Last_El : Partial_Assign;
       Inserted : Boolean;
    begin
@@ -2040,7 +2010,8 @@ package body Synth.Environment is
                   --  Shrink EL.
                   P.Value := Build2_Extract (Ctxt, P.Value,
                                              Off => V_Next - P.Offset,
-                                             W => P_Next - V_Next);
+                                             W => P_Next - V_Next,
+                                             Loc => Loc);
                   P.Offset := V_Next;
                   if not Inserted then
                      if Last_El /= No_Partial_Assign then
@@ -2062,7 +2033,8 @@ package body Synth.Environment is
                   --  Shrink EL.
                   P.Value := Build2_Extract (Ctxt, P.Value,
                                              Off => 0,
-                                             W => V.Offset - P.Offset);
+                                             W => V.Offset - P.Offset,
+                                             Loc => Loc);
                   pragma Assert (not Inserted);
                   V.Next := P.Next;
                   P.Next := Asgn;
@@ -2080,12 +2052,14 @@ package body Synth.Environment is
                     ((Next => P.Next,
                       Value => Build2_Extract (Ctxt, P.Value,
                                                Off => V_Next - P.Offset,
-                                               W => P_Next - V_Next),
+                                               W => P_Next - V_Next,
+                                               Loc => Loc),
                       Offset => V_Next));
                   V.Next := Partial_Assign_Table.Last;
                   P.Value := Build2_Extract (Ctxt, P.Value,
                                              Off => 0,
-                                             W => V.Offset - P.Offset);
+                                             W => V.Offset - P.Offset,
+                                             Loc => Loc);
                   P.Next := Asgn;
                   Inserted := True;
                   --  No more possible overlaps.

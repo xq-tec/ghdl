@@ -43,7 +43,6 @@ with Elab.Debugger;
 with Elab.Vhdl_Types;
 with Elab.Vhdl_Debug;
 
-with Synth.Errors;
 with Synth.Vhdl_Stmts; use Synth.Vhdl_Stmts;
 with Synth.Vhdl_Expr;
 with Synth.Vhdl_Oper;
@@ -51,6 +50,7 @@ with Synth.Vhdl_Decls;
 with Synth.Vhdl_Static_Proc;
 with Synth.Flags;
 with Synth.Ieee.Std_Logic_1164; use Synth.Ieee.Std_Logic_1164;
+with Synth.Vhdl_Foreign;
 
 with Simul.Main;
 
@@ -59,8 +59,9 @@ with Grt.Vhdl_Types; use Grt.Vhdl_Types;
 with Grt.Options;
 with Grt.Processes;
 with Grt.Errors;
-with Grt.Severity;
+with Grt.Severity; use Grt.Severity;
 with Grt.Lib;
+with Grt.Stdio;
 with Grt.Astdio;
 with Grt.Analog_Solver;
 with Grt.Sundials;
@@ -333,34 +334,35 @@ package body Simul.Vhdl_Simul is
             declare
                Len : constant Uns32 := Target.Typ.Abound.Len;
                El : constant Type_Acc := Target.Typ.Arr_El;
-               Smem : Memory_Ptr;
+               Smem : Memtyp;
             begin
-               pragma Assert (Val.Typ.Abound.Len = Len);
+               pragma Assert (Val.Typ = null or else Val.Typ.Abound.Len = Len);
                for I in 1 .. Len loop
                   if Val.Mem = null then
-                     Smem := null;
+                     Smem := Null_Memtyp;
                   else
-                     Smem := Val.Mem + Size_Type (I - 1) * El.Sz;
+                     Smem := (Val.Typ.Arr_El,
+                              Val.Mem + Size_Type (I - 1) * El.Sz);
                   end if;
                   Force_Signal_Value
                     ((El, Sig_Index (Target.Mem, (I - 1) * El.W)),
-                     Kind, Mode, (Val.Typ.Arr_El, Smem));
+                     Kind, Mode, Smem);
                end loop;
             end;
          when Type_Record =>
             for I in Target.Typ.Rec.E'Range loop
                declare
                   E : Rec_El_Type renames Target.Typ.Rec.E (I);
-                  Smem : Memory_Ptr;
+                  Smem : Memtyp;
                begin
                   if Val.Mem = null then
-                     Smem := null;
+                     Smem := Null_Memtyp;
                   else
-                     Smem := Val.Mem + E.Offs.Mem_Off;
+                     Smem := (E.Typ, Val.Mem + E.Offs.Mem_Off);
                   end if;
                   Force_Signal_Value
                     ((E.Typ, Sig_Index (Target.Mem, E.Offs.Net_Off)),
-                     Kind, Mode, (E.Typ, Smem));
+                     Kind, Mode, Smem);
                end;
             end loop;
          when others =>
@@ -720,7 +722,8 @@ package body Simul.Vhdl_Simul is
                else
                   Stmt := Parent;
                end if;
-            when Iir_Kind_Procedure_Body =>
+            when Iir_Kind_Procedure_Body
+               | Iir_Kind_Subprogram_Instantiation_Body =>
                Finish_Procedure_Call (Process, Parent, Stmt);
                exit when Stmt = Null_Node;
             when others =>
@@ -895,17 +898,34 @@ package body Simul.Vhdl_Simul is
       use Vhdl.Errors;
       Inst : constant Synth_Instance_Acc := Process.Instance;
       Call : constant Node := Get_Procedure_Call (Stmt);
-      Imp  : constant Node := Get_Implementation (Call);
       Obj  : constant Node := Get_Method_Object (Call);
 
       Assoc_Chain : constant Node := Get_Parameter_Association_Chain (Call);
 
       Area_Mark : Mark_Type;
       Sub_Inst : Synth_Instance_Acc;
+      Imp  : Node;
    begin
       Areapools.Mark (Area_Mark, Instance_Pool.all);
 
-      if Get_Implicit_Definition (Imp) /= Iir_Predefined_None then
+      Imp := Get_Implementation (Call);
+      --  For instantiations.
+      loop
+         case Get_Kind (Imp) is
+            when Iir_Kind_Interface_Procedure_Declaration =>
+               Imp := Get_Interface_Subprogram (Inst, Imp);
+            when Iir_Kind_Procedure_Declaration =>
+               exit;
+            when Iir_Kind_Procedure_Instantiation_Declaration =>
+               exit;
+            when others => Error_Kind ("procedure_call_statement", Imp);
+         end case;
+      end loop;
+
+      if Get_Kind (Imp) in Iir_Kinds_Subprogram_Declaration
+        and then Get_Implicit_Definition (Imp) /= Iir_Predefined_None
+      then
+         --  Call to a predefined subprogram.
          declare
             Inter_Chain : constant Node :=
               Get_Interface_Declaration_Chain (Imp);
@@ -929,14 +949,8 @@ package body Simul.Vhdl_Simul is
               Vhdl.Sem_Inst.Get_Subprogram_Body_Origin (Imp);
             Inter_Chain : constant Node :=
               Get_Interface_Declaration_Chain (Imp);
+            Res : Valtyp;
          begin
-            if Get_Foreign_Flag (Imp) then
-               Synth.Errors.Error_Msg_Synth
-                 (Inst, Stmt, "call to foreign %n is not supported", +Imp);
-               Next_Stmt := Null_Node;
-               return;
-            end if;
-
             if Obj /= Null_Node then
                Sub_Inst := Synth_Protected_Call_Instance (Inst, Obj, Imp, Bod);
             else
@@ -950,24 +964,30 @@ package body Simul.Vhdl_Simul is
             Synth_Subprogram_Associations
               (Sub_Inst, Inst, Inter_Chain, Assoc_Chain, Call);
 
-            Process.Instance := Sub_Inst;
-            Synth.Vhdl_Decls.Synth_Declarations
-              (Sub_Inst, Get_Declaration_Chain (Bod), True);
+            if Get_Foreign_Flag (Imp) then
+               Res := Synth.Vhdl_Foreign.Call_Subprogram
+                 (Inst, Sub_Inst, Imp, Stmt);
+               pragma Assert (Res = No_Valtyp);
+            else
+               Process.Instance := Sub_Inst;
+               Synth.Vhdl_Decls.Synth_Declarations
+                 (Sub_Inst, Get_Declaration_Chain (Bod), True);
 
-            if Process.Has_State and then Get_Suspend_Flag (Bod) then
-               --  The procedure may suspend, in a suspendable process.
-               Next_Stmt := Get_Sequential_Statement_Chain (Bod);
-               if Next_Stmt /= Null_Node then
-                  return;
+               if Process.Has_State and then Get_Suspend_Flag (Bod) then
+                  --  The procedure may suspend, in a suspendable process.
+                  Next_Stmt := Get_Sequential_Statement_Chain (Bod);
+                  if Next_Stmt /= Null_Node then
+                     return;
+                  end if;
                end if;
-            end if;
 
-            --  No suspension (or no statements).
-            Execute_Sequential_Statements (Process);
-            Synth.Vhdl_Decls.Finalize_Declarations
-              (Sub_Inst, Get_Declaration_Chain (Bod), True);
-            Synth_Subprogram_Back_Association
-              (Sub_Inst, Inst, Inter_Chain, Assoc_Chain);
+               --  No suspension (or no statements).
+               Execute_Sequential_Statements (Process);
+               Synth.Vhdl_Decls.Finalize_Declarations
+                 (Sub_Inst, Get_Declaration_Chain (Bod), True);
+               Synth_Subprogram_Back_Association
+                 (Sub_Inst, Inst, Inter_Chain, Assoc_Chain);
+            end if;
             Next_Stmt := Null_Node;
          end;
       end if;
@@ -1341,12 +1361,12 @@ package body Simul.Vhdl_Simul is
    is
       use Synth.Vhdl_Expr;
       Target : constant Node := Get_Target (Stmt);
+      Matching : constant Boolean := Get_Matching_Flag (Stmt);
+      Choices : constant Node := Get_Selected_Waveform_Chain (Stmt);
       Marker : Mark_Type;
-      Sel : Memtyp;
-      Sw : Node;
+      Sel : Valtyp;
       Wf : Node;
       Info : Target_Info;
-      Eq : Boolean;
    begin
       Mark_Expr_Pool (Marker);
       Info := Synth_Target (Inst, Target);
@@ -1358,53 +1378,22 @@ package body Simul.Vhdl_Simul is
          return;
       end if;
 
-      Sel := Get_Memtyp (Synth_Expression (Inst, Get_Expression (Stmt)));
+      Sel := Synth_Expression (Inst, Get_Expression (Stmt));
 
-      Sw := Get_Selected_Waveform_Chain (Stmt);
-      while Sw /= Null_Node loop
-         if not Get_Same_Alternative_Flag (Sw) then
-            Wf := Get_Associated_Chain (Sw);
-         else
-            pragma Assert (Get_Associated_Chain (Sw) = Null_Node);
-            null;
-         end if;
-         case Iir_Kinds_Choice (Get_Kind (Sw)) is
-            when Iir_Kind_Choice_By_Expression =>
-               declare
-                  Ch : Valtyp;
-               begin
-                  Ch := Synth_Expression (Inst, Get_Choice_Expression (Sw));
-                  Eq := Is_Equal (Sel, Get_Memtyp (Ch));
-               end;
-            when Iir_Kind_Choice_By_Range =>
-               declare
-                  Bnd : Discrete_Range_Type;
-               begin
-                  Elab.Vhdl_Types.Synth_Discrete_Range
-                    (Inst, Get_Choice_Range (Sw), Bnd);
-                  Eq := In_Range (Bnd, Read_Discrete (Sel));
-               end;
-            when Iir_Kind_Choice_By_Others =>
-               Eq := True;
-            when others =>
-               raise Internal_Error;
-         end case;
-         if Eq then
-            Execute_Waveform_Assignment (Inst, Info, Stmt, Wf);
-            exit;
-         end if;
-         Sw := Get_Chain (Sw);
-      end loop;
+      Wf := Execute_Static_Choices (Inst, Choices, Sel, Matching);
+      Wf := Get_Associated_Chain (Wf);
+
+      Execute_Waveform_Assignment (Inst, Info, Stmt, Wf);
+
       Release_Expr_Pool (Marker);
    end Execute_Selected_Signal_Assignment;
 
    procedure Assertion_Report_Msg (Inst : Synth_Instance_Acc;
                                    Stmt : Node;
-                                   Severity : Natural;
-                                   Msg : Valtyp)
+                                   Severity : Severity_Level;
+                                   Msg : String_Acc)
    is
       pragma Unreferenced (Inst);
-      use Grt.Severity;
       use Grt.Errors;
    begin
       Report_S (Vhdl.Errors.Disp_Location (Stmt));
@@ -1415,7 +1404,8 @@ package body Simul.Vhdl_Simul is
          when Iir_Kind_Report_Statement =>
             Diag_C ("report");
          when Iir_Kind_Assertion_Statement
-           | Iir_Kind_Concurrent_Assertion_Statement =>
+           | Iir_Kind_Concurrent_Assertion_Statement
+           | Iir_Kinds_Dyadic_Operator =>
             Diag_C ("assertion");
          when Iir_Kind_Psl_Assert_Directive =>
             Diag_C ("psl assertion");
@@ -1436,15 +1426,13 @@ package body Simul.Vhdl_Simul is
             Diag_C ("error");
          when Failure_Severity =>
             Diag_C ("failure");
-         when others =>
-            Diag_C ("??");
       end case;
       Diag_C ("): ");
 
-      if Msg = No_Valtyp then
+      if Msg = null then
          Diag_C ("Assertion violation");
       else
-         Diag_C (Value_To_String (Msg));
+         Diag_C (Msg.all);
       end if;
       Report_E;
    end Assertion_Report_Msg;
@@ -1470,7 +1458,7 @@ package body Simul.Vhdl_Simul is
             end if;
       end case;
 
-      Exec_Failed_Assertion (Inst, Stmt);
+      Execute_Failed_Assertion (Inst, Stmt);
    end Execute_Assertion_Statement;
 
    procedure Execute_Sequential_Statements_Inner (Process : Process_State_Acc;
@@ -1663,6 +1651,9 @@ package body Simul.Vhdl_Simul is
             when Iir_Kind_Conditional_Signal_Assignment_Statement =>
                Execute_Conditional_Signal_Assignment (Inst, Stmt, False);
                Next_Statement (Process, Stmt);
+            when Iir_Kind_Selected_Waveform_Assignment_Statement =>
+               Execute_Selected_Signal_Assignment (Inst, Stmt, False);
+               Next_Statement (Process, Stmt);
 
             when Iir_Kind_Signal_Force_Assignment_Statement =>
                Execute_Signal_Force_Assignment (Inst, Stmt);
@@ -1759,7 +1750,8 @@ package body Simul.Vhdl_Simul is
       Inst := Process.Instance;
       Src := Get_Source_Scope (Inst);
       if Get_Kind (Src) = Iir_Kind_Sensitized_Process_Statement
-        or else (Get_Kind (Src) = Iir_Kind_Procedure_Body
+        or else (Kind_In (Src, Iir_Kind_Procedure_Body,
+                               Iir_Kind_Subprogram_Instantiation_Body)
                    and then not Get_Suspend_Flag (Src))
       then
          --  No suspend, simply execute.
@@ -1864,7 +1856,7 @@ package body Simul.Vhdl_Simul is
          Quan := Get_Break_Quantity (El);
          Sel := Get_Selector_Quantity (El);
 
-         Synth_Assignment_Prefix (Inst, Quan, Quan_Base, Typ, Off);
+         Synth_Object_Name (Inst, Quan, Quan_Base, Typ, Off);
          --  Only full quantities are currently supported.
          pragma Assert (Off.Net_Off = 0);
          pragma Assert (Typ.W = Quan_Base.Typ.W);
@@ -1878,7 +1870,7 @@ package body Simul.Vhdl_Simul is
             Sel_Off := Off;
             Is_Integ := Get_Kind (Quan) = Iir_Kind_Integ_Attribute;
          else
-            Synth_Assignment_Prefix (Inst, Sel, Sel_Base, Sel_Typ, Sel_Off);
+            Synth_Object_Name (Inst, Sel, Sel_Base, Sel_Typ, Sel_Off);
             if Sel_Typ.W /= Typ.W then
                Error_Msg_Exec
                  (Stmt, "number of break and selected quantities mismatch");
@@ -1962,7 +1954,8 @@ package body Simul.Vhdl_Simul is
 
       if Synth.Flags.Flag_Trace_Statements then
          Put ("run process: ");
-         Elab.Vhdl_Debug.Disp_Instance_Path (Process.Top_Instance);
+         Elab.Vhdl_Debug.Disp_Instance_Path
+           (Grt.Stdio.stdout, Process.Top_Instance);
          Put_Line (" (" & Vhdl.Errors.Disp_Location (Process.Proc) & ")");
       end if;
 
@@ -2261,16 +2254,16 @@ package body Simul.Vhdl_Simul is
          case Get_Kind (E.Proc) is
             when Iir_Kind_Psl_Assert_Directive =>
                if Nvec (S_Num) then
-                  Exec_Failed_Assertion (E.Instance, E.Proc);
+                  Execute_Failed_Assertion (E.Instance, E.Proc);
                end if;
             when Iir_Kind_Psl_Assume_Directive =>
                if Nvec (S_Num) then
-                  Exec_Failed_Assertion (E.Instance, E.Proc);
+                  Execute_Failed_Assertion (E.Instance, E.Proc);
                end if;
             when Iir_Kind_Psl_Cover_Directive =>
                if Nvec (S_Num) then
                   if Get_Report_Expression (E.Proc) /= Null_Iir then
-                     Exec_Failed_Assertion (E.Instance, E.Proc);
+                     Execute_Failed_Assertion (E.Instance, E.Proc);
                   end if;
                   E.Done := True;
                end if;
@@ -2316,7 +2309,7 @@ package body Simul.Vhdl_Simul is
               and then
               Execute_Psl_Expr (Ent.Instance, Get_Edge_Expr (E), True)
             then
-               Exec_Failed_Assertion (Ent.Instance, Ent.Proc);
+               Execute_Failed_Assertion (Ent.Instance, Ent.Proc);
                exit;
             end if;
          end if;
@@ -2425,6 +2418,7 @@ package body Simul.Vhdl_Simul is
                Create_Process_Drivers (I);
 
             when Iir_Kind_Psl_Assert_Directive
+               | Iir_Kind_Psl_Assume_Directive
                | Iir_Kind_Psl_Cover_Directive
                | Iir_Kind_Psl_Endpoint_Declaration =>
                Processes_State (I) := (Kind => Kind_PSL,
@@ -2988,6 +2982,24 @@ package body Simul.Vhdl_Simul is
       end case;
    end Create_Scalar_Signal;
 
+   function To_Mode_Signal (Mode : Iir_Mode) return Mode_Signal_Type is
+   begin
+      case Mode is
+         when Iir_In_Mode =>
+            return Mode_In;
+         when Iir_Out_Mode =>
+            return Mode_Out;
+         when Iir_Linkage_Mode =>
+            return Mode_Linkage;
+         when Iir_Inout_Mode =>
+            return Mode_Inout;
+         when Iir_Buffer_Mode =>
+            return Mode_Buffer;
+         when Iir_Unknown_Mode =>
+            raise Internal_Error;
+      end case;
+   end To_Mode_Signal;
+
    function Get_Signal_Mode (E : Signal_Entry) return Mode_Signal_Type is
    begin
       case E.Kind is
@@ -2996,20 +3008,7 @@ package body Simul.Vhdl_Simul is
                when Iir_Kind_Signal_Declaration =>
                   return Mode_Signal;
                when Iir_Kind_Interface_Signal_Declaration =>
-                  case Get_Mode (E.Decl) is
-                     when Iir_In_Mode =>
-                        return Mode_In;
-                     when Iir_Out_Mode =>
-                        return Mode_Out;
-                     when Iir_Linkage_Mode =>
-                        return Mode_Linkage;
-                     when Iir_Inout_Mode =>
-                        return Mode_Inout;
-                     when Iir_Buffer_Mode =>
-                        return Mode_Buffer;
-                     when Iir_Unknown_Mode =>
-                        raise Internal_Error;
-                  end case;
+                  return To_Mode_Signal (Get_Mode (E.Decl));
                when others =>
                   raise Internal_Error;
             end case;
@@ -3047,16 +3046,7 @@ package body Simul.Vhdl_Simul is
          Arr_Type : Node;
          Idx_Type : Node;
       begin
-         if Get_Kind (Sig_Type1) = Iir_Kind_Interface_Type_Definition then
-            declare
-               Ntyp : Type_Acc;
-            begin
-               Get_Interface_Type (E.Inst, Sig_Type1, Ntyp, Sig_Type);
-               pragma Unreferenced (Ntyp);
-            end;
-         else
-            Sig_Type := Sig_Type1;
-         end if;
+         Sig_Type := Get_Concrete_Type (E.Inst, Sig_Type1);
 
          if not Already_Resolved
            and then Get_Kind (Sig_Type) in Iir_Kinds_Subtype_Definition
@@ -3077,7 +3067,9 @@ package body Simul.Vhdl_Simul is
               and then Resolv_Func = Vhdl.Ieee.Std_Logic_1164.Resolved
             then
                if Vec (Sig_Off).Total > 1
-                 or else Get_Guarded_Signal_Flag (E.Decl)
+                 or else
+                 (Get_Kind (E.Decl) /= Iir_Kind_Interface_View_Declaration
+                  and then Get_Guarded_Signal_Flag (E.Decl))
                then
                   pragma Assert (Typ.W = 1);
                   Sub_Resolved := True;
@@ -3156,21 +3148,71 @@ package body Simul.Vhdl_Simul is
          end case;
       end Create_Signal;
 
+      procedure Create_View (View : Iir;
+                             Reversed : Boolean;
+                             Val : Memory_Ptr;
+                             Sig_Type1 : Iir;
+                             Typ : Type_Acc;
+                             Sig_Off : Uns32) is
+      begin
+         if Get_Kind (View) = Iir_Kind_Simple_Mode_View_Element then
+            declare
+               Sub_Mode : Iir_Mode;
+            begin
+               Sub_Mode := Get_Mode (View);
+               if Reversed then
+                  Sub_Mode := Get_Converse_Mode (Sub_Mode);
+               end if;
+               Grt.Signals.Ghdl_Signal_Set_Mode_Kind
+                 (To_Mode_Signal (Sub_Mode), Kind_Signal_No, E.Has_Active);
+               Create_Signal
+                 (Val, Sig_Off, Sig_Type1, Typ, E.Nbr_Sources.all, False);
+            end;
+         else
+            declare
+               El_List : constant Iir_Flist := Get_Elements_Declaration_List
+                 (Sig_Type1);
+               El : Iir;
+               Sub_View : Iir;
+               Sub_Reversed : Boolean;
+            begin
+               for I in 1 .. E.Typ.Rec.Len loop
+                  El := Get_Nth_Element (El_List, Natural (I - 1));
+                  Update_Mode_View_By_Pos
+                    (Sub_View, Sub_Reversed, View, Reversed, Natural (I - 1));
+                  Create_View
+                    (Sub_View, Sub_Reversed,
+                     Val + Typ.Rec.E (I).Offs.Mem_Off,
+                     Get_Type (El), Typ.Rec.E (I).Typ,
+                     Sig_Off + Typ.Rec.E (I).Offs.Net_Off);
+               end loop;
+            end;
+         end if;
+      end Create_View;
+
       Sig_Type: constant Iir := Get_Type (E.Decl);
       Kind : Kind_Signal_Type;
    begin
-      if Get_Kind (E.Decl) /= Iir_Kind_Interface_View_Declaration
-        and then Get_Guarded_Signal_Flag (E.Decl)
-      then
-         Kind := Iir_Kind_To_Kind_Signal (Get_Signal_Kind (E.Decl));
+      if Get_Kind (E.Decl) = Iir_Kind_Interface_View_Declaration then
+         declare
+            View : Iir;
+            Reversed : Boolean;
+         begin
+            Get_Mode_View_From_Name (E.Decl, View, Reversed);
+            Create_View (View, Reversed, E.Val, Sig_Type, E.Typ, 0);
+         end;
       else
-         Kind := Kind_Signal_No;
+         if Get_Guarded_Signal_Flag (E.Decl) then
+            Kind := Iir_Kind_To_Kind_Signal (Get_Signal_Kind (E.Decl));
+         else
+            Kind := Kind_Signal_No;
+         end if;
+
+         Grt.Signals.Ghdl_Signal_Set_Mode_Kind
+           (Get_Signal_Mode (E), Kind, E.Has_Active);
+
+         Create_Signal (E.Val, 0, Sig_Type, E.Typ, E.Nbr_Sources.all, False);
       end if;
-
-      Grt.Signals.Ghdl_Signal_Set_Mode_Kind
-        (Get_Signal_Mode (E), Kind, E.Has_Active);
-
-      Create_Signal (E.Val, 0, Sig_Type, E.Typ, E.Nbr_Sources.all, False);
    end Create_User_Signal;
 
    type Guard_Instance_Type is record
@@ -4266,7 +4308,7 @@ package body Simul.Vhdl_Simul is
             begin
                Mark_Expr_Pool (Mark);
 
-               Synth_Assignment_Prefix
+               Synth_Object_Name
                  (Inst, Get_Prefix (Attr), Quan_Base, Typ, Off);
 
                Sq_Idx := Quantity_Table.Table (Quan_Base.Val.Q).Sq_Idx
@@ -4397,14 +4439,17 @@ package body Simul.Vhdl_Simul is
       Inter : constant Node := Get_Interface_Declaration_Chain (Imp);
       Param : Valtyp;
       Status : Int64;
+      Has_Status : Ghdl_B1;
    begin
       if Inter /= Null_Node then
          Param := Get_Value (Inst, Inter);
          Status := Read_Discrete (Param);
-         Ghdl_Control_Simulation (False, True, Std_Integer (Status));
+         Has_Status := True;
       else
-         Ghdl_Control_Simulation (False, False, 0);
+         Status := 0;
+         Has_Status := False;
       end if;
+      Ghdl_Control_Simulation (False, Has_Status, Ghdl_I32 (Status));
    end Exec_Finish;
 
    procedure Set_Quantities_Values (Y : F64_C_Arr_Ptr; Yp : F64_C_Arr_Ptr)

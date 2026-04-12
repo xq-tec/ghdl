@@ -29,72 +29,143 @@ package body Netlists is
 
    --  Names
 
+   type Sname_Encoding is
+     (
+      --  Suffix is an Id, and encode an sub-element of the record.
+      Sn_Record,
+
+      --  Suffix is an Int32 and encode an index of an array.
+      Sn_Array,
+
+      --  Suffix is an Id or an Int32 (depending on bit 0), and encode a
+      --  hierachical name (block, generate, instance).
+      Sn_Hierarchy,
+
+      --  If prefix is No_Sname, the suffix is an Id to encode an artificial
+      --  name. Else, suffix is a version.
+      Sn_Number
+     );
+
+   pragma Unreferenced (Sn_Array);
+
+   --  We don't care about C compatible representation of Sname_Record.
+   pragma Warnings (Off, "*convention*");
+   type Sname_Record is record
+      Kind : Sname_Encoding;
+      Prefix : Sname;
+
+      Suffix : Uns32;
+   end record;
+   pragma Pack (Sname_Record);
+   for Sname_Record'Size use 2*32;
+   pragma Warnings (On, "*convention*");
+
    package Snames_Table is new Tables
      (Table_Component_Type => Sname_Record,
       Table_Index_Type => Sname,
       Table_Low_Bound => 0,
       Table_Initial => 1024);
 
+   --  Reserved entries:
+   --  0: No_Sname
+   --  1: System_Sname
+   System_Sname : constant Sname := 1;
+
    function New_Sname_User (Id : Name_Id; Prefix : Sname) return Sname is
    begin
-      Snames_Table.Append ((Kind => Sname_User,
+      Snames_Table.Append ((Kind => Sn_Hierarchy,
                             Prefix => Prefix,
                             Suffix => Uns32 (Id)));
       return Snames_Table.Last;
    end New_Sname_User;
 
-   function New_Sname_Artificial (Id : Name_Id) return Sname is
+   function New_Sname_System (Id : Name_Id) return Sname is
    begin
-      Snames_Table.Append ((Kind => Sname_Artificial,
-                            Prefix => No_Sname,
+      Snames_Table.Append ((Kind => Sn_Number,
+                            Prefix => System_Sname,
                             Suffix => Uns32 (Id)));
       return Snames_Table.Last;
-   end New_Sname_Artificial;
+   end New_Sname_System;
 
    function New_Sname_Version (Ver : Uns32; Prefix : Sname) return Sname is
    begin
-      Snames_Table.Append ((Kind => Sname_Version,
+      pragma Assert (Prefix /= No_Sname and Prefix /= System_Sname);
+      Snames_Table.Append ((Kind => Sn_Number,
                             Prefix => Prefix,
                             Suffix => Ver));
       return Snames_Table.Last;
    end New_Sname_Version;
 
+   function New_Sname_Unique (Num : Uns32) return Sname is
+   begin
+      Snames_Table.Append ((Kind => Sn_Number,
+                            Prefix => No_Sname,
+                            Suffix => Num));
+      return Snames_Table.Last;
+   end New_Sname_Unique;
+
+   function New_Sname_Field (Id : Name_Id; Prefix : Sname) return Sname is
+   begin
+      Snames_Table.Append ((Kind => Sn_Record,
+                            Prefix => Prefix,
+                            Suffix => Uns32 (Id)));
+      return Snames_Table.Last;
+   end New_Sname_Field;
+
    function Is_Valid (Name : Sname) return Boolean is
    begin
-      return Name > No_Sname and Name <= Snames_Table.Last;
+      return Name > System_Sname and Name <= Snames_Table.Last;
    end Is_Valid;
 
-   function Get_Sname_Kind (Name : Sname) return Sname_Kind is
-   begin
+   function Get_Sname_Kind (Name : Sname) return Sname_Kind
+   is
       pragma Assert (Is_Valid (Name));
-      return Snames_Table.Table (Name).Kind;
+      E : Sname_Record renames Snames_Table.Table (Name);
+   begin
+      case E.Kind is
+         when Sn_Number =>
+            if E.Prefix = No_Sname then
+               return Sname_Unique;
+            elsif E.Prefix = System_Sname then
+               return Sname_System;
+            else
+               return Sname_Version;
+            end if;
+         when Sn_Hierarchy =>
+            return Sname_User;
+         when Sn_Record =>
+            return Sname_Field;
+         when others =>
+            raise Internal_Error;
+      end case;
    end Get_Sname_Kind;
 
    function Get_Sname_Prefix (Name : Sname) return Sname is
    begin
       pragma Assert (Is_Valid (Name));
+      pragma Assert (Get_Sname_Kind (Name) in Sname_Kind_Prefix);
       return Snames_Table.Table (Name).Prefix;
    end Get_Sname_Prefix;
 
    procedure Set_Sname_Prefix (Name : Sname; Prefix : Sname) is
    begin
       pragma Assert (Is_Valid (Name));
+      pragma Assert (Get_Sname_Kind (Name) in Sname_Kind_Prefix);
       Snames_Table.Table (Name).Prefix := Prefix;
    end Set_Sname_Prefix;
 
-   function Get_Sname_Suffix (Name : Sname) return Name_Id
-   is
-      subtype Snames_Suffix is Sname_Kind range Sname_User .. Sname_Artificial;
+   function Get_Sname_Suffix (Name : Sname) return Name_Id is
    begin
       pragma Assert (Is_Valid (Name));
-      pragma Assert (Get_Sname_Kind (Name) in Snames_Suffix);
+      pragma Assert (Get_Sname_Kind (Name) in Sname_Kind_Suffix);
       return Name_Id (Snames_Table.Table (Name).Suffix);
    end Get_Sname_Suffix;
 
    function Get_Sname_Version (Name : Sname) return Uns32 is
    begin
       pragma Assert (Is_Valid (Name));
-      pragma Assert (Get_Sname_Kind (Name) = Sname_Version);
+      pragma Assert (Get_Sname_Kind (Name) = Sname_Version
+                    or else Get_Sname_Kind (Name) = Sname_Unique);
       return Snames_Table.Table (Name).Suffix;
    end Get_Sname_Version;
 
@@ -158,7 +229,7 @@ package body Netlists is
       Ports_Desc := Port_Desc_Table.Last + 1;
       for I in 1 .. Nbr_Inputs + Nbr_Outputs loop
          Port_Desc_Table.Append
-           ((Name => No_Sname, Dir => Port_In, W => 0));
+           ((Name => No_Sname, Dir => Port_In, Order => 0, W => 0));
       end loop;
 
       Modules_Table.Append
@@ -243,6 +314,18 @@ package body Netlists is
       return Modules_Table.Table (M).First_Port_Desc
         + Port_Desc_Idx (Modules_Table.Table (M).Nbr_Inputs);
    end Get_Output_First_Desc;
+
+   function Get_Input_Port_Desc_Idx (M : Module; Port : Port_Idx)
+                                    return Port_Desc_Idx is
+   begin
+      return Get_Input_First_Desc (M) + Port_Desc_Idx (Port);
+   end Get_Input_Port_Desc_Idx;
+
+   function Get_Output_Port_Desc_Idx (M : Module; Port : Port_Idx)
+                                     return Port_Desc_Idx is
+   begin
+      return Get_Output_First_Desc (M) + Port_Desc_Idx (Port);
+   end Get_Output_Port_Desc_Idx;
 
    function Get_Self_Instance (M : Module) return Instance is
    begin
@@ -864,34 +947,32 @@ package body Netlists is
 
    function Get_Input_Desc (M : Module; I : Port_Idx) return Port_Desc
    is
-      F : constant Port_Desc_Idx := Get_Input_First_Desc (M);
       pragma Assert (I < Get_Nbr_Inputs (M));
+      Idx : constant Port_Desc_Idx := Get_Input_Port_Desc_Idx (M, I);
    begin
-      return Get_Port_Desc (F + Port_Desc_Idx (I));
+      return Get_Port_Desc (Idx);
    end Get_Input_Desc;
 
    function Get_Output_Desc (M : Module; O : Port_Idx) return Port_Desc
    is
-      F : constant Port_Desc_Idx := Get_Output_First_Desc (M);
       pragma Assert (O < Get_Nbr_Outputs (M));
+      Idx : constant Port_Desc_Idx := Get_Output_Port_Desc_Idx (M, O);
    begin
-      return Get_Port_Desc (F + Port_Desc_Idx (O));
+      return Get_Port_Desc (Idx);
    end Get_Output_Desc;
 
    procedure Set_Input_Desc (M : Module; I : Port_Idx; Desc : Port_Desc)
    is
-      F : constant Port_Desc_Idx := Get_Input_First_Desc (M);
       pragma Assert (I < Get_Nbr_Inputs (M));
-      Idx : constant Port_Desc_Idx := F + Port_Desc_Idx (I);
+      Idx : constant Port_Desc_Idx := Get_Input_Port_Desc_Idx (M, I);
    begin
       Set_Port_Desc (Idx, Desc);
    end Set_Input_Desc;
 
    procedure Set_Output_Desc (M : Module; O : Port_Idx; Desc : Port_Desc)
    is
-      F : constant Port_Desc_Idx := Get_Output_First_Desc (M);
       pragma Assert (O < Get_Nbr_Outputs (M));
-      Idx : constant Port_Desc_Idx := F + Port_Desc_Idx (O);
+      Idx : constant Port_Desc_Idx := Get_Output_Port_Desc_Idx (M, O);
    begin
       Set_Port_Desc (Idx, Desc);
    end Set_Output_Desc;
@@ -1193,17 +1274,13 @@ package body Netlists is
       return Hash_Value_Type (Params);
    end Instance_Attribute_Hash;
 
-   function Instance_Attribute_Build (Params : Instance) return Instance is
+   procedure Instance_Attribute_Build (Key : Instance;
+                                       Obj : out Instance;
+                                       Val : out Attribute) is
    begin
-      return Params;
+      Obj := Key;
+      Val := No_Attribute;
    end Instance_Attribute_Build;
-
-   function Instance_Attribute_Build_Value (Obj : Instance) return Attribute
-   is
-      pragma Unreferenced (Obj);
-   begin
-      return No_Attribute;
-   end Instance_Attribute_Build_Value;
 
    package Instances_Attribute_Maps is new Dyn_Maps
      (Key_Type => Instance,
@@ -1211,7 +1288,6 @@ package body Netlists is
       Value_Type => Attribute,
       Hash => Instance_Attribute_Hash,
       Build => Instance_Attribute_Build,
-      Build_Value => Instance_Attribute_Build_Value,
       Equal => "=");
 
    Instances_Attribute_Map : Instances_Attribute_Maps.Instance;
@@ -1305,18 +1381,13 @@ package body Netlists is
       return Hash_Value_Type (Params);
    end Port_Attribute_Hash;
 
-   function Port_Attribute_Build (Params : Port_Desc_Idx)
-                                 return Port_Desc_Idx is
+   procedure Port_Attribute_Build (Key : Port_Desc_Idx;
+                                   Obj : out Port_Desc_Idx;
+                                   Value : out Attribute) is
    begin
-      return Params;
+      Obj := Key;
+      Value := No_Attribute;
    end Port_Attribute_Build;
-
-   function Port_Attribute_Build_Value (Obj : Port_Desc_Idx) return Attribute
-   is
-      pragma Unreferenced (Obj);
-   begin
-      return No_Attribute;
-   end Port_Attribute_Build_Value;
 
    package Ports_Attribute_Maps is new Dyn_Maps
      (Key_Type => Port_Desc_Idx,
@@ -1324,7 +1395,6 @@ package body Netlists is
       Value_Type => Attribute,
       Hash => Port_Attribute_Hash,
       Build => Port_Attribute_Build,
-      Build_Value => Port_Attribute_Build_Value,
       Equal => "=");
 
    Ports_Attribute_Map : Ports_Attribute_Maps.Instance;
@@ -1385,8 +1455,7 @@ package body Netlists is
    function Get_Input_Port_First_Attribute (M : Module; Port : Port_Idx)
                                            return Attribute
    is
-      Idx  : constant Port_Desc_Idx :=
-        Get_Input_First_Desc (M) + Port_Desc_Idx (Port);
+      Idx  : constant Port_Desc_Idx := Get_Input_Port_Desc_Idx (M, Port);
    begin
       return Get_Port_First_Attribute (Idx);
    end Get_Input_Port_First_Attribute;
@@ -1394,8 +1463,7 @@ package body Netlists is
    function Get_Output_Port_First_Attribute (M : Module; Port : Port_Idx)
                                             return Attribute
    is
-      Idx  : constant Port_Desc_Idx :=
-        Get_Output_First_Desc (M) + Port_Desc_Idx (Port);
+      Idx  : constant Port_Desc_Idx := Get_Output_Port_Desc_Idx (M, Port);
    begin
       return Get_Port_First_Attribute (Idx);
    end Get_Output_Port_First_Attribute;
@@ -1504,7 +1572,7 @@ package body Netlists is
                begin
                   case Get_Sname_Kind (Name) is
                      when Sname_User
-                        | Sname_Artificial =>
+                        | Sname_System =>
                         Put_Err
                           ("  " & Name_Table.Image (Get_Sname_Suffix (Name)));
                      when others =>
@@ -1520,10 +1588,15 @@ package body Netlists is
 
 begin
    --  Initialize snames_table: create the first entry for No_Sname.
-   Snames_Table.Append ((Kind => Sname_Artificial,
+   Snames_Table.Append ((Kind => Sn_Number,
                          Prefix => No_Sname,
                          Suffix => 0));
    pragma Assert (Snames_Table.Last = No_Sname);
+
+   Snames_Table.Append ((Kind => Sn_Number,
+                         Prefix => No_Sname,
+                         Suffix => 0));
+   pragma Assert (Snames_Table.Last = System_Sname);
 
    Modules_Table.Append ((Parent => No_Module,
                           Name => No_Sname,
@@ -1541,7 +1614,7 @@ begin
    pragma Assert (Modules_Table.Last = No_Module);
 
    Modules_Table.Append ((Parent => No_Module,
-                          Name => New_Sname_Artificial (Std_Names.Name_None),
+                          Name => New_Sname_System (Std_Names.Name_None),
                           Id => Id_Free,
                           First_Port_Desc => No_Port_Desc_Idx,
                           Nbr_Inputs => 0,
@@ -1582,6 +1655,7 @@ begin
 
    Port_Desc_Table.Append ((Name => No_Sname,
                             Dir => Port_In,
+                            Order => 0,
                             W => 0));
    pragma Assert (Port_Desc_Table.Last = No_Port_Desc_Idx);
 

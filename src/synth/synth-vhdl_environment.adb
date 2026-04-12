@@ -102,31 +102,13 @@ package body Synth.Vhdl_Environment is
                                Wd     : Width) is
    begin
       case Typ.Kind is
-         when Type_Bit
-            | Type_Logic
-            | Type_Discrete
-            | Type_Float =>
-            pragma Assert (Wd = Typ.W);
-            pragma Assert (Off = 0);
-            Info_Msg_Synth (+Loc, "  " & Prefix);
-         when Type_File
-            | Type_Protected
-            | Type_Access
-            | Type_Array_Unbounded
-            | Type_Unbounded_Array
-            | Type_Unbounded_Record
-            | Type_Unbounded_Vector =>
-            raise Internal_Error;
          when Type_Vector =>
             pragma Assert (Wd <= Typ.W);
-            if Off = 0 and Wd = Typ.W then
-               Info_Msg_Synth (+Loc, "  " & Prefix);
-            else
-               Info_Msg_Synth
-                 (+Loc,
-                  "  " & Prefix
-                    & "(" & Info_Subrange_Vhdl (Off, Wd, Typ.Abound) & ")");
-            end if;
+            pragma Assert (Off /= 0 or else Wd /= Typ.W);
+            Info_Msg_Synth
+              (+Loc,
+               "  " & Prefix
+                 & "(" & Info_Subrange_Vhdl (Off, Wd, Typ.Abound) & ")");
          when Type_Slice
             | Type_Array =>
             Info_Msg_Synth (+Loc, "  " & Prefix & "(??)");
@@ -159,15 +141,12 @@ package body Synth.Vhdl_Environment is
                              & Vhdl.Utils.Image_Identifier (Field));
                      else
                         --  Partially covered.
-                        if Off < El.Offs.Net_Off then
-                           Sub_Off := 0;
-                           Sub_Wd := Wd - (El.Offs.Net_Off - Off);
-                           Sub_Wd := Width'Min (Sub_Wd, El.Typ.W);
-                        else
-                           Sub_Off := Off - El.Offs.Net_Off;
-                           Sub_Wd := El.Typ.W - (Off - El.Offs.Net_Off);
-                           Sub_Wd := Width'Min (Sub_Wd, Wd);
-                        end if;
+                        --  But shouldn't be part of a previous sub-element,
+                        --  as the assignments should be distincts.
+                        pragma Assert (Off >= El.Offs.Net_Off);
+                        Sub_Off := Off - El.Offs.Net_Off;
+                        Sub_Wd := El.Typ.W - (Off - El.Offs.Net_Off);
+                        Sub_Wd := Width'Min (Sub_Wd, Wd);
                         Info_Subnet_Vhdl
                           (+Loc,
                            Prefix & '.' & Vhdl.Utils.Image_Identifier (Field),
@@ -176,6 +155,7 @@ package body Synth.Vhdl_Environment is
                   end;
                end loop;
             end;
+         when others => raise Internal_Error;
       end case;
    end Info_Subnet_Vhdl;
 
@@ -206,10 +186,16 @@ package body Synth.Vhdl_Environment is
    procedure Error_Multiple_Assignments
      (Decl : Decl_Type; First_Off : Uns32; Last_Off : Uns32) is
    begin
+      Report_Start_Group;
       Error_Msg_Netlist
         (+Decl.Obj, "multiple assignments for %i offsets %v:%v",
          (+Decl.Obj, +First_Off, +Last_Off));
       Info_Subnet (Decl.Obj, Decl.Typ, First_Off, Last_Off + 1 - First_Off);
+      Report_End_Group;
    end Error_Multiple_Assignments;
 
+   function Get_Location (Decl : Decl_Type) return Location_Type is
+   begin
+      return Get_Location (Decl.Obj);
+   end Get_Location;
 end Synth.Vhdl_Environment;

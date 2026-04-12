@@ -23,7 +23,7 @@ with Flags; use Flags;
 with Std_Names;
 with Errorout; use Errorout;
 
-with Vhdl.Scanner;
+with Vhdl.Chars;
 with Vhdl.Errors; use Vhdl.Errors;
 with Vhdl.Utils; use Vhdl.Utils;
 with Vhdl.Std_Package; use Vhdl.Std_Package;
@@ -651,7 +651,7 @@ package body Vhdl.Evaluation is
                   Cur_Pos := Cur_Pos + 1;
                else
                   declare
-                     Assoc_Len : Int64;
+                     Assoc_Len : Uns64;
                   begin
                      pragma Assert (Last_Dim);
                      Assoc_Len := Eval_Discrete_Type_Length
@@ -667,7 +667,7 @@ package body Vhdl.Evaluation is
                declare
                   Rng : constant Iir := Get_Choice_Range (Assoc);
                   Rng_Start : Iir;
-                  Rng_Len : Int64;
+                  Rng_Len : Uns64;
                   E : Iir;
                begin
                   if Get_Direction (Rng) = Get_Direction (Choice_Range) then
@@ -710,9 +710,9 @@ package body Vhdl.Evaluation is
       Aggr_Type : constant Iir := Get_Type (Aggr);
       Index_Type : constant Iir := Get_Index_Type (Aggr_Type, 0);
       Index_Range : constant Iir := Eval_Static_Range (Index_Type);
-      Len : constant Int64 := Eval_Discrete_Range_Length (Index_Range);
+      Len : constant Uns64 := Eval_Discrete_Range_Length (Index_Range);
       Assocs : constant Iir := Get_Association_Choices_Chain (Aggr);
-      Vect : Iir_Array (0 .. Integer (Len - 1));
+      Vect : Iir_Array (0 .. Integer (Len) - 1);
       List : Iir_Flist;
       Assoc : Iir;
       Expr : Iir;
@@ -814,7 +814,8 @@ package body Vhdl.Evaluation is
                   W := Discrete_Range_Width (Res_Rng);
                   return Create_Discrete_Type (Res_Rng, Base_Typ.Sz, W);
                end;
-            when Iir_Kind_Floating_Type_Definition =>
+            when Iir_Kind_Floating_Type_Definition
+               | Iir_Kind_Floating_Subtype_Definition =>
                return Create_Float_Type ((Dir_To, Fp64'First, Fp64'Last));
             when Iir_Kind_Array_Type_Definition =>
                declare
@@ -1611,18 +1612,18 @@ package body Vhdl.Evaluation is
       return Build_Simple_Aggregate (Res_List, Origin, Get_Type (Left));
    end Eval_Shift_Operator;
 
-   --  Concatenate all the elements of OPERANDS.
-   --  The first element of OPERANDS is the rightest one, the last the
+   --  Concatenate all the elements of OPERATORS.
+   --  The first element of OPERATORS is the rightest one, the last the
    --  leftest one.  All the elements are concatenation operators.
    --  All the elements are static.
-   function Eval_Concatenation (Operands : Iir_Array) return Iir
+   function Eval_Concatenation (Operators : Iir_Array) return Iir
    is
-      pragma Assert (Operands'First = 1);
-      Orig : constant Iir := Operands (1);
+      pragma Assert (Operators'First = 1);
+      Orig : constant Iir := Operators (1);
       Origin_Type : constant Iir := Get_Type (Orig);
 
-      Ops_Val : Iir_Array (Operands'Range);
-      Str_Lits : Iir_Array (Operands'Range);
+      Ops_Val : Iir_Array (Operators'Range);
+      Str_Lits : Iir_Array (Operators'Range);
       Left_Op : Iir;
       Left_Val : Iir;
       Left_Lit : Iir;
@@ -1634,17 +1635,21 @@ package body Vhdl.Evaluation is
       El : Iir;
       El_List : Iir_Flist;
       El_Len : Natural;
+      El_Subtype : Iir;
       Err_Orig : Iir;
 
       --  To compute the index range of the result for vhdl87.
       Leftest_Non_Null : Iir;
       Bounds_From_Subtype : Boolean;
    begin
+      Op := Operators (Operators'First);
+      El_Subtype := Get_Element_Subtype (Get_Type (Op));
+
       --  Eval operands, compute length of the result.
       Err_Orig := Null_Iir;
       Res_Len := 0;
-      for I in Operands'Range loop
-         Op := Operands (I);
+      for I in Operators'Range loop
+         Op := Operators (I);
          Def := Get_Implicit_Definition (Get_Implementation (Op));
          if Get_Kind (Op) = Iir_Kind_Function_Call then
             El := Get_Actual
@@ -1660,6 +1665,11 @@ package body Vhdl.Evaluation is
                when Iir_Predefined_Array_Element_Concat
                  | Iir_Predefined_Element_Element_Concat =>
                   Res_Len := Res_Len + 1;
+                  --  For an operand of the type of the element, check
+                  --  the bounds.
+                  if not Eval_Check_Bound (Ops_Val (I), El_Subtype) then
+                     Err_Orig := El;
+                  end if;
                when Iir_Predefined_Element_Array_Concat
                  | Iir_Predefined_Array_Array_Concat =>
                   Str_Lits (I) := Eval_String_Literal (Ops_Val (I));
@@ -1669,7 +1679,8 @@ package body Vhdl.Evaluation is
          end if;
       end loop;
 
-      Op := Operands (Operands'Last);
+      --  Don't forget the leftest one.
+      Op := Operators (Operators'Last);
       if Get_Kind (Op) = Iir_Kind_Function_Call then
          Left_Op := Get_Actual (Get_Parameter_Association_Chain (Op));
       else
@@ -1684,6 +1695,11 @@ package body Vhdl.Evaluation is
             when Iir_Predefined_Element_Array_Concat
               | Iir_Predefined_Element_Element_Concat =>
                Res_Len := Res_Len + 1;
+               --  For an operand of the type of the element, check
+               --  the bounds.
+               if not Eval_Check_Bound (Left_Val, El_Subtype) then
+                  Err_Orig := Left_Op;
+               end if;
             when Iir_Predefined_Array_Element_Concat
               | Iir_Predefined_Array_Array_Concat =>
                Left_Lit := Eval_String_Literal (Left_Val);
@@ -1696,7 +1712,7 @@ package body Vhdl.Evaluation is
       if Err_Orig /= Null_Iir then
          --  Free all.
          for I in Ops_Val'Range loop
-            Free_Eval_Static_Expr (Ops_Val (I), Operands (I));
+            Free_Eval_Static_Expr (Ops_Val (I), Operators (I));
          end loop;
          Free_Eval_Static_Expr (Left_Val, Left_Op);
 
@@ -1729,8 +1745,8 @@ package body Vhdl.Evaluation is
       end case;
 
       --  Right:
-      for I in reverse Operands'Range loop
-         Def := Get_Implicit_Definition (Get_Implementation (Operands (I)));
+      for I in reverse Operators'Range loop
+         Def := Get_Implicit_Definition (Get_Implementation (Operators (I)));
          case Iir_Predefined_Concat_Functions (Def) is
             when Iir_Predefined_Array_Element_Concat
               | Iir_Predefined_Element_Element_Concat =>
@@ -1761,7 +1777,7 @@ package body Vhdl.Evaluation is
          --  If both operands are null arrays, then the result of the
          --  concatenation is the right operand.
          if Res_Len = 0 then
-            Res_Type := Get_Type (Get_Right (Operands (1)));
+            Res_Type := Get_Type (Get_Right (Operators (1)));
          else
             --  LRM93 7.2.4
             --  Otherwise, the direction and bounds of the result are
@@ -1795,7 +1811,7 @@ package body Vhdl.Evaluation is
               (Origin_Type, Int64 (Res_Len), Orig);
          else
             if Res_Len = 0 then
-               Res_Type := Get_Type (Get_Right (Operands (1)));
+               Res_Type := Get_Type (Get_Right (Operators (1)));
             else
                declare
                   Left_Index : constant Iir :=
@@ -1827,7 +1843,7 @@ package body Vhdl.Evaluation is
       end if;
 
       for I in Ops_Val'Range loop
-         Free_Eval_Static_Expr (Ops_Val (I), Operands (I));
+         Free_Eval_Static_Expr (Ops_Val (I), Operators (I));
       end loop;
       Free_Eval_Static_Expr (Left_Val, Left_Op);
 
@@ -2823,10 +2839,6 @@ package body Vhdl.Evaluation is
 
       Dim := Eval_Attribute_Parameter_Or_1 (Attr);
       Indexes := Get_Index_Subtype_List (Prefix_Type);
-      if Dim < 1 or else Dim > Get_Nbr_Elements (Indexes) then
-         --  Error already displayed in sem_name.
-         Dim := 1;
-      end if;
       return Get_Nth_Element (Indexes, Dim - 1);
    end Eval_Array_Attribute;
 
@@ -2977,7 +2989,7 @@ package body Vhdl.Evaluation is
       -- Separate string into numeric value and make lowercase unit.
       for I in reverse Val'range loop
          UnitName (I) := Ada.Characters.Handling.To_Lower (Val (I));
-         if Vhdl.Scanner.Is_Whitespace (Val (I)) and Found_Unit then
+         if Vhdl.Chars.Is_Whitespace (Val (I)) and Found_Unit then
             Sep := I;
             exit;
          else
@@ -3185,16 +3197,32 @@ package body Vhdl.Evaluation is
       Expr : constant Iir := Get_Expression (Conv);
       Val : Iir;
       Val_Type : Iir;
-      Conv_Type : Iir;
+      Conv_Type, Conv_Btype : Iir;
       Res : Iir;
    begin
       Val := Eval_Static_Expr (Expr);
       Val_Type := Get_Base_Type (Get_Type (Val));
-      Conv_Type := Get_Base_Type (Get_Type (Conv));
-      if Conv_Type = Val_Type then
+      Conv_Type := Get_Type (Conv);
+      Conv_Btype := Get_Base_Type (Conv_Type);
+      if Conv_Btype = Val_Type then
+         --  Same type, nothing to convert.
          Res := Build_Constant (Val, Orig);
+
+         if Get_Kind (Conv_Btype) = Iir_Kind_Array_Type_Definition then
+            case Get_Constraint_State (Conv_Type) is
+               when Unconstrained =>
+                  --  This is a no-op.  Reuse the subtype of the expression.
+                  Set_Type (Res, Get_Type (Val));
+               when Fully_Constrained =>
+                  --  Constraints are set by the type mark.
+                  null;
+               when Partially_Constrained =>
+                  --  TODO
+                  null;
+            end case;
+         end if;
       else
-         case Get_Kind (Conv_Type) is
+         case Get_Kind (Conv_Btype) is
             when Iir_Kind_Integer_Type_Definition =>
                case Get_Kind (Val_Type) is
                   when Iir_Kind_Integer_Type_Definition =>
@@ -3263,11 +3291,11 @@ package body Vhdl.Evaluation is
       First := Value'First;
       Last := Value'Last;
       while First <= Last loop
-         exit when not Vhdl.Scanner.Is_Whitespace (Value (First));
+         exit when not Vhdl.Chars.Is_Whitespace (Value (First));
          First := First + 1;
       end loop;
       while Last >= First loop
-         exit when not Vhdl.Scanner.Is_Whitespace (Value (Last));
+         exit when not Vhdl.Chars.Is_Whitespace (Value (Last));
          Last := Last - 1;
       end loop;
 
@@ -3498,8 +3526,8 @@ package body Vhdl.Evaluation is
       Prefix : Iir;
    begin
       Prefix := Get_Prefix (Expr);
-      Prefix := Eval_Static_Expr (Prefix);
 
+      --  Eval indexes
       declare
          Prefix_Type : constant Iir := Get_Type (Prefix);
          Indexes_Type : constant Iir_Flist :=
@@ -3523,6 +3551,11 @@ package body Vhdl.Evaluation is
          end loop;
       end;
 
+      --  Then evaluate prefix.
+      --  (See comment for slice: the type of the evaluated expression may be
+      --   different from the type of the prefix).
+      Prefix := Eval_Static_Expr (Prefix);
+
       case Get_Kind (Prefix) is
          when Iir_Kind_Aggregate =>
             return Eval_Indexed_Aggregate (Prefix, Expr);
@@ -3536,6 +3569,64 @@ package body Vhdl.Evaluation is
             Error_Kind ("eval_indexed_name", Prefix);
       end case;
    end Eval_Indexed_Name;
+
+   function Eval_Slice_Name (Expr : Iir) return Iir
+   is
+      Suffix : constant Iir := Get_Suffix (Expr);
+      Len : constant Uns64 := Eval_Discrete_Range_Length (Suffix);
+      Idx_Type, Idx_Rng : Iir;
+      Prefix : Iir;
+      Dir : Direction_Type;
+      Left, Right : Iir;
+      Pos : Iir_Index32;
+   begin
+      if Len = 0 then
+         return Build_String (Null_String8, 0, Expr);
+      end if;
+
+      Eval_Range_Bounds (Suffix, Dir, Left, Right);
+
+      Prefix := Get_Prefix (Expr);
+
+      --  Immediately extract type from the prefix
+      --  (the type of the evaluated expression might not be correct).
+      Idx_Type := Get_Index_Type (Get_Type (Prefix), 0);
+      Idx_Rng := Get_Range_Constraint (Idx_Type);
+
+      Pos := Eval_Pos_In_Range (Idx_Rng, Left);
+
+      Prefix := Eval_Static_Expr (Prefix);
+
+      case Get_Kind (Prefix) is
+         when Iir_Kind_String_Literal8 =>
+            declare
+               use Str_Table;
+               Str_Id : constant String8_Id := Get_String8_Id (Prefix);
+            begin
+               return Build_String (String8_Substring (Str_Id, Int32 (Pos)),
+                 Nat32 (Len), Expr);
+            end;
+         when Iir_Kind_Simple_Aggregate =>
+            declare
+               Plist : constant Iir_Flist :=
+                 Get_Simple_Aggregate_List (Prefix);
+               Rlist : Iir_Flist;
+               El : Iir;
+            begin
+               Rlist := Create_Iir_Flist (Natural (Len));
+
+               for I in 0 .. Natural (Len - 1) loop
+                  El := Get_Nth_Element (Plist, Natural (Pos) + I);
+                  Set_Nth_Element (Rlist, Natural (I), El);
+               end loop;
+               return Build_Simple_Aggregate (Rlist, Expr, Get_Type (Expr));
+            end;
+         when Iir_Kind_Overflow_Literal =>
+            return Build_Overflow (Expr, Get_Type (Expr));
+         when others =>
+            Error_Kind ("eval_slice_name", Prefix);
+      end case;
+   end Eval_Slice_Name;
 
    function Eval_Indexed_Aggregate_By_Offset
      (Aggr : Iir; Off : Iir_Index32; Dim : Natural := 0) return Iir
@@ -3719,6 +3810,8 @@ package body Vhdl.Evaluation is
             return Eval_Selected_Element (Expr);
          when Iir_Kind_Indexed_Name =>
             return Eval_Indexed_Name (Expr);
+         when Iir_Kind_Slice_Name =>
+            return Eval_Slice_Name (Expr);
 
          when Iir_Kind_Parenthesis_Expression =>
             return Eval_Static_Expr_Orig (Get_Expression (Expr), Orig);
@@ -3921,7 +4014,9 @@ package body Vhdl.Evaluation is
                Index : Iir;
             begin
                Index := Eval_Array_Attribute (Expr);
-               return Build_Discrete (Eval_Discrete_Type_Length (Index), Expr);
+               --  Handle overflow ?
+               return Build_Discrete
+                 (Int64 (Eval_Discrete_Type_Length (Index)), Expr);
             end;
          when Iir_Kind_Left_Array_Attribute =>
             declare
@@ -4129,7 +4224,7 @@ package body Vhdl.Evaluation is
    is
       Expr_Type : constant Iir := Get_Type (Expr);
       Indexes : Iir_Flist;
-      Len : Int64;
+      Len : Uns64;
    begin
       --  Consider only arrays.  Records are never composite.
       if Get_Kind (Expr_Type) /= Iir_Kind_Array_Subtype_Definition then
@@ -4621,19 +4716,19 @@ package body Vhdl.Evaluation is
       end case;
    end Is_Null_Range;
 
-   function Eval_Discrete_Range_Length (Constraint : Iir) return Int64
+   function Eval_Discrete_Range_Length (Constraint : Iir) return Uns64
    is
       --  We don't want to deal with very large ranges here.
       pragma Suppress (Overflow_Check);
       Left_Expr : constant Iir := Get_Left_Limit (Constraint);
       Right_Expr : constant Iir := Get_Right_Limit (Constraint);
-      Res : Int64;
+      Res : Uns64;
       Left, Right : Int64;
    begin
       if Is_Overflow_Literal (Left_Expr)
         or else Is_Overflow_Literal (Right_Expr)
       then
-         return -1;
+         return 0;
       end if;
 
       Left := Eval_Pos (Left_Expr);
@@ -4644,20 +4739,20 @@ package body Vhdl.Evaluation is
                --  Null range.
                return 0;
             else
-               Res := Right - Left + 1;
+               Res := Uns64 (Right - Left) + 1;
             end if;
          when Dir_Downto =>
             if Left < Right then
                --  Null range
                return 0;
             else
-               Res := Left - Right + 1;
+               Res := Uns64 (Left - Right) + 1;
             end if;
       end case;
       return Res;
    end Eval_Discrete_Range_Length;
 
-   function Eval_Discrete_Type_Length (Sub_Type : Iir) return Int64
+   function Eval_Discrete_Type_Length (Sub_Type : Iir) return Uns64
    is
    begin
       case Get_Kind (Sub_Type) is
@@ -4679,6 +4774,12 @@ package body Vhdl.Evaluation is
       Right := Eval_Pos (Get_Right_Limit (Rng));
       return Null_Int_Range (Get_Direction (Rng), Left, Right);
    end Eval_Is_Null_Discrete_Range;
+
+   function Eval_Is_Range_Overflow (Rng : Iir) return Boolean is
+   begin
+      return Is_Overflow_Literal (Get_Left_Limit (Rng))
+        or else Is_Overflow_Literal (Get_Right_Limit (Rng));
+   end Eval_Is_Range_Overflow;
 
    function Eval_Pos (Expr : Iir) return Int64 is
    begin
@@ -5135,6 +5236,20 @@ package body Vhdl.Evaluation is
                return Str_Info'(Is_String => True,
                                 Len => Get_String_Length (Expr),
                                 Id => Get_String8_Id (Expr));
+
+            when Iir_Kinds_Denoting_Name =>
+               return Get_Str_Info (Get_Named_Entity (Expr));
+            when Iir_Kind_Constant_Declaration =>
+               declare
+                  Val : Iir;
+               begin
+                  --  Evaluate the expression as it may not have been.
+                  Val := Get_Default_Value (Expr);
+                  Val := Eval_Expr_Keep_Orig (Val, False);
+                  Set_Default_Value (Expr, Val);
+                  return Get_Str_Info (Val);
+               end;
+
             when others =>
                Error_Kind ("string_utils.get_info", Expr);
          end case;
@@ -5271,11 +5386,17 @@ package body Vhdl.Evaluation is
 
       procedure Path_Add_Name (N : Iir)
       is
-         Img : constant String := Eval_Simple_Name (Get_Identifier (N));
+         Id : constant Name_Id := Get_Identifier (N);
       begin
-         if Img (Img'First) /= 'P' then
-            --  Skip anonymous processes.
-            Path_Add (Img);
+         if Id /= Null_Identifier then
+            declare
+               Img : constant String := Eval_Simple_Name (Id);
+            begin
+               if Img (Img'First) /= 'P' then
+                  --  Skip anonymous processes.
+                  Path_Add (Img);
+               end if;
+            end;
          end if;
       end Path_Add_Name;
 
@@ -5398,7 +5519,10 @@ package body Vhdl.Evaluation is
            | Iir_Kind_File_Declaration
            | Iir_Kind_Interface_File_Declaration
            | Iir_Kind_Type_Declaration
-           | Iir_Kind_Subtype_Declaration =>
+           | Iir_Kind_Subtype_Declaration
+           | Iir_Kind_Component_Declaration
+           | Iir_Kind_Object_Alias_Declaration
+           | Iir_Kind_Non_Object_Alias_Declaration =>
             Path_Add_Element (Get_Parent (Prefix), Is_Instance);
             Path_Add_Name (Prefix);
          when Iir_Kind_Library_Declaration

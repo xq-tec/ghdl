@@ -45,8 +45,10 @@ package body Ghdlcov is
      (Line_Array, Line_Acc);
 
    type File_Record is record
+      --  Name and Dir are normalized
       Name : Name_Id;
       Dir : Name_Id;
+
       Checksum : File_Checksum_String;
 
       Lines : Line_Acc;
@@ -207,9 +209,49 @@ package body Ghdlcov is
          Expect (Scan, Ref);
       end Scan_Expect;
 
-      function Get_String return String is
+      function Get_String return String
+      is
+         First : constant Source_Ptr := Tok_Pos + 1;
+         Last : constant Source_Ptr := Pos - 2;
+         P : Source_Ptr;
+         Nquote : Natural;
       begin
-         return String (Buf (Tok_Pos + 1 .. Pos - 2));
+         Nquote := 0;
+         P := First;
+         while P <= Last loop
+            if Buf (P) = '\' and then P < Last and then Buf (P + 1) = '\' then
+               Nquote := Nquote + 1;
+               P := P + 2;
+            else
+               P := P + 1;
+            end if;
+         end loop;
+         if Nquote = 0 then
+            return String (Buf (First .. Last));
+         else
+            declare
+               Ns : String (1 .. Natural (Last - First + 1) - Nquote);
+               R : Positive;
+            begin
+               R := Ns'First;
+               P := First;
+               while P <= Last loop
+                  if Buf (P) = '\'
+                    and then P < Last
+                    and then Buf (P + 1) = '\'
+                  then
+                     Ns (R) := '\';
+                     P := P + 2;
+                  else
+                     Ns (R) := Buf (P);
+                     P := P + 1;
+                  end if;
+                  R := R + 1;
+               end loop;
+               pragma Assert (R = Ns'Last + 1);
+               return Ns;
+            end;
+         end if;
       end Get_String;
 
       function Get_Number return Natural is
@@ -261,6 +303,7 @@ package body Ghdlcov is
             Dir := Name_Table.Get_Identifier (Get_String);
          end if;
       end;
+
       Scan_Expect (Tok_Comma);
 
       --  sha1: xx
@@ -317,6 +360,8 @@ package body Ghdlcov is
       Scan_Expect (Tok_Colon);
       Scan_Expect (Tok_Lcurl);
 
+      L := F.Lines;
+
       loop
          Scan_Expect (Tok_String);
          Lineno := Natural'Value (Get_String);
@@ -332,7 +377,8 @@ package body Ghdlcov is
       Scan_Expect (Tok_Rcurl);
    end Parse_File_Entry;
 
-   procedure Parse_File
+   --  Return True on success
+   function Parse_File return Boolean
    is
       use Mini_Json;
       use Errorout;
@@ -362,13 +408,16 @@ package body Ghdlcov is
       Scan_Expect (Tok_Rcurl);
       Scan_Expect (Tok_Eof);
 
+      return True;
+
    exception
       when Parse_Error =>
          Error_Msg_Option ("parse error at line %v",
                            (1 => +Int32 (Get_Line)));
+         return False;
    end Parse_File;
 
-   procedure Read_Coverage_File (Filename : String)
+   function Read_Coverage_File (Filename : String) return Boolean
    is
       use Errorout;
       File_Id : Name_Id;
@@ -378,12 +427,15 @@ package body Ghdlcov is
       File := Files_Map.Read_Source_File (Null_Identifier, File_Id);
       if File = No_Source_File_Entry then
          Error_Msg_Option ("cannot open file %i", (1 => +File_Id));
-         return;
+         return False;
       end if;
 
       Mini_Json.Init (File);
-      Parse_File;
+      if not Parse_File then
+         return False;
+      end if;
       Files_Map.Unload_Last_Source_File (File);
+      return True;
    end Read_Coverage_File;
 
    function Get_EOL_Pos (Buf : File_Buffer_Acc; Pos : Source_Ptr)
@@ -431,7 +483,6 @@ package body Ghdlcov is
       use Grt.Astdio;
       use Name_Table;
       Lines : constant Line_Acc := Rec.Lines;
-      Name, Dir : Name_Id;
       Sfe : Source_File_Entry;
       F : FILEs;
       Buf : File_Buffer_Acc;
@@ -439,23 +490,20 @@ package body Ghdlcov is
       Epos : Source_Ptr;
       Line : Positive;
    begin
-      Name := Rec.Name;
-      Dir := Rec.Dir;
-      Normalize_Pathname (Dir, Name);
-      Sfe := Read_Source_File (Dir, Name);
+      Sfe := Read_Source_File (Rec.Dir, Rec.Name);
       if Sfe = No_Source_File_Entry then
          Errorout.Error_Msg_Option
-           ("cannot open source file " & Image (Name) & '"');
+           ("cannot open source file " & Image (Rec.Name) & '"');
          return;
       end if;
 
-      F := Fopen_W (Image (Name) & ".gcov");
+      F := Fopen_W (Image (Rec.Name) & ".gcov");
       if F = NULL_Stream then
          return;
       end if;
 
-      Put_Line (F, "     -:    0:Source:" & Image (Name));
-      Put_Line (F, "     -:    0:Working directory:" & Image (Dir));
+      Put_Line (F, "     -:    0:Source:" & Image (Rec.Name));
+      Put_Line (F, "     -:    0:Working directory:" & Image (Rec.Dir));
 
       Line := 1;
       Buf := Get_File_Source (Sfe);
@@ -517,15 +565,11 @@ package body Ghdlcov is
          declare
             Rec : constant File_Record_Acc := Res_Tables.Table (I);
             Lines : constant Line_Acc := Rec.Lines;
-            Name, Dir : Name_Id;
             First : Boolean;
          begin
-            Name := Rec.Name;
-            Dir := Rec.Dir;
-            Files_Map.Normalize_Pathname (Dir, Name);
             Put_Line (F, "    {");
             Put_Line (F, "      ""file"": """
-                        & Image (Dir) & Image (Name) & """,");
+                        & Image (Rec.Dir) & Image (Rec.Name) & """,");
             Put_Line (F, "      ""lines"": [");
             First := True;
             for I in Lines'Range loop
@@ -570,15 +614,11 @@ package body Ghdlcov is
             use Name_Table;
             Rec : constant File_Record_Acc := Res_Tables.Table (I);
             Lines : constant Line_Acc := Rec.Lines;
-            Name, Dir : Name_Id;
             Fn_Cov : Boolean;
          begin
-            Name := Rec.Name;
-            Dir := Rec.Dir;
-            Files_Map.Normalize_Pathname (Dir, Name);
-            Put_Line ("SF:" & Image (Dir) & Image (Name));
+            Put_Line ("SF:" & Image (Rec.Dir) & Image (Rec.Name));
             --  No functions...
-            Put_Line ("FN:1:file");
+            Put_Line ("FN:1,file");
             Fn_Cov := False;
             for I in Lines'Range loop
                if Lines (I).Coverage and Lines (I).Covered then
@@ -747,8 +787,12 @@ package body Ghdlcov is
                              Args : String_Acc_Array;
                              Success : out Boolean) is
    begin
+      Success := False;
+
       for I in Args'Range loop
-         Read_Coverage_File (Args (I).all);
+         if not Read_Coverage_File (Args (I).all) then
+            return;
+         end if;
       end loop;
       case Cmd.Format is
          when Format_Gcov =>

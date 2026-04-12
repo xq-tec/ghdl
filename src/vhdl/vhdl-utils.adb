@@ -353,6 +353,7 @@ package body Vhdl.Utils is
                | Iir_Kinds_Specification
                | Iir_Kind_Non_Object_Alias_Declaration
                | Iir_Kinds_Subprogram_Body
+               | Iir_Kind_Subprogram_Instantiation_Body
                | Iir_Kind_Protected_Type_Body
                | Iir_Kind_Generate_Statement_Body
                | Iir_Kind_Package_Instantiation_Body
@@ -525,19 +526,21 @@ package body Vhdl.Utils is
    end Name_To_Value;
 
    --  Return TRUE if EXPR is a signal name.
-   function Is_Signal_Name (Expr : Iir) return Boolean
+   function Is_Signal_Name (Expr : Iir; With_View : Boolean := False)
+                           return Boolean
    is
       Obj : Iir;
    begin
       Obj := Name_To_Object (Expr);
       if Obj /= Null_Iir then
-         return Is_Signal_Object (Obj);
+         return Is_Signal_Object (Obj, With_View);
       else
          return False;
       end if;
    end Is_Signal_Name;
 
-   function Is_Signal_Object (Name : Iir) return Boolean
+   function Is_Signal_Object (Name : Iir; With_View : Boolean := False)
+                             return Boolean
    is
       Adecl: Iir;
    begin
@@ -549,6 +552,8 @@ package body Vhdl.Utils is
            | Iir_Kinds_Signal_Attribute
            | Iir_Kind_External_Signal_Name =>
             return True;
+         when Iir_Kind_Interface_View_Declaration =>
+            return With_View;
          when Iir_Kind_Object_Alias_Declaration =>
             --  Must have been handled by Get_Object_Prefix.
             raise Internal_Error;
@@ -556,6 +561,16 @@ package body Vhdl.Utils is
             return False;
       end case;
    end Is_Signal_Object;
+
+   function Is_View_Object (Name : Iir) return Boolean is
+   begin
+      case Get_Kind (Name) is
+         when Iir_Kind_Interface_View_Declaration =>
+            return True;
+         when others =>
+            return False;
+      end case;
+   end Is_View_Object;
 
    function Is_Quantity_Object (Name : Iir) return Boolean
    is
@@ -1055,6 +1070,8 @@ package body Vhdl.Utils is
             return;
          when Iir_Kind_Architecture_Body =>
             Free_Recursive (Get_Entity_Name (N));
+         when Iir_Kind_Vunit_Declaration =>
+            null;
          when Iir_Kind_Overload_List =>
             Free_Recursive_List (Get_Overload_List (N));
             if not Free_List then
@@ -1224,6 +1241,7 @@ package body Vhdl.Utils is
             | Iir_Kind_Interface_Signal_Declaration
             | Iir_Kind_Object_Alias_Declaration
             | Iir_Kind_Interface_Constant_Declaration
+            | Iir_Kind_Interface_View_Declaration
             | Iir_Kinds_External_Name =>
             declare
                Ind : constant Iir := Get_Subtype_Indication (Base);
@@ -1572,13 +1590,15 @@ package body Vhdl.Utils is
    function Is_Function_Declaration (N : Iir) return Boolean is
    begin
       return Kind_In (N, Iir_Kind_Function_Declaration,
-                      Iir_Kind_Interface_Function_Declaration);
+                      Iir_Kind_Interface_Function_Declaration,
+                      Iir_Kind_Function_Instantiation_Declaration);
    end Is_Function_Declaration;
 
    function Is_Procedure_Declaration (N : Iir) return Boolean is
    begin
       return Kind_In (N, Iir_Kind_Procedure_Declaration,
-                      Iir_Kind_Interface_Procedure_Declaration);
+                      Iir_Kind_Interface_Procedure_Declaration,
+                      Iir_Kind_Procedure_Instantiation_Declaration);
    end Is_Procedure_Declaration;
 
    function Is_Same_Profile (L, R: Iir) return Boolean
@@ -2119,6 +2139,13 @@ package body Vhdl.Utils is
             return Get_Parameter_4 (Attr);
       end case;
    end Get_Attribute_Parameter;
+
+   function Is_Entity_Attribute (Attr_Value : Iir) return Boolean
+   is
+      De : constant Node := Get_Designated_Entity (Attr_Value);
+   begin
+      return Get_Kind (De) = Iir_Kind_Entity_Declaration;
+   end Is_Entity_Attribute;
 
    function Get_File_Signature_Length (Def : Iir) return Natural is
    begin

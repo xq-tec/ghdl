@@ -492,11 +492,17 @@ package body Vhdl.Sem_Stmts is
       Targ_Obj_Kind := Get_Kind (Target_Prefix);
       case Targ_Obj_Kind is
          when Iir_Kind_Interface_Signal_Declaration =>
-            if not Iir_Mode_Writable (Get_Mode (Target_Prefix)) then
-               Error_Msg_Sem
-                 (+Target, "%n can't be assigned", +Target_Prefix);
-            else
-               if Add_Driver then
+            --  LRM08 6.5.2 Interface object declarations
+            --  IN. [...] but it shalle not be updated by a simple waveform
+            --  assignment, a conditional waveform assignment, a selected
+            --  waveform assignment, a concurrent signal assignment, [or a
+            --  variable assignment].
+            if Add_Driver then
+               --  Not a force/release assignment.
+               if not Iir_Mode_Writable (Get_Mode (Target_Prefix)) then
+                  Error_Msg_Sem
+                    (+Target, "%n can't be assigned", +Target_Prefix);
+               else
                   Sem_Add_Driver (Target_Object, Stmt);
                end if;
             end if;
@@ -526,7 +532,7 @@ package body Vhdl.Sem_Stmts is
          Error_Msg_Sem (+Stmt, "signal name must be static");
       end if;
 
-      Sem_Check_Pure (Target, Target_Object);
+      Sem_Check_Pure (Target, Target_Prefix);
 
       --  LRM93 2.1.1.2
       --  A formal signal parameter is a guarded signal if and only if
@@ -2202,35 +2208,6 @@ package body Vhdl.Sem_Stmts is
       end if;
    end Sem_Instantiated_Unit;
 
-   --  Change the formal so that it refers to the original interface.
-   procedure Reassoc_Association_Chain (Chain : Iir)
-   is
-      Assoc : Iir;
-      Formal : Iir;
-      Ent : Iir;
-   begin
-      Assoc := Chain;
-      while Assoc /= Null_Iir loop
-         Formal := Get_Formal (Assoc);
-         if Formal /= Null_Iir then
-            case Get_Kind (Formal) is
-               when Iir_Kind_Simple_Name
-                 | Iir_Kind_Reference_Name =>
-                  Ent := Get_Named_Entity (Formal);
-                  if Ent /= Null_Iir then
-                     --  Except in case of error!
-                     Ent := Sem_Inst.Get_Origin (Ent);
-                     Set_Named_Entity (Formal, Ent);
-                  end if;
-               when others =>
-                  --  TODO.
-                  raise Internal_Error;
-            end case;
-         end if;
-         Assoc := Get_Chain (Assoc);
-      end loop;
-   end Reassoc_Association_Chain;
-
    procedure Sem_Component_Instantiation_Statement
      (Stmt: Iir_Component_Instantiation_Statement; Is_Passive : Boolean)
    is
@@ -2258,16 +2235,23 @@ package body Vhdl.Sem_Stmts is
          return;
       end if;
 
-      --  The associations
+      --  The associations.
+      --  We first need to associate then generics.
       Sem_Generic_Association_Chain (Decl, Stmt);
       if Component_Need_Instance (Decl, True) then
          --  Can be an entity or a component.
+         --  The generics have been associated, can now instantiate the whole
+         --  component or entity, and replacing the types.
          Decl_Inst := Sem_Inst.Instantiate_Component_Declaration (Decl, Stmt);
          Set_Instantiated_Header (Stmt, Decl_Inst);
          Sem_Port_Association_Chain (Decl_Inst, Stmt);
          --  Re-associate formals with the non-instantiated interfaces.
-         Reassoc_Association_Chain (Get_Generic_Map_Aspect_Chain (Stmt));
-         Reassoc_Association_Chain (Get_Port_Map_Aspect_Chain (Stmt));
+         Sem_Inst.Reassoc_Association_Formals
+           (Get_Generic_Map_Aspect_Chain (Stmt),
+            Get_Generic_Chain (Decl_Inst), Get_Generic_Chain (Decl));
+         Sem_Inst.Reassoc_Association_Formals
+           (Get_Port_Map_Aspect_Chain (Stmt),
+            Get_Port_Chain (Decl_Inst), Get_Port_Chain (Decl));
       else
          Sem_Port_Association_Chain (Decl, Stmt);
       end if;
@@ -2597,7 +2581,9 @@ package body Vhdl.Sem_Stmts is
       Close_Declarative_Region;
    end Sem_Case_Generate_Statement;
 
-   procedure Sem_Process_Statement (Proc: Iir) is
+   procedure Sem_Process_Statement (Proc: Iir)
+   is
+      Implicit : Implicit_Declaration_Type;
    begin
       Set_Is_Within_Flag (Proc, True);
 
@@ -2605,9 +2591,14 @@ package body Vhdl.Sem_Stmts is
       --  8. A process statement
       Open_Declarative_Region;
 
+      --  Implicit signals may depend on constant elaborated within a process
+      --  (eg: s'delayed(my_const))
+      Push_Signals_Declarative_Part (Implicit, Proc);
+
       -- Sem declarations
       Sem_Sequential_Statements (Proc, Proc);
 
+      Pop_Signals_Declarative_Part (Implicit);
       Close_Declarative_Region;
 
       Set_Is_Within_Flag (Proc, False);

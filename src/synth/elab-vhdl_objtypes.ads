@@ -114,6 +114,7 @@ package Elab.Vhdl_Objtypes is
      Type_Vector .. Type_Unbounded_Vector;
    subtype Type_Composite is Type_Kind range
      Type_Vector .. Type_Record;
+   subtype Type_Non_Synth is Type_Kind range Type_Access .. Type_Protected;
 
    type Type_Type (Kind : Type_Kind);
    type Type_Acc is access Type_Type;
@@ -316,9 +317,14 @@ package Elab.Vhdl_Objtypes is
 
    --  ACC_TYPE can be null for an incomplete type.
    --  For an access subtype: keep the bound size of the parent.
-   function Create_Access_Type (Parent_Type : Type_Acc; Acc_Type : Type_Acc)
-                                  return Type_Acc;
-   procedure Complete_Access_Type (Acc_Type : Type_Acc; Des_Typ : Type_Acc);
+   --  HAS_SIGNAL must be true if the designed type (ACC_TYPE) can be a signal
+   --  (used to compute the bounds size if unbounded)
+   function Create_Access_Type (Parent_Type : Type_Acc;
+                                Acc_Type : Type_Acc;
+                                Has_Signal : Boolean) return Type_Acc;
+   procedure Complete_Access_Type (Acc_Type : Type_Acc;
+                                   Des_Typ : Type_Acc;
+                                   Has_Signal : Boolean);
 
 
    function Create_File_Type (File_Type : Type_Acc) return Type_Acc;
@@ -331,6 +337,7 @@ package Elab.Vhdl_Objtypes is
 
    --  Create an Type_Array from an Type_Array_Unbounded by replacing the
    --  element type.
+   --  Handle multiple dimensions.
    function Create_Array_From_Array_Unbounded
      (Parent : Type_Acc; El : Type_Acc) return Type_Acc;
 
@@ -347,7 +354,11 @@ package Elab.Vhdl_Objtypes is
    function Get_Range_Length (Rng : Discrete_Range_Type) return Uns32;
 
    --  Return the element of a vector/array/unbounded_array.
+   --  Note: doesn't handle multiple dimensions.
    function Get_Array_Element (Arr_Type : Type_Acc) return Type_Acc;
+
+   --  Same but handle multiple dimensions.
+   function Get_Array_Element_Multidim (Typ : Type_Acc) return Type_Acc;
 
    --  Return True if TYP is fully bounded.
    function Is_Bounded_Type (Typ : Type_Acc) return Boolean;
@@ -364,6 +375,9 @@ package Elab.Vhdl_Objtypes is
    --  Get the number of indexes in array type TYP without counting
    --  sub-elements.
    function Get_Array_Flat_Length (Typ : Type_Acc) return Iir_Index32;
+
+   --  Return True iff TYP is linear: array or vectors composed of logic type.
+   function Is_Linear_Type (Typ : Type_Acc) return Boolean;
 
    --  Return length of dimension DIM of type T.
 --   function Get_Bound_Length (T : Type_Acc; Dim : Dim_Type) return Uns32;
@@ -404,6 +418,8 @@ package Elab.Vhdl_Objtypes is
    function Is_Equal (L, R : Memtyp) return Boolean;
 
    procedure Copy_Memory (Dest : Memory_Ptr; Src : Memory_Ptr; Sz : Size_Type);
+   --  Further optimization: could directly use memcpy
+   --   pragma Import (C, Copy_Memory, "memcpy");
 
    function Unshare (Src : Memtyp) return Memtyp;
    function Unshare (Src : Memtyp; Pool : Areapool_Acc) return Memtyp;

@@ -25,23 +25,6 @@ with Synth.Ieee.Utils; use Synth.Ieee.Utils;
 with Synth.Source; use Synth.Source;
 
 package body Synth.Ieee.Numeric_Std is
-
-   function Create_Res_Type (Otyp : Type_Acc; Len : Uns32) return Type_Acc is
-   begin
-      if Otyp.Abound.Len = Len
-        and then Otyp.Abound.Right = 0
-        and then Otyp.Abound.Dir = Dir_Downto
-        and then not Otyp.Is_Global
-      then
-         --  Try to reuse the same type as the parameter.
-         --  But the result type must be allocated on the expr_pool.
-         --  FIXME: is this code ever executed ?
-         pragma Assert (Otyp.Abound.Left = Int32 (Len) - 1);
-         return Otyp;
-      end if;
-      return Create_Vec_Type_By_Length (Len, Otyp.Arr_El);
-   end Create_Res_Type;
-
    procedure Fill (Res : Memtyp; V : Std_Ulogic) is
    begin
       for I in 1 .. Res.Typ.Abound.Len loop
@@ -92,39 +75,29 @@ package body Synth.Ieee.Numeric_Std is
          return Err;
       end if;
 
+      if Has_0x (Left) = 'X' or else Has_0x (Right) = 'X' then
+         Warn_Compare_Meta (Loc);
+         return Err;
+      end if;
+
       if Lw > Rw then
          for I in 0 .. Lw - Rw - 1 loop
-            case To_X01 (Read_Std_Logic (Left.Mem, I)) is
-               when '0' =>
-                  null;
-               when '1' =>
-                  return Greater;
-               when 'X' =>
-                  Warn_Compare_Meta (Loc);
-                  return Err;
-            end case;
+            if To_X01 (Read_Std_Logic (Left.Mem, I)) = '1' then
+               return Greater;
+            end if;
          end loop;
       elsif Lw < Rw then
          for I in 0 .. Rw - Lw - 1 loop
-            case To_X01 (Read_Std_Logic (Right.Mem, I)) is
-               when '0' =>
-                  null;
-               when '1' =>
-                  return Less;
-               when 'X' =>
-                  Warn_Compare_Meta (Loc);
-                  return Err;
-            end case;
+            if To_X01 (Read_Std_Logic (Right.Mem, I)) = '1' then
+               return Less;
+            end if;
          end loop;
       end if;
 
       for I in 0 .. Len - 1 loop
          L := To_X01 (Read_Std_Logic (Left.Mem, Lw - Len + I));
          R := To_X01 (Read_Std_Logic (Right.Mem, Rw - Len + I));
-         if L = 'X' or R = 'X' then
-            Warn_Compare_Meta (Loc);
-            return Err;
-         elsif L = '1' and R = '0' then
+         if L = '1' and R = '0' then
             return Greater;
          elsif L = '0' and R = '1' then
             return Less;
@@ -147,17 +120,16 @@ package body Synth.Ieee.Numeric_Std is
          return Err;
       end if;
 
+      if Has_0x (Left) = 'X' then
+         Warn_Compare_Meta (Loc);
+         return Err;
+      end if;
+
       if Lw > 64 then
          for I in 0 .. Lw - 64 - 1 loop
-            case To_X01 (Read_Std_Logic (Left.Mem, I)) is
-               when '0' =>
-                  null;
-               when '1' =>
-                  return Greater;
-               when 'X' =>
-                  Warn_Compare_Meta (Loc);
-                  return Err;
-            end case;
+            if To_X01 (Read_Std_Logic (Left.Mem, I)) = '1' then
+               return Greater;
+            end if;
          end loop;
          Cnt := 64;
       elsif Lw < 64 then
@@ -171,10 +143,6 @@ package body Synth.Ieee.Numeric_Std is
 
       for I in reverse 0 .. Cnt - 1 loop
          L := To_X01 (Read_Std_Logic (Left.Mem, Lw - I - 1));
-         if L = 'X' then
-            Warn_Compare_Meta (Loc);
-            return Err;
-         end if;
          if (Shift_Right (Rval, Natural (I)) and 1) = 1 then
             if L = '0' then
                return Less;
@@ -202,17 +170,16 @@ package body Synth.Ieee.Numeric_Std is
          return Err;
       end if;
 
+      if Has_0x (Right) = 'X' then
+         Warn_Compare_Meta (Loc);
+         return Err;
+      end if;
+
       if Rw > 64 then
          for I in 0 .. Rw - 64 - 1 loop
-            case To_X01 (Read_Std_Logic (Right.Mem, I)) is
-               when '0' =>
-                  null;
-               when '1' =>
-                  return Less;
-               when 'X' =>
-                  Warn_Compare_Meta (Loc);
-                  return Err;
-            end case;
+            if To_X01 (Read_Std_Logic (Right.Mem, I)) = '1' then
+               return Less;
+            end if;
          end loop;
          Cnt := 64;
       elsif Rw < 64 then
@@ -226,10 +193,6 @@ package body Synth.Ieee.Numeric_Std is
 
       for I in reverse 0 .. Cnt - 1 loop
          R := To_X01 (Read_Std_Logic (Right.Mem, Rw - I - 1));
-         if R = 'X' then
-            Warn_Compare_Meta (Loc);
-            return Err;
-         end if;
          if (Shift_Right (Lval, Natural (I)) and 1) = 1 then
             if R = '0' then
                return Greater;
@@ -256,6 +219,11 @@ package body Synth.Ieee.Numeric_Std is
    begin
       if Len = 0 then
          Warn_Compare_Null (Loc);
+         return Err;
+      end if;
+
+      if Has_0x (Left) = 'X' or else Has_0x (Right) = 'X' then
+         Warn_Compare_Meta (Loc);
          return Err;
       end if;
 
@@ -286,11 +254,6 @@ package body Synth.Ieee.Numeric_Std is
          end if;
          R := To_X01 (Read_Std_Logic (Right.Mem, Rw - 1 - P));
 
-         if L = 'X' or R = 'X' then
-            Warn_Compare_Meta (Loc);
-            return Err;
-         end if;
-
          if L = '1' and R = '0' then
             Res := Greater;
          elsif L = '0' and R = '1' then
@@ -316,16 +279,17 @@ package body Synth.Ieee.Numeric_Std is
          return Err;
       end if;
 
+      if Has_0x (Left) = 'X' then
+         Warn_Compare_Meta (Loc);
+         return Err;
+      end if;
+
       Res := Equal;
       R1 := To_Uns64 (Rval);
 
       --  Same sign.
       for I in 0 .. Lw - 1 loop
          L := To_X01 (Read_Std_Logic (Left.Mem, Lw - 1 - I));
-         if L = 'X' then
-            Warn_Compare_Meta (Loc);
-            return Err;
-         end if;
 
          Rd := Uns32 (R1 and 1);
          R1 := Shift_Right_Arithmetic (R1, 1);
@@ -407,15 +371,22 @@ package body Synth.Ieee.Numeric_Std is
       return Add_Vec_Vec (L, R, False, Loc);
    end Add_Uns_Uns;
 
+   function Log_To_Vec1 (Val : Memtyp) return Memtyp
+   is
+      Res : Memtyp;
+   begin
+      Res.Typ := Create_Vec_Type_By_Length (1, Val.Typ);
+      Res := Create_Memory (Res.Typ);
+      Write_U8 (Res.Mem, Read_U8 (Val.Mem));
+      return Res;
+   end Log_To_Vec1;
+
    function Log_To_Vec (Val : Memtyp; Vec : Memtyp) return Memtyp
    is
       Len : constant Uns32 := Vec.Typ.Abound.Len;
       Res : Memtyp;
    begin
-      if Len = 0 then
-         --  FIXME: is it an error ?
-         return Vec;
-      end if;
+      pragma Assert (Len > 0);
       Res := Create_Memory (Vec.Typ);
       Fill (Res, '0');
       Write_U8 (Res.Mem + Size_Type (Len - 1), Read_U8 (Val.Mem));
@@ -473,7 +444,7 @@ package body Synth.Ieee.Numeric_Std is
    function Add_Uns_Nat (L : Memtyp; R : Uns64; Loc : Location_Type)
                         return Memtyp is
    begin
-      return Add_Vec_Int (L, R, True, Loc);
+      return Add_Vec_Int (L, R, False, Loc);
    end Add_Uns_Nat;
 
    function Sub_Vec_Vec (L, R : Memtyp; Signed : Boolean; Loc : Location_Type)
@@ -588,7 +559,7 @@ package body Synth.Ieee.Numeric_Std is
    function Sub_Uns_Nat (L : Memtyp; R : Uns64; Loc : Location_Type)
                         return Memtyp is
    begin
-      return Sub_Vec_Int (L, R, True, Loc);
+      return Sub_Vec_Int (L, R, False, Loc);
    end Sub_Uns_Nat;
 
    function Sub_Int_Vec (L : Uns64;
@@ -649,12 +620,22 @@ package body Synth.Ieee.Numeric_Std is
       Res           : Memtyp;
       Lb, Rb, Vb, Carry : Sl_X01;
    begin
+      if Llen = 0 or Rlen = 0 then
+         return Null_Res (L.Typ);
+      end if;
+
       Res.Typ := Create_Res_Type (L.Typ, Len);
       Res := Create_Memory (Res.Typ);
-      if Llen = 0 or Rlen = 0 then
+
+      if Has_0x (L) = 'X' or else Has_0x (R) = 'X' then
+         Warning_Msg_Synth
+           (+Loc, "NUMERIC_STD.""*"": non logical value detected");
+         Fill (Res, 'X');
          return Res;
       end if;
+
       Fill (Res, '0');
+
       --  Shift and add L.
       for I in 1 .. Rlen loop
          Rb := Sl_To_X01 (Read_Std_Logic (R.Mem, Rlen - I));
@@ -675,11 +656,6 @@ package body Synth.Ieee.Numeric_Std is
                Write_Std_Logic (Res.Mem, Len - J, Xor_Table (Carry, Vb));
                Carry := And_Table (Carry, Vb);
             end loop;
-         elsif Rb = 'X' then
-            Warning_Msg_Synth
-              (+Loc, "NUMERIC_STD.""*"": non logical value detected");
-            Fill (Res, 'X');
-            exit;
          end if;
       end loop;
       return Res;
@@ -709,7 +685,7 @@ package body Synth.Ieee.Numeric_Std is
       Lv : Memtyp;
    begin
       if R.Typ.Abound.Len = 0 then
-         return Create_Memory (R.Typ); --  FIXME: typ
+         return Null_Res (R.Typ);
       end if;
       Lv := To_Unsigned (L, R.Typ);
       return Mul_Uns_Uns (Lv, R, Loc);
@@ -721,7 +697,7 @@ package body Synth.Ieee.Numeric_Std is
       Rv : Memtyp;
    begin
       if L.Typ.Abound.Len = 0 then
-         return Create_Memory (L.Typ); --  FIXME: typ
+         return Null_Res (L.Typ);
       end if;
       Rv := To_Unsigned (R, L.Typ);
       return Mul_Uns_Uns (L, Rv, Loc);
@@ -735,18 +711,21 @@ package body Synth.Ieee.Numeric_Std is
       Res           : Memtyp;
       Lb, Rb, Vb, Carry : Sl_X01;
    begin
+      if Llen = 0 or Rlen = 0 then
+         return Null_Res (L.Typ);
+      end if;
+
       Res.Typ := Create_Res_Type (L.Typ, Len);
       Res := Create_Memory (Res.Typ);
-      if Llen = 0 or Rlen = 0 then
-         return Res;
-      end if;
-      Fill (Res, '0');
-      if Has_0x (L) = 'X' then
+
+      if Has_0x (L) = 'X' or else Has_0x (R) = 'X' then
          Warning_Msg_Synth
            (+Loc, "NUMERIC_STD.""*"": non logical value detected");
          Fill (Res, 'X');
          return Res;
       end if;
+
+      Fill (Res, '0');
 
       --  Shift and add L, do not consider (yet) the sign bit of R.
       for I in 1 .. Rlen - 1 loop
@@ -768,11 +747,6 @@ package body Synth.Ieee.Numeric_Std is
                Write_Std_Logic (Res.Mem, Len - J, Compute_Sum (Carry, Vb, Lb));
                Carry := Compute_Carry (Carry, Vb, Lb);
             end loop;
-         elsif Rb = 'X' then
-            Warning_Msg_Synth
-              (+Loc, "NUMERIC_STD.""*"": non logical value detected");
-            Fill (Res, 'X');
-            return Res;
          end if;
       end loop;
       if Read_Std_Logic (R.Mem, 0) = '1' then
@@ -821,7 +795,7 @@ package body Synth.Ieee.Numeric_Std is
       Lv : Memtyp;
    begin
       if R.Typ.Abound.Len = 0 then
-         return Create_Memory (R.Typ); --  FIXME: typ
+         return Null_Res (R.Typ);
       end if;
       Lv := To_Signed (L, R.Typ);
       return Mul_Sgn_Sgn (Lv, R, Loc);
@@ -833,7 +807,7 @@ package body Synth.Ieee.Numeric_Std is
       Rv : Memtyp;
    begin
       if L.Typ.Abound.Len = 0 then
-         return Create_Memory (L.Typ); --  FIXME: typ
+         return Null_Res (L.Typ);
       end if;
       Rv := To_Signed (R, L.Typ);
       return Mul_Sgn_Sgn (L, Rv, Loc);
@@ -1108,11 +1082,12 @@ package body Synth.Ieee.Numeric_Std is
       Quot  : Memtyp;
       R0    : Sl_X01;
    begin
+      if Nlen = 0 or Dlen = 0 then
+         return Null_Res (L.Typ);
+      end if;
+
       Quot.Typ := Create_Res_Type (L.Typ, Nlen);
       Quot := Create_Memory (Quot.Typ);
-      if Nlen = 0 or Dlen = 0 then
-         return Quot;
-      end if;
 
       R0 := Has_0x (R);
       if Has_0x (L) = 'X' or R0 = 'X' then
@@ -1122,7 +1097,7 @@ package body Synth.Ieee.Numeric_Std is
          return Quot;
       end if;
       if R0 = '0' then
-         Error_Msg_Synth (Inst, Loc, "NUMERIC_STD.""/"": division by 0");
+         Report_Division_By_Zero (Inst, Loc, "NUMERIC_STD.""/""");
          Fill (Quot, 'X');
          return Quot;
       end if;
@@ -1138,7 +1113,7 @@ package body Synth.Ieee.Numeric_Std is
       Rv : Memtyp;
    begin
       if L.Typ.Abound.Len = 0 then
-         return Create_Memory (L.Typ); --  FIXME: typ
+         return Null_Res (L.Typ);
       end if;
       Rv := To_Unsigned (R, L.Typ);
       return Div_Uns_Uns (Inst, L, Rv, Loc);
@@ -1152,7 +1127,7 @@ package body Synth.Ieee.Numeric_Std is
       Lv : Memtyp;
    begin
       if R.Typ.Abound.Len = 0 then
-         return Create_Memory (R.Typ); --  FIXME: typ
+         return Null_Res (R.Typ);
       end if;
       Lv := To_Unsigned (L, R.Typ);
       return Div_Uns_Uns (Inst, Lv, R, Loc);
@@ -1170,11 +1145,12 @@ package body Synth.Ieee.Numeric_Std is
       Ru    : Memtyp;
       Neg   : Boolean;
    begin
+      if Nlen = 0 or Dlen = 0 then
+         return Null_Res (L.Typ);
+      end if;
+
       Quot.Typ := Create_Res_Type (L.Typ, Nlen);
       Quot := Create_Memory (Quot.Typ);
-      if Nlen = 0 or Dlen = 0 then
-         return Quot;
-      end if;
 
       R0 := Has_0x (R);
       if Has_0x (L) = 'X' or R0 = 'X' then
@@ -1184,7 +1160,7 @@ package body Synth.Ieee.Numeric_Std is
          return Quot;
       end if;
       if R0 = '0' then
-         Error_Msg_Synth (Inst, Loc, "NUMERIC_STD.""/"": division by 0");
+         Report_Division_By_Zero (Inst, Loc, "NUMERIC_STD.""/""");
          Fill (Quot, 'X');
          return Quot;
       end if;
@@ -1222,7 +1198,7 @@ package body Synth.Ieee.Numeric_Std is
       Rv : Memtyp;
    begin
       if L.Typ.Abound.Len = 0 then
-         return Create_Memory (L.Typ); --  FIXME: typ
+         return Null_Res (L.Typ);
       end if;
       Rv := To_Signed (R, L.Typ);
       return Div_Sgn_Sgn (Inst, L, Rv, Loc);
@@ -1236,7 +1212,7 @@ package body Synth.Ieee.Numeric_Std is
       Lv : Memtyp;
    begin
       if R.Typ.Abound.Len = 0 then
-         return Create_Memory (R.Typ); --  FIXME: typ
+         return Null_Res (R.Typ);
       end if;
       Lv := To_Signed (L, R.Typ);
       return Div_Sgn_Sgn (Inst, Lv, R, Loc);
@@ -1251,11 +1227,12 @@ package body Synth.Ieee.Numeric_Std is
       Rema  : Memtyp;
       R0    : Sl_X01;
    begin
+      if Nlen = 0 or Dlen = 0 then
+         return Null_Res (L.Typ);
+      end if;
+
       Rema.Typ := Create_Res_Type (R.Typ, Dlen);
       Rema := Create_Memory (Rema.Typ);
-      if Nlen = 0 or Dlen = 0 then
-         return Rema;
-      end if;
 
       R0 := Has_0x (R);
       if Has_0x (L) = 'X' or R0 = 'X' then
@@ -1265,7 +1242,7 @@ package body Synth.Ieee.Numeric_Std is
          return Rema;
       end if;
       if R0 = '0' then
-         Error_Msg_Synth (Inst, Loc, "NUMERIC_STD.""rem"": division by 0");
+         Report_Division_By_Zero (Inst, Loc, "NUMERIC_STD.""rem""");
          Fill (Rema, 'X');
          return Rema;
       end if;
@@ -1281,7 +1258,7 @@ package body Synth.Ieee.Numeric_Std is
       Rv : Memtyp;
    begin
       if L.Typ.Abound.Len = 0 then
-         return Create_Memory (L.Typ); --  FIXME: typ
+         return Null_Res (L.Typ);
       end if;
       Rv := To_Unsigned (R, L.Typ);
       return Rem_Uns_Uns (Inst, L, Rv, Loc);
@@ -1295,7 +1272,7 @@ package body Synth.Ieee.Numeric_Std is
       Lv : Memtyp;
    begin
       if R.Typ.Abound.Len = 0 then
-         return Create_Memory (R.Typ); --  FIXME: typ
+         return Null_Res (R.Typ);
       end if;
       Lv := To_Unsigned (L, R.Typ);
       return Rem_Uns_Uns (Inst, Lv, R, Loc);
@@ -1313,11 +1290,12 @@ package body Synth.Ieee.Numeric_Std is
       Ru    : Memtyp;
       Neg   : Boolean;
    begin
+      if Nlen = 0 or Dlen = 0 then
+         return Null_Res (L.Typ);
+      end if;
+
       Rema.Typ := Create_Res_Type (L.Typ, Dlen);
       Rema := Create_Memory (Rema.Typ);
-      if Nlen = 0 or Dlen = 0 then
-         return Rema;
-      end if;
 
       R0 := Has_0x (R);
       if Has_0x (L) = 'X' or R0 = 'X' then
@@ -1327,7 +1305,7 @@ package body Synth.Ieee.Numeric_Std is
          return Rema;
       end if;
       if R0 = '0' then
-         Error_Msg_Synth (Inst, Loc, "NUMERIC_STD.""rem"": division by 0");
+         Report_Division_By_Zero (Inst, Loc, "NUMERIC_STD.""rem""");
          Fill (Rema, 'X');
          return Rema;
       end if;
@@ -1365,7 +1343,7 @@ package body Synth.Ieee.Numeric_Std is
       Rv : Memtyp;
    begin
       if L.Typ.Abound.Len = 0 then
-         return Create_Memory (L.Typ); --  FIXME: typ
+         return Null_Res (L.Typ);
       end if;
       Rv := To_Signed (R, L.Typ);
       return Rem_Sgn_Sgn (Inst, L, Rv, Loc);
@@ -1379,7 +1357,7 @@ package body Synth.Ieee.Numeric_Std is
       Lv : Memtyp;
    begin
       if R.Typ.Abound.Len = 0 then
-         return Create_Memory (R.Typ); --  FIXME: typ
+         return Null_Res (R.Typ);
       end if;
       Lv := To_Signed (L, R.Typ);
       return Rem_Sgn_Sgn (Inst, Lv, R, Loc);
@@ -1397,21 +1375,22 @@ package body Synth.Ieee.Numeric_Std is
       Ru    : Memtyp;
       L_Neg, R_Neg : Boolean;
    begin
+      if Nlen = 0 or Dlen = 0 then
+         return Null_Res (L.Typ);
+      end if;
+
       Rema.Typ := Create_Res_Type (L.Typ, Dlen);
       Rema := Create_Memory (Rema.Typ);
-      if Nlen = 0 or Dlen = 0 then
-         return Rema;
-      end if;
 
       R0 := Has_0x (R);
       if Has_0x (L) = 'X' or R0 = 'X' then
          Warning_Msg_Synth
-           (+Loc, "NUMERIC_STD.""rem"": non logical value detected");
+           (+Loc, "NUMERIC_STD.""mod"": non logical value detected");
          Fill (Rema, 'X');
          return Rema;
       end if;
       if R0 = '0' then
-         Error_Msg_Synth (Inst, Loc, "NUMERIC_STD.""rem"": division by 0");
+         Report_Division_By_Zero (Inst, Loc, "NUMERIC_STD.""mod""");
          Fill (Rema, 'X');
          return Rema;
       end if;
@@ -1466,7 +1445,7 @@ package body Synth.Ieee.Numeric_Std is
       Rv : Memtyp;
    begin
       if L.Typ.Abound.Len = 0 then
-         return Create_Memory (L.Typ); --  FIXME: typ
+         return Null_Res (L.Typ);
       end if;
       Rv := To_Signed (R, L.Typ);
       return Mod_Sgn_Sgn (Inst, L, Rv, Loc);
@@ -1480,7 +1459,7 @@ package body Synth.Ieee.Numeric_Std is
       Lv : Memtyp;
    begin
       if R.Typ.Abound.Len = 0 then
-         return Create_Memory (R.Typ); --  FIXME: typ
+         return Null_Res (R.Typ);
       end if;
       Lv := To_Signed (L, R.Typ);
       return Mod_Sgn_Sgn (Inst, Lv, R, Loc);
@@ -1494,9 +1473,7 @@ package body Synth.Ieee.Numeric_Std is
       Lt : Boolean;
    begin
       if L.Typ.Abound.Len = 0 or R.Typ.Abound.Len = 0 then
-         Res.Typ := Create_Res_Type (L.Typ, 0);
-         Res := Create_Memory (Res.Typ);
-         return Res;
+         return Null_Res (L.Typ);
       end if;
 
       Res.Typ := Create_Res_Type (L.Typ, Len);
@@ -1592,11 +1569,11 @@ package body Synth.Ieee.Numeric_Std is
    is
       Lw : constant Uns32 := Left.Typ.W;
       Rw : constant Uns32 := Right.Typ.W;
-      Len : constant Uns32 := Uns32'Max (Left.Typ.W, Right.Typ.W);
+      Len : constant Uns32 := Uns32'Max (Lw, Rw);
       L, R, T : Std_Ulogic;
       Res : Std_Ulogic;
    begin
-      if Len = 0 then
+      if Lw = 0 or Rw = 0 then
          Warn_Compare_Null (Loc);
          return 'X';
       end if;

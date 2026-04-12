@@ -68,6 +68,9 @@ package body Netlists.Rename is
            | Name_While
            | Name_Wait =>
             return True;
+         when Name_Do =>
+            --  SystemVerilog
+            return True;
          when others =>
             --  Not a keyword
             return False;
@@ -149,7 +152,7 @@ package body Netlists.Rename is
    begin
       Id := Get_Sname_Suffix (Name);
 
-      if Id in Std_Names.Name_Id_Vhdl19_Reserved_Words then
+      if Id in Std_Names.Name_First_Keyword .. Std_Names.Name_Last_Vhdl19 then
          return Escape_Vhdl (Id);
       end if;
 

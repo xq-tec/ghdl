@@ -36,9 +36,9 @@ with Netlists.Gates; use Netlists.Gates;
 with Netlists.Folds; use Netlists.Folds;
 with Netlists.Utils; use Netlists.Utils;
 with Netlists.Locations;
+with Netlists.Builders; use Netlists.Builders;
 
 with Elab.Memtype; use Elab.Memtype;
-with Elab.Vhdl_Errors;
 with Elab.Vhdl_Annotations;
 with Elab.Vhdl_Heap; use Elab.Vhdl_Heap;
 with Elab.Vhdl_Types; use Elab.Vhdl_Types;
@@ -65,15 +65,8 @@ package body Synth.Vhdl_Expr is
          when Value_Wire =>
             return Synth.Vhdl_Environment.Env.Get_Static_Wire
               (Get_Value_Wire (V.Val));
-         when Value_Alias =>
-            declare
-               Res : Memtyp;
-            begin
-               Res := Get_Value_Memtyp ((V.Val.A_Typ, V.Val.A_Obj));
-               return (V.Typ, Res.Mem + V.Val.A_Off.Mem_Off);
-            end;
-         when others =>
-            raise Internal_Error;
+         when Value_Alias => raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Get_Value_Memtyp;
 
@@ -89,8 +82,7 @@ package body Synth.Vhdl_Expr is
          when Value_Const
            | Value_Alias =>
             return Read_Discrete (Get_Memtyp (V));
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Get_Static_Discrete;
 
@@ -119,8 +111,7 @@ package body Synth.Vhdl_Expr is
                   return False;
                end if;
             end;
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
       Inst := Get_Net_Parent (N);
       case Get_Id (Inst) is
@@ -133,7 +124,22 @@ package body Synth.Vhdl_Expr is
       end case;
    end Is_Positive;
 
-   procedure From_Std_Logic (Enum : Int64; Val : out Uns32; Zx : out Uns32) is
+   Vec_Std_Logic_Val : constant Uns32 := 0
+     + 2**Vhdl.Ieee.Std_Logic_1164.Std_Logic_1_Pos
+     + 2**Vhdl.Ieee.Std_Logic_1164.Std_Logic_H_Pos
+     + 2**Vhdl.Ieee.Std_Logic_1164.Std_Logic_U_Pos
+     + 2**Vhdl.Ieee.Std_Logic_1164.Std_Logic_X_Pos
+     + 2**Vhdl.Ieee.Std_Logic_1164.Std_Logic_D_Pos;
+
+   Vec_Std_Logic_Zx : constant Uns32 := 0
+     + 2**Vhdl.Ieee.Std_Logic_1164.Std_Logic_U_Pos
+     + 2**Vhdl.Ieee.Std_Logic_1164.Std_Logic_X_Pos
+     + 2**Vhdl.Ieee.Std_Logic_1164.Std_Logic_D_Pos
+     + 2**Vhdl.Ieee.Std_Logic_1164.Std_Logic_Z_Pos
+     + 2**Vhdl.Ieee.Std_Logic_1164.Std_Logic_W_Pos;
+
+   procedure From_Std_Logic
+     (Enum : Ghdl_U8; Val : out Uns32; Zx : out Uns32) is
    begin
       case Enum is
          when Vhdl.Ieee.Std_Logic_1164.Std_Logic_0_Pos
@@ -153,13 +159,11 @@ package body Synth.Vhdl_Expr is
            |  Vhdl.Ieee.Std_Logic_1164.Std_Logic_W_Pos =>
             Val := 0;
             Zx := 1;
-         when others =>
-            --  Only 9 values.
-            raise Internal_Error;
+         when others => raise Internal_Error; --  Only 9 values.
       end case;
    end From_Std_Logic;
 
-   procedure From_Bit (Enum : Int64; Val : out Uns32) is
+   procedure From_Bit (Enum : Ghdl_U8; Val : out Uns32) is
    begin
       if Enum = 0 then
          Val := 0;
@@ -171,7 +175,7 @@ package body Synth.Vhdl_Expr is
    end From_Bit;
 
    procedure To_Logic
-     (Enum : Int64; Etype : Type_Acc; Val : out Uns32; Zx : out Uns32) is
+     (Enum : Ghdl_U8; Etype : Type_Acc; Val : out Uns32; Zx : out Uns32) is
    begin
       if Etype = Logic_Type then
          pragma Assert (Etype.Kind = Type_Logic);
@@ -222,7 +226,7 @@ package body Synth.Vhdl_Expr is
    end Bit2logvec;
 
    --  Likewise for std_logic
-   procedure Logic2logvec (Val : Int64;
+   procedure Logic2logvec (Val : Ghdl_U8;
                            Off : Uns32;
                            Vec : in out Logvec_Array;
                            Has_Zx : in out Boolean)
@@ -277,7 +281,7 @@ package body Synth.Vhdl_Expr is
             --  Scalar bits cannot be cut.
             pragma Assert (Typ.W = 1);
             pragma Assert (Off = 0 and W >= 1);
-            Logic2logvec (Int64 (Read_U8 (Mem)), Vec_Off, Vec, Has_Zx);
+            Logic2logvec (Read_U8 (Mem), Vec_Off, Vec, Has_Zx);
             --  One bit read and written.
             Vec_Off := Vec_Off + 1;
             W := W - 1;
@@ -326,12 +330,11 @@ package body Synth.Vhdl_Expr is
                   when Type_Logic =>
                      for I in Off .. Len - 1 loop
                         Logic2logvec
-                          (Int64 (Read_U8 (Mem + Size_Type (Vlen - 1 - I))),
+                          (Read_U8 (Mem + Size_Type (Vlen - 1 - I)),
                            Vec_Off, Vec, Has_Zx);
                         Vec_Off := Vec_Off + 1;
                      end loop;
-                  when others =>
-                     raise Internal_Error;
+                  when others => raise Internal_Error;
                end case;
                W := W - (Len - Off);
                Off := 0;
@@ -353,23 +356,8 @@ package body Synth.Vhdl_Expr is
                              Typ.Rec.E (I).Typ, Off, W, Vec, Vec_Off, Has_Zx);
                exit when W = 0;
             end loop;
-         when Type_Access =>
-            --  Accesses cannot be indexed or sliced.
-            --  Just fill with 'X'.
-            pragma Assert (Off = 0 and W >= Typ.W);
-            for I in 0 .. Typ.W - 1 loop
-               declare
-                  Idx : constant Digit_Index := Digit_Index (Vec_Off / 32);
-                  Pos : constant Natural := Natural (Vec_Off mod 32);
-               begin
-                  Vec (Idx).Val := Vec (Idx).Val or Shift_Left (1, Pos);
-                  Vec (Idx).Zx := Vec (Idx).Zx or Shift_Left (1, Pos);
-               end;
-               Vec_Off := Vec_Off + 1;
-            end loop;
-            W := W - Typ.W;
-         when others =>
-            raise Internal_Error;
+         when Type_Access => raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Value2logvec;
 
@@ -383,6 +371,44 @@ package body Synth.Vhdl_Expr is
       Off1 : Uns32;
       W1 : Width;
    begin
+      --  Optimize (for large memories)
+      --  Conditions:
+      --   * no offsets
+      --   * multiple of logic_32
+      --   * array/vector without holes in representation
+      if Off = 0
+        and then Vec_Off = 0
+        and then (W mod 32) = 0
+        and then W > 128
+        and then Is_Linear_Type (Val.Typ)
+      then
+         declare
+            pragma Suppress (Index_Check);
+            pragma Suppress (Access_Check);
+            Lenw : constant Uns32 := W / 32;
+            El : Natural;
+            Va, Zx : Uns32;
+            V : Logic_32;
+         begin
+            for I in 0 .. Lenw - 1 loop
+               V := (0, 0);
+               for J in Uns32 range 0 .. 31 loop
+                  El := Natural (Val.Mem (Size_Type (I * 32 + J)) and 16#f#);
+                  Va := Shift_Right (Vec_Std_Logic_Val, El) and 1;
+                  V.Val := Shift_Left (V.Val, 1) or Va;
+                  Zx := Shift_Right (Vec_Std_Logic_Zx, El) and 1;
+                  V.Zx := Shift_Left (V.Zx, 1) or Zx;
+               end loop;
+               Vec (Digit_Index (Lenw - 1 - I)) := V;
+               if V.Zx /= 0 then
+                  Has_Zx := True;
+               end if;
+            end loop;
+            Vec_Off := W;
+            return;
+         end;
+      end if;
+
       Off1 := Off;
       W1 := W;
       Value2logvec (Val.Mem, Val.Typ, Off1, W1, Vec, Vec_Off, Has_Zx);
@@ -390,28 +416,15 @@ package body Synth.Vhdl_Expr is
       pragma Assert (W1 = 0);
    end Value2logvec;
 
-   --  Resize for a discrete value.
-   function Synth_Resize
+   --  Resize for a dynamic index
+   function Synth_Resize_Index
      (Ctxt : Context_Acc; Val : Valtyp; W : Width; Loc : Node) return Net
    is
       Wn : constant Width := Val.Typ.W;
       N : Net;
       Res : Net;
-      V : Int64;
    begin
-      if Is_Static (Val.Val)
-        and then Wn /= W
-      then
-         --  Optimization: resize directly.
-         V := Read_Discrete (Val);
-         if Val.Typ.Drange.Is_Signed then
-            Res := Build2_Const_Int (Ctxt, V, W);
-         else
-            Res := Build2_Const_Uns (Ctxt, To_Uns64 (V), W);
-         end if;
-         Set_Location (Res, Loc);
-         return Res;
-      end if;
+      pragma Assert (not Is_Static (Val.Val));
 
       N := Get_Net (Ctxt, Val);
       if Wn > W then
@@ -427,49 +440,7 @@ package body Synth.Vhdl_Expr is
       else
          return N;
       end if;
-   end Synth_Resize;
-
-   procedure Concat_Array (Ctxt : Context_Acc; Arr : in out Net_Array)
-   is
-      Last : Int32;
-      Idx, New_Idx : Int32;
-   begin
-      Last := Arr'Last;
-      while Last > Arr'First loop
-         Idx := Arr'First;
-         New_Idx := Arr'First - 1;
-         while Idx <= Last loop
-            --  Gather at most 4 nets.
-            New_Idx := New_Idx + 1;
-
-            if Idx = Last then
-               Arr (New_Idx) := Arr (Idx);
-               Idx := Idx + 1;
-            elsif Idx + 1 = Last then
-               Arr (New_Idx) := Build_Concat2
-                 (Ctxt, Arr (Idx), Arr (Idx + 1));
-               Idx := Idx + 2;
-            elsif Idx + 2 = Last then
-               Arr (New_Idx) := Build_Concat3
-                 (Ctxt, Arr (Idx), Arr (Idx + 1), Arr (Idx + 2));
-               Idx := Idx + 3;
-            else
-               Arr (New_Idx) := Build_Concat4
-                 (Ctxt,
-                  Arr (Idx), Arr (Idx + 1), Arr (Idx + 2), Arr (Idx + 3));
-               Idx := Idx + 4;
-            end if;
-         end loop;
-         Last := New_Idx;
-      end loop;
-   end Concat_Array;
-
-   procedure Concat_Array
-     (Ctxt : Context_Acc; Arr : in out Net_Array; N : out Net) is
-   begin
-      Concat_Array (Ctxt, Arr);
-      N := Arr (Arr'First);
-   end Concat_Array;
+   end Synth_Resize_Index;
 
    function Synth_Array_Bounds (Syn_Inst : Synth_Instance_Acc;
                                 Atype : Node;
@@ -487,12 +458,14 @@ package body Synth.Vhdl_Expr is
             return Synth_Bounds_From_Range (Syn_Inst, Index_Type);
          end;
       else
+         --  GCOV_EXCL_START (not generated by sem)
          declare
             Bnds : constant Type_Acc := Get_Subtype_Object (Syn_Inst, Atype);
          begin
             pragma Assert (Dim = 1);
             return Get_Array_Bound (Bnds);
          end;
+         --  GCOV_EXCL_STOP
       end if;
    end Synth_Array_Bounds;
 
@@ -548,12 +521,8 @@ package body Synth.Vhdl_Expr is
          return Obj;
       end if;
       case T.Kind is
-         when Type_Scalars
-           | Type_Access
-           | Type_File
-           | Type_Protected
-           | Type_Slice =>
-            raise Internal_Error;
+         when Type_Scalars | Type_Access | Type_Slice => raise Internal_Error;
+         when Type_File | Type_Protected => raise Internal_Error;
          when Type_Unbounded_Vector =>
             return Obj;
          when Type_Vector =>
@@ -680,8 +649,7 @@ package body Synth.Vhdl_Expr is
                   return False;
                end if;
             end loop;
-         when Type_Slice =>
-            raise Internal_Error;
+         when Type_Slice => raise Internal_Error;
       end case;
       return True;
    end Check_Matching_Bounds;
@@ -754,8 +722,7 @@ package body Synth.Vhdl_Expr is
                      end if;
                      return Create_Value_Discrete (Val, Dtype);
                   end;
-               when others =>
-                  raise Internal_Error;
+               when others => raise Internal_Error;
             end case;
          when Type_Float =>
             pragma Assert (Vtype.Kind = Type_Float);
@@ -813,111 +780,12 @@ package body Synth.Vhdl_Expr is
             end if;
          when Type_Access =>
             return Vt;
-         when Type_File
-            | Type_Protected =>
-            --  No conversion expected.
-            --  As the subtype is identical, it is already handled by the
-            --  above check.
-            raise Internal_Error;
+         --  No conversion expected.
+         --  As the subtype is identical, it is already handled by the
+         --  above check.
+         when Type_File | Type_Protected => raise Internal_Error;
       end case;
    end Synth_Subtype_Conversion;
-
-   function Synth_Name (Syn_Inst : Synth_Instance_Acc; Name : Node)
-                       return Valtyp is
-   begin
-      case Get_Kind (Name) is
-         when Iir_Kind_Simple_Name
-            | Iir_Kind_Selected_Name
-            | Iir_Kind_Attribute_Name =>
-            declare
-               Res : Valtyp;
-            begin
-               Res := Synth_Name (Syn_Inst, Get_Named_Entity (Name));
-               if Res = No_Valtyp then
-                  Elab.Vhdl_Errors.Error_Msg_Elab
-                    (Syn_Inst, Name,
-                     "reference to a declaration before its elaboration");
-                  raise Elab.Vhdl_Errors.Elaboration_Error;
-               end if;
-               return Res;
-            end;
-         when Iir_Kind_Interface_Signal_Declaration
-            | Iir_Kind_Interface_View_Declaration
-            | Iir_Kind_Variable_Declaration
-            | Iir_Kind_Interface_Variable_Declaration
-            | Iir_Kind_Signal_Declaration
-            | Iir_Kinds_Signal_Attribute
-            | Iir_Kind_Guard_Signal_Declaration
-            | Iir_Kind_Interface_Constant_Declaration
-            | Iir_Kind_Constant_Declaration
-            | Iir_Kind_Iterator_Declaration
-            | Iir_Kind_Free_Quantity_Declaration
-            | Iir_Kinds_Branch_Quantity_Declaration
-            | Iir_Kind_Object_Alias_Declaration
-            | Iir_Kind_Non_Object_Alias_Declaration
-            | Iir_Kind_File_Declaration
-            | Iir_Kind_Interface_File_Declaration
-            | Iir_Kind_Above_Attribute =>
-            return Get_Value (Syn_Inst, Name);
-         when Iir_Kind_External_Signal_Name =>
-            return Elab.Vhdl_Expr.Exec_External_Name (Syn_Inst, Name);
-         when  Iir_Kind_Attribute_Value =>
-            --  It's a little bit complex for attribute of an entity or
-            --  of an architecture as there might be no instances for them.
-            --  Simply recompute it in that case; the expression is locally
-            --  static.
-            case Get_Kind (Get_Designated_Entity (Name)) is
-               when Iir_Kind_Entity_Declaration
-                 | Iir_Kind_Architecture_Body =>
-                  declare
-                     Spec : constant Node :=
-                       Get_Attribute_Specification (Name);
-                  begin
-                     return Synth_Expression (Syn_Inst, Get_Expression (Spec));
-                  end;
-               when others =>
-                  return Get_Value (Syn_Inst, Name);
-            end case;
-         when Iir_Kind_Enumeration_Literal =>
-            declare
-               Typ : constant Type_Acc :=
-                 Get_Subtype_Object (Syn_Inst, Get_Type (Name));
-               Res : Valtyp;
-            begin
-               Res := Create_Value_Memory (Typ, Current_Pool);
-               Write_Discrete (Res, Int64 (Get_Enum_Pos (Name)));
-               return Res;
-            end;
-         when Iir_Kind_Unit_Declaration =>
-            declare
-               Typ : constant Type_Acc :=
-                 Get_Subtype_Object (Syn_Inst, Get_Type (Name));
-            begin
-               return Create_Value_Discrete
-                 (Vhdl.Evaluation.Get_Physical_Value (Name), Typ);
-            end;
-         when Iir_Kind_Implicit_Dereference
-           | Iir_Kind_Dereference =>
-            declare
-               Val : Valtyp;
-               Acc : Heap_Ptr;
-               Obj : Memtyp;
-            begin
-               Val := Synth_Expression (Syn_Inst, Get_Prefix (Name));
-               Acc := Read_Access (Val);
-               if Acc = Null_Heap_Ptr then
-                  Error_Msg_Synth (Syn_Inst, Name, "NULL access dereferenced");
-                  return No_Valtyp;
-               end if;
-               Obj := Elab.Vhdl_Heap.Synth_Dereference (Acc);
-               return Create_Value_Memtyp (Obj);
-            end;
-         when Iir_Kind_Psl_Endpoint_Declaration =>
-            return Synth_Expression (Syn_Inst, Name);
-         when others =>
-            Error_Kind ("synth_name", Name);
-      end case;
-   end Synth_Name;
 
    procedure Bound_Error (Syn_Inst : Synth_Instance_Acc;
                           Loc : Node;
@@ -938,19 +806,12 @@ package body Synth.Vhdl_Expr is
 
    --  Convert index IDX in PFX to an offset.
    --  SYN_INST and LOC are used in case of error.
-   function Index_To_Offset (Syn_Inst : Synth_Instance_Acc;
-                             Bnd : Bound_Type;
+   function Index_To_Offset (Bnd : Bound_Type;
                              Order : Wkind_Type;
-                             Idx : Int64;
-                             Loc : Node) return Value_Offsets
+                             Idx : Int64) return Value_Offsets
    is
       Res : Value_Offsets;
    begin
-      if not In_Bounds (Bnd, Int32 (Idx)) then
-         Bound_Error (Syn_Inst, Loc, Bnd, Int32 (Idx));
-         return (0, 0);
-      end if;
-
       --  The offset is from the LSB (bit 0).  Bit 0 is the rightmost one.
       case Bnd.Dir is
          when Dir_To =>
@@ -986,7 +847,7 @@ package body Synth.Vhdl_Expr is
       Wbounds : Width;
    begin
       Wbounds := Clog2 (Bnd.Len);
-      Idx2 := Synth_Resize (Ctxt, Idx_Val, Wbounds, Loc);
+      Idx2 := Synth_Resize_Index (Ctxt, Idx_Val, Wbounds, Loc);
 
       if Bnd.Right = 0 and then Bnd.Dir = Dir_Downto then
          --  Simple case without adjustments.
@@ -1010,12 +871,10 @@ package body Synth.Vhdl_Expr is
 
    procedure Synth_Indexes (Syn_Inst : Synth_Instance_Acc;
                             Indexes : Iir_Flist;
-                            Dim : Natural;
                             Arr_Typ : Type_Acc;
                             El_Typ : out Type_Acc;
                             Voff : out Net;
                             Off : out Value_Offsets;
-                            Stride : out Uns32;
                             Error : out Boolean)
    is
       Ctxt : constant Context_Acc := Get_Build (Syn_Inst);
@@ -1025,67 +884,65 @@ package body Synth.Vhdl_Expr is
       Bnd : Bound_Type;
       Ivoff : Net;
       Idx_Off : Value_Offsets;
+      Stride : Uns32;
    begin
-      if Dim > Flist_Last (Indexes) then
-         Voff := No_Net;
-         Off := (0, 0);
-         Error := False;
-         Stride := 1;
-         El_Typ := Arr_Typ;
-         return;
-      else
-         Synth_Indexes
-           (Syn_Inst, Indexes, Dim + 1, Get_Array_Element (Arr_Typ),
-            El_Typ, Voff, Off, Stride, Error);
-      end if;
+      --  Initialize values
+      Voff := No_Net;
+      Off := (0, 0);
+      Error := False;
+      El_Typ := Arr_Typ;
 
-      Idx_Expr := Get_Nth_Element (Indexes, Dim);
+      for I in Flist_First .. Flist_Last (Indexes) loop
+         Idx_Expr := Get_Nth_Element (Indexes, I);
 
-      --  Use the base type as the subtype of the index is not synth-ed.
-      Idx_Val := Synth_Expression_With_Basetype (Syn_Inst, Idx_Expr);
-      if Idx_Val = No_Valtyp then
-         --  Propagate error.
-         Error := True;
-         return;
-      end if;
-
-      Strip_Const (Idx_Val);
-
-      Bnd := Get_Array_Bound (Arr_Typ);
-
-      if Is_Static_Val (Idx_Val.Val) then
-         Idx := Get_Static_Discrete (Idx_Val);
-         if not In_Bounds (Bnd, Int32 (Idx)) then
-            Bound_Error (Syn_Inst, Idx_Expr, Bnd, Int32 (Idx));
+         --  Use the base type as the subtype of the index is not synth-ed.
+         Idx_Val := Synth_Expression_With_Basetype (Syn_Inst, Idx_Expr);
+         if Idx_Val = No_Valtyp then
+            --  Propagate error.
             Error := True;
-         else
-            Idx_Off := Index_To_Offset (Syn_Inst, Bnd, Arr_Typ.Wkind,
-                                        Idx, Idx_Expr);
-            Off.Net_Off := Off.Net_Off
-              + Idx_Off.Net_Off * Stride * El_Typ.W;
-            Off.Mem_Off := Off.Mem_Off
-              + Idx_Off.Mem_Off * Size_Type (Stride) * El_Typ.Sz;
+            return;
          end if;
-      elsif Bnd.Len <= 1 then
-         --  Nothing to select.
-         null;
-      else
-         Ivoff := Dyn_Index_To_Offset (Ctxt, Bnd, Idx_Val, Idx_Expr);
-         Ivoff := Build_Memidx
-           (Get_Build (Syn_Inst), Ivoff, El_Typ.W * Stride,
-            Bnd.Len - 1,
-            Width (Clog2 (Uns64 (El_Typ.W * Stride * Bnd.Len))));
-         Set_Location (Ivoff, Idx_Expr);
 
-         if Voff = No_Net then
-            Voff := Ivoff;
+         Strip_Const (Idx_Val);
+
+         Bnd := Get_Array_Bound (El_Typ);
+
+         Stride := El_Typ.W / Bnd.Len;
+
+         if Is_Static_Val (Idx_Val.Val) then
+            --  For a static index, compute offset.
+            Idx := Get_Static_Discrete (Idx_Val);
+            if not In_Bounds (Bnd, Int32 (Idx)) then
+               Bound_Error (Syn_Inst, Idx_Expr, Bnd, Int32 (Idx));
+               Error := True;
+            else
+               Idx_Off := Index_To_Offset (Bnd, Arr_Typ.Wkind, Idx);
+               Off.Net_Off := Off.Net_Off
+                 + Idx_Off.Net_Off * Stride;
+               Off.Mem_Off := Off.Mem_Off
+                 + Idx_Off.Mem_Off * El_Typ.Sz / Size_Type (Bnd.Len);
+            end if;
+         elsif Bnd.Len <= 1 then
+            --  Nothing to select.
+            null;
          else
-            Voff := Build_Addidx (Get_Build (Syn_Inst), Ivoff, Voff);
-            Set_Location (Voff, Idx_Expr);
-         end if;
-      end if;
+            --  Dynamic index.
+            Ivoff := Dyn_Index_To_Offset (Ctxt, Bnd, Idx_Val, Idx_Expr);
+            Ivoff := Build_Memidx
+              (Get_Build (Syn_Inst), Ivoff, Stride, Bnd.Len - 1,
+               Clog2 (El_Typ.W));
+            Set_Location (Ivoff, Idx_Expr);
 
-      Stride := Stride * Bnd.Len;
+            if Voff = No_Net then
+               Voff := Ivoff;
+            else
+               Voff := Build_Addidx (Get_Build (Syn_Inst), Ivoff, Voff);
+               Set_Location (Voff, Idx_Expr);
+            end if;
+         end if;
+
+         El_Typ := Get_Array_Element (El_Typ);
+      end loop;
    end Synth_Indexes;
 
    procedure Synth_Indexed_Name (Syn_Inst : Synth_Instance_Acc;
@@ -1097,7 +954,6 @@ package body Synth.Vhdl_Expr is
                                  Error : out Boolean)
    is
       Indexes : constant Iir_Flist := Get_Index_List (Name);
-      Stride : Uns32;
    begin
       if Pfx_Typ.Abound.Len = 0 then
          Error_Msg_Synth (Syn_Inst, Name, "indexing a null array");
@@ -1108,8 +964,8 @@ package body Synth.Vhdl_Expr is
          return;
       end if;
 
-      Synth_Indexes (Syn_Inst, Indexes, Flist_First, Pfx_Typ,
-                     El_Typ, Voff, Off, Stride, Error);
+      Synth_Indexes (Syn_Inst, Indexes, Pfx_Typ,
+                     El_Typ, Voff, Off, Error);
    end Synth_Indexed_Name;
 
    function Is_Static (N : Net) return Boolean is
@@ -1244,7 +1100,6 @@ package body Synth.Vhdl_Expr is
             "cannot extract same variable part for dynamic slice");
          return;
       end if;
-      Inp := L_Inp;
 
       if L_Fac /= R_Fac then
          Error_Msg_Synth
@@ -1252,6 +1107,8 @@ package body Synth.Vhdl_Expr is
             "cannot extract same constant factor for dynamic slice");
          return;
       end if;
+
+      Inp := L_Inp;
 
       --  Compute step and width.
       Sstep := abs L_Fac;
@@ -1484,6 +1341,11 @@ package body Synth.Vhdl_Expr is
          end;
       end if;
 
+      if Left = No_Valtyp or else Right = No_Valtyp then
+         Error := True;
+         return;
+      end if;
+
       if Is_Static_Val (Left.Val) and then Is_Static_Val (Right.Val) then
          Synth_Slice_Const_Suffix (Syn_Inst, Expr,
                                    Name, Pfx_Bnd, Order,
@@ -1598,10 +1460,8 @@ package body Synth.Vhdl_Expr is
       Imp := Get_Implementation (Expr);
       if Get_Implicit_Definition (Imp) /= Iir_Predefined_Enum_Equality then
          Error_Msg_Synth
-           (Syn_Inst, Expr, "ill-formed clock-level, '=' expected");
-         Res := Build_Posedge (Ctxt, Clk);
-         Set_Location (Res, Expr);
-         return Res;
+           (Syn_Inst, Expr, "ill-formed clock-level, logic '=' expected");
+         return No_Net;
       end if;
 
       Left := Get_Left (Expr);
@@ -1634,8 +1494,7 @@ package body Synth.Vhdl_Expr is
                   Posedge := False;
                when 1 =>
                   Posedge := True;
-               when others =>
-                  raise Internal_Error;
+               when others => raise Internal_Error;
             end case;
          end if;
       end if;
@@ -1680,36 +1539,36 @@ package body Synth.Vhdl_Expr is
    begin
       case Conv_Typ.Kind is
          when Type_Discrete =>
-            if Val.Typ.Kind = Type_Discrete then
-               --  Int to int.
-               Res := Synth_Subtype_Conversion
-                 (Syn_Inst, Val, Conv_Typ, False, Loc);
-               return Res;
-            elsif Val.Typ.Kind = Type_Float then
-               pragma Assert (Is_Static (Val.Val));
-               declare
-                  V : constant Fp64 := Read_Fp64 (Val);
-                  Err : Boolean;
-               begin
-                  case Conv_Typ.Drange.Dir is
-                     when Dir_To =>
-                        Err := V < Fp64 (Conv_Typ.Drange.Left)
-                          or V > Fp64 (Conv_Typ.Drange.Right);
-                     when Dir_Downto =>
-                        Err := V < Fp64 (Conv_Typ.Drange.Right)
-                          or V > Fp64 (Conv_Typ.Drange.Left);
-                  end case;
-                  if Err then
-                     Error_Msg_Synth (Syn_Inst, Loc, "value out of range");
-                     return No_Valtyp;
-                  end if;
-                  return Create_Value_Discrete (Int64 (V), Conv_Typ);
-               end;
-            else
-               Error_Msg_Synth (Syn_Inst, Loc,
-                                "unhandled type conversion (to int)");
-               return No_Valtyp;
-            end if;
+            case Val.Typ.Kind is
+               when Type_Discrete =>
+                  --  Int to int.
+                  Res := Synth_Subtype_Conversion
+                    (Syn_Inst, Val, Conv_Typ, False, Loc);
+                  return Res;
+               when Type_Float =>
+                  --  Float to int
+                  pragma Assert (Is_Static (Val.Val));
+                  declare
+                     V : constant Fp64 := Read_Fp64 (Val);
+                     Err : Boolean;
+                  begin
+                     case Conv_Typ.Drange.Dir is
+                        when Dir_To =>
+                           Err := V < Fp64 (Conv_Typ.Drange.Left)
+                             or V > Fp64 (Conv_Typ.Drange.Right);
+                        when Dir_Downto =>
+                           Err := V < Fp64 (Conv_Typ.Drange.Right)
+                             or V > Fp64 (Conv_Typ.Drange.Left);
+                     end case;
+                     --  Also check for NaN.
+                     if Err or not V'Valid then
+                        Error_Msg_Synth (Syn_Inst, Loc, "value out of range");
+                        return No_Valtyp;
+                     end if;
+                     return Create_Value_Discrete (Int64 (V), Conv_Typ);
+                  end;
+               when others => raise Internal_Error;
+            end case;
          when Type_Float =>
             if Is_Static (Val.Val) then
                declare
@@ -1720,15 +1579,14 @@ package body Synth.Vhdl_Expr is
                         R := Fp64 (Read_Discrete (Val));
                      when Type_Float =>
                         R := Read_Fp64 (Val);
-                     when others =>
-                        raise Internal_Error;
+                     when others => raise Internal_Error;
                   end case;
                   Res := Create_Value_Float (R, Conv_Typ);
                   return Res;
                end;
             else
-               Error_Msg_Synth (Syn_Inst, Loc,
-                                "unhandled type conversion (to float)");
+               Error_Msg_Synth
+                 (Syn_Inst, Loc, "cannot synthesis conversion to float");
                return No_Valtyp;
             end if;
          when Type_Vector
@@ -1764,7 +1622,7 @@ package body Synth.Vhdl_Expr is
                     (Syn_Inst, Loc, Src_Typ.Abound, Dst_Typ.Uarr_Idx);
                   exit when Src_Typ.Alast;
                   Src_Typ := Src_Typ.Arr_El;
-                  Dst_Typ := Dst_Typ.Arr_El;
+                  Dst_Typ := Dst_Typ.Uarr_El;
                end loop;
 
                return Val;
@@ -1775,9 +1633,9 @@ package body Synth.Vhdl_Expr is
          when Type_Record
            | Type_Unbounded_Record =>
             return Val;
-         when others =>
-            Error_Msg_Synth (Syn_Inst, Loc, "unhandled type conversion");
-            return No_Valtyp;
+         when Type_Array_Unbounded => raise Internal_Error;
+         when Type_Slice => raise Internal_Error;
+         when Type_Access | Type_Protected | Type_File => raise Internal_Error;
       end case;
    end Synth_Type_Conversion;
 
@@ -1809,6 +1667,7 @@ package body Synth.Vhdl_Expr is
                     = Name_Ieee)
       then
          case Get_Identifier (Parent) is
+            --  GCOV_EXCL_START (tested operators are handled)
             when Name_Std_Logic_1164
                | Name_Std_Logic_Arith
                | Name_Std_Logic_Signed
@@ -1822,6 +1681,8 @@ package body Synth.Vhdl_Expr is
                Error_Msg_Synth (Syn_Inst, Imp,
                                 " declared here");
                return True;
+            --  GCOV_EXCL_STOP
+
             when others =>
                --  ieee 2008 packages are handled like regular packages.
                null;
@@ -1962,17 +1823,12 @@ package body Synth.Vhdl_Expr is
                      return Edge;
                   end if;
                end if;
-               if Get_Kind (R) = N_EOS then
-                  --  It is never EOS!
-                  Res := Build_Const_UB32 (Ctxt, 0, 1);
-               else
-                  Lv := Synth_PSL_Expression (Syn_Inst, L);
-                  Rv := Synth_PSL_Expression (Syn_Inst, R);
-                  if Lv = No_Net or Rv = No_Net then
-                     return No_Net;
-                  end if;
-                  Res := Build_Dyadic (Ctxt, Id_And, Lv, Rv);
+               Lv := Synth_PSL_Expression (Syn_Inst, L);
+               Rv := Synth_PSL_Expression (Syn_Inst, R);
+               if Lv = No_Net or Rv = No_Net then
+                  return No_Net;
                end if;
+               Res := Build_Dyadic (Ctxt, Id_And, Lv, Rv);
             end;
          when N_Or_Bool =>
             declare
@@ -1986,39 +1842,47 @@ package body Synth.Vhdl_Expr is
                end if;
                Res := Build_Dyadic (Ctxt, Id_Or, Lv, Rv);
             end;
+         when N_Imp_Bool =>
+            --  A imp B  ==  not A or B
+            declare
+               Lv, Rv : Net;
+            begin
+               pragma Assert (Loc /= No_Location);
+               Lv := Synth_PSL_Expression (Syn_Inst, Get_Left (Expr));
+               Rv := Synth_PSL_Expression (Syn_Inst, Get_Right (Expr));
+               if Lv = No_Net or Rv = No_Net then
+                  return No_Net;
+               end if;
+               Lv := Build_Monadic (Ctxt, Id_Not, Lv);
+               Netlists.Locations.Set_Location (Get_Net_Parent (Lv), Loc);
+               Res := Build_Dyadic (Ctxt, Id_Or, Lv, Rv);
+            end;
          when N_True =>
             Res := Build_Const_UB32 (Ctxt, 1, 1);
          when N_False
            | N_EOS =>
             Res := Build_Const_UB32 (Ctxt, 0, 1);
+         --  GCOV_EXCL_START (all handled)
          when others =>
-            PSL.Errors.Error_Kind ("synth_psl_expr", Expr);
+            PSL.Errors.Error_Kind ("synth_psl_expression", Expr);
             return No_Net;
+         --  GCOV_EXCL_STOP
       end case;
       Netlists.Locations.Set_Location (Get_Net_Parent (Res), Loc);
       return Res;
    end Synth_PSL_Expression;
 
    function Synth_Psl_Function_Clock (Syn_Inst : Synth_Instance_Acc;
-                                      Call : Node;
-                                      Ctxt : Context_Acc) return Net
+                                      Call : Node) return Net
    is
       use PSL.Types;
-      Clock   : Node;
       Iclock  : PSL_Node;
-      Clk     : Valtyp;
-      Clk_Net : Net;
    begin
-      Clock := Get_Clock_Expression (Call);
-      if Clock /= Null_Node then
-         Clk := Synth_Expression (Syn_Inst, Clock);
-         Clk_Net := Get_Net (Ctxt, Clk);
-      else
-         Iclock := Get_Default_Clock (Call);
-         pragma Assert (Iclock /= Null_PSL_Node);
-         Clk_Net := Synth_PSL_Expression (Syn_Inst, Iclock);
-      end if;
-      return Clk_Net;
+      pragma Assert (Get_Clock_Expression (Call) = Null_Node);
+
+      Iclock := Get_Default_Clock (Call);
+      pragma Assert (Iclock /= Null_PSL_Node);
+      return Synth_PSL_Expression (Syn_Inst, Iclock);
    end Synth_Psl_Function_Clock;
 
    function Synth_Psl_Prev (Syn_Inst : Synth_Instance_Acc; Call : Node)
@@ -2034,7 +1898,7 @@ package body Synth.Vhdl_Expr is
    begin
       Expr := Synth_Expression_With_Basetype (Syn_Inst, Get_Expression (Call));
 
-      Clk_Net := Synth_Psl_Function_Clock (Syn_Inst, Call, Ctxt);
+      Clk_Net := Synth_Psl_Function_Clock (Syn_Inst, Call);
 
       if Count /= Null_Node then
          Count_Val := Synth_Expression (Syn_Inst, Count);
@@ -2065,7 +1929,7 @@ package body Synth.Vhdl_Expr is
    begin
       Expr := Synth_Expression_With_Basetype (Syn_Inst, Get_Expression (Call));
 
-      Clk_Net := Synth_Psl_Function_Clock (Syn_Inst, Call, Ctxt);
+      Clk_Net := Synth_Psl_Function_Clock (Syn_Inst, Call);
 
       DffCurr := Get_Net (Ctxt, Expr);
       Set_Location (DffCurr, Call);
@@ -2091,7 +1955,7 @@ package body Synth.Vhdl_Expr is
    begin
       Expr := Synth_Expression (Syn_Inst, Get_Expression (Call));
 
-      Clk_Net := Synth_Psl_Function_Clock (Syn_Inst, Call, Ctxt);
+      Clk_Net := Synth_Psl_Function_Clock (Syn_Inst, Call);
 
       DffCurr := Get_Net (Ctxt, Expr);
       Set_Location (DffCurr, Call);
@@ -2121,7 +1985,7 @@ package body Synth.Vhdl_Expr is
    begin
       Expr := Synth_Expression (Syn_Inst, Get_Expression (Call));
 
-      Clk_Net := Synth_Psl_Function_Clock(Syn_Inst, Call, Ctxt);
+      Clk_Net := Synth_Psl_Function_Clock(Syn_Inst, Call);
 
       DffCurr := Get_Net (Ctxt, Expr);
       Set_Location (DffCurr, Call);
@@ -2287,6 +2151,9 @@ package body Synth.Vhdl_Expr is
       --  Note: we know the value of left if it is not constant.
       if Is_Static_Val (Left.Val) and then Is_Static_Val (Right.Val) then
          Val := Get_Static_Discrete (Right);
+         if Neg then
+            Val := 1 - Val;
+         end if;
          return Create_Value_Discrete (Val, Typ);
       end if;
 
@@ -2338,11 +2205,11 @@ package body Synth.Vhdl_Expr is
       case Get_Kind (Expr) is
          when Iir_Kinds_Dyadic_Operator =>
             declare
-               Imp : constant Node := Get_Implementation (Expr);
-               Def : constant Iir_Predefined_Functions :=
-                 Get_Implicit_Definition (Imp);
+               Imp : Node;
+               Def : Iir_Predefined_Functions;
                Edge : Net;
             begin
+               Get_Subprogram_Implementation (Syn_Inst, Expr, Imp, Def);
                --  Match clock-edge (only for synthesis)
                if Def = Iir_Predefined_Boolean_And
                  and then Hook_Signal_Expr = null
@@ -2390,7 +2257,9 @@ package body Synth.Vhdl_Expr is
                         Get_Left (Expr), Get_Right (Expr), Bit_Type, Expr);
                   when Iir_Predefined_None =>
                      if Error_Ieee_Operator (Syn_Inst, Imp, Expr) then
+                        --  GCOV_EXCL_START
                         return No_Valtyp;
+                        --  GCOV_EXCL_STOP
                      else
                         return Synth_User_Operator
                           (Syn_Inst, Get_Left (Expr), Get_Right (Expr), Expr);
@@ -2403,13 +2272,15 @@ package body Synth.Vhdl_Expr is
             end;
          when Iir_Kinds_Monadic_Operator =>
             declare
-               Imp : constant Node := Get_Implementation (Expr);
-               Def : constant Iir_Predefined_Functions :=
-                 Get_Implicit_Definition (Imp);
+               Imp : Node;
+               Def : Iir_Predefined_Functions;
             begin
+               Get_Subprogram_Implementation (Syn_Inst, Expr, Imp, Def);
                if Def = Iir_Predefined_None then
                   if Error_Ieee_Operator (Syn_Inst, Imp, Expr) then
+                     --  GCOV_EXCL_START
                      return No_Valtyp;
+                     --  GCOV_EXCL_STOP
                   else
                      return Synth_User_Operator
                        (Syn_Inst, Get_Operand (Expr), Null_Node, Expr);
@@ -2419,115 +2290,37 @@ package body Synth.Vhdl_Expr is
                     (Syn_Inst, Imp, Get_Operand (Expr), Expr);
                end if;
             end;
-         when Iir_Kind_Simple_Name
-            | Iir_Kind_Selected_Name
-            | Iir_Kind_Attribute_Name
-            | Iir_Kind_Interface_Signal_Declaration --  For PSL.
-            | Iir_Kind_Signal_Declaration   -- For PSL.
-            | Iir_Kind_Guard_Signal_Declaration
-            | Iir_Kind_Object_Alias_Declaration   -- For PSL
-            | Iir_Kind_Non_Object_Alias_Declaration   -- For PSL
-            | Iir_Kind_External_Signal_Name
-            | Iir_Kind_Implicit_Dereference
-            | Iir_Kind_Dereference
-            | Iir_Kind_Above_Attribute =>
-            declare
-               Res : Valtyp;
-               Init : Valtyp;
-            begin
-               Res := Synth_Name (Syn_Inst, Expr);
-               if Res.Val /= null then
-                  if (Res.Val.Kind = Value_Signal
-                        or else Res.Val.Kind = Value_Sig_Val
-                        or else (Res.Val.Kind = Value_Alias
-                                   and then Res.Val.A_Obj.Kind = Value_Signal))
-                  then
-                     if Hook_Signal_Expr /= null then
-                        return Hook_Signal_Expr (Res);
-                     end if;
-                     if Flags.Flag_Relaxed_Rules then
-                        Warning_Msg_Synth
-                          (Warnid_Elaboration, +Expr,
-                           "cannot use signal value during elaboration");
-                        if Res.Val.Kind = Value_Signal then
-                           --  The signal may have no default value.
-                           if Res.Val.Init = null then
-                              Init := Create_Value_Memory
-                                (Res.Typ, Current_Pool);
-                              Write_Value_Default (Init.Val.Mem, Res.Typ);
-                              --  Do not write the default value, even if it
-                              --  were allocated on the instance_pool, it
-                              --  might be deallocated after a subprogram call.
-                              Res := (Res.Typ, Init.Val);
-                           else
-                              Res := (Res.Typ, Res.Val.Init);
-                           end if;
-                        elsif Res.Val.Kind = Value_Alias then
-                           Res := Create_Value_Memtyp
-                             ((Res.Val.A_Typ,
-                               Res.Val.A_Obj.Init.Mem
-                                 + Res.Val.A_Off.Mem_Off));
-                        else
-                           Res := No_Valtyp;
-                        end if;
-                        return Res;
-                     else
-                        Error_Msg_Synth
-                          (Syn_Inst, Expr,
-                           "cannot use signal value during elaboration");
-                        return No_Valtyp;
-                     end if;
-                  elsif (Res.Val.Kind = Value_Quantity
-                           or else
-                           (Res.Val.Kind = Value_Alias
-                              and then Res.Val.A_Obj.Kind = Value_Quantity))
-                  then
-                     if Hook_Quantity_Expr /= null then
-                        return Hook_Quantity_Expr (Res);
-                     end if;
-                     Error_Msg_Synth
-                       (Syn_Inst, Expr, "cannot use quantity value");
-                     return No_Valtyp;
-                  end if;
-               end if;
-               if Res.Typ /= null
-                 and then Res.Typ.W = 0 and then Res.Val.Kind /= Value_Memory
-               then
-                  --  This is a null object.  As nothing can be done about it,
-                  --  returns 0.
-                  return Create_Value_Memtyp (Create_Memory_Zero (Res.Typ));
-               end if;
-               return Res;
-            end;
-         when Iir_Kinds_Signal_Attribute =>
-            declare
-               Res : Valtyp;
-            begin
-               if Hook_Signal_Expr = null then
-                  Error_Msg_Synth (Syn_Inst, Expr,
-                                   "signal attribute not supported");
-                  Res := No_Valtyp;
-               else
-                  Res := Synth_Name (Syn_Inst, Expr);
-                  Res := Hook_Signal_Expr (Res);
-               end if;
-               return Res;
-            end;
-         when Iir_Kind_Reference_Name =>
-            --  Only used for anonymous signals in internal association.
+         when Iir_Kinds_Denoting_Name =>
             return Synth_Expression_With_Type
               (Syn_Inst, Get_Named_Entity (Expr), Typ);
-         when Iir_Kind_Indexed_Name
-           | Iir_Kind_Slice_Name =>
+         when Iir_Kind_Unit_Declaration =>
+            declare
+               Typ : constant Type_Acc :=
+                 Get_Subtype_Object (Syn_Inst, Get_Type (Expr));
+            begin
+               return Create_Value_Discrete
+                 (Vhdl.Evaluation.Get_Physical_Value (Expr), Typ);
+            end;
+         when Iir_Kind_Attribute_Name
+            | Iir_Kinds_Object_Declaration
+            | Iir_Kind_Non_Object_Alias_Declaration   -- For PSL
+            | Iir_Kind_External_Signal_Name
+            | Iir_Kind_External_Constant_Name
+            | Iir_Kind_External_Variable_Name
+            | Iir_Kind_Implicit_Dereference
+            | Iir_Kind_Dereference
+            | Iir_Kind_Above_Attribute
+            | Iir_Kind_Indexed_Name
+            | Iir_Kind_Slice_Name
+            | Iir_Kind_Selected_Element =>
             declare
                Base : Valtyp;
                Typ : Type_Acc;
                Off : Value_Offsets;
-               Res : Valtyp;
 
                Dyn : Dyn_Name;
             begin
-               Synth_Assignment_Prefix
+               Synth_Object_Name
                  (Syn_Inst, Syn_Inst, Expr, Base, Typ, Off, Dyn);
                if Base = No_Valtyp then
                   --  Propagate error.
@@ -2537,87 +2330,96 @@ package body Synth.Vhdl_Expr is
                if Base.Val.Kind = Value_Signal
                  or else Base.Val.Kind = Value_Sig_Val
                then
+                  --  It's a signal or an alias of a signal.
                   if Hook_Signal_Expr /= null then
+                     --  Get the value of the signal.
                      Base := Hook_Signal_Expr (Base);
                   elsif Flags.Flag_Relaxed_Rules then
                      Warning_Msg_Synth
                        (Warnid_Elaboration, +Expr,
-                        "cannot use signal value during elaboration");
-                     pragma Assert (Dyn.Voff = No_Net);
+                       "cannot use signal value during elaboration");
+
                      if Base.Val.Init = null then
-                        --  No default value
-                        Res := Create_Value_Memory
-                          (Typ, Current_Pool);
-                        Write_Value_Default (Res.Val.Mem, Typ);
+                        --  The signal may have no default value.
+                        Base := Create_Value_Memory (Typ, Current_Pool);
+                        Write_Value_Default (Base.Val.Mem, Typ);
+                        --  Do not write the default value, even if it
+                        --  were allocated on the instance_pool, it
+                        --  might be deallocated after a subprogram call.
+                        return (Typ, Base.Val);
                      else
-                        Res := Create_Value_Memtyp
-                          ((Typ, Base.Val.Init.Mem + Off.Mem_Off));
+                        --  Use its default value.
+                        Base := (Base.Typ, Base.Val.Init);
                      end if;
-                     return Res;
+                  else
+                     Error_Msg_Synth
+                       (Syn_Inst, Expr,
+                       "cannot use signal value during elaboration");
+                     return No_Valtyp;
                   end if;
+               elsif Base.Val.Kind = Value_Quantity then
+                  --  GCOV_EXCL_START (AMS)
+                  if Hook_Quantity_Expr /= null then
+                     Base := Hook_Quantity_Expr (Base);
+                  else
+                     Error_Msg_Synth
+                       (Syn_Inst, Expr, "cannot use quantity value");
+                     return No_Valtyp;
+                  end if;
+                  --  GCOV_EXCL_STOP
                end if;
-               if Dyn.Voff = No_Net and then Is_Static (Base.Val) then
-                  Res := Create_Value_Memtyp
-                    ((Typ, Base.Val.Mem + Off.Mem_Off));
-                  return Res;
+               if Typ /= null
+                 and then Typ.W = 0 and then Base.Val.Kind /= Value_Memory
+               then
+                  --  This is a null object.  As nothing can be done about it,
+                  --  returns 0.
+                  return Create_Value_Memtyp (Create_Memory_Zero (Typ));
+               end if;
+
+               if Dyn.Voff = No_Net then
+                  if Typ.Sz = Base.Typ.Sz then
+                     --  Whole object (but maybe reshaped).
+                     return (Typ, Base.Val);
+                  elsif Is_Static (Base.Val) then
+                     Strip_Const (Base);
+                     return Create_Value_Memtyp
+                       ((Typ, Base.Val.Mem + Off.Mem_Off));
+                  end if;
                end if;
                return Synth_Read_Memory
                  (Syn_Inst, Base, Typ, Off.Net_Off, Dyn, Expr);
             end;
-         when Iir_Kind_Selected_Element =>
+         when Iir_Kinds_Signal_Attribute =>
             declare
-               Ctxt : constant Context_Acc := Get_Build (Syn_Inst);
-               Idx : constant Iir_Index32 :=
-                 Get_Element_Position (Get_Named_Entity (Expr));
-               Pfx : constant Node := Get_Prefix (Expr);
-               Res_Typ : Type_Acc;
-               N : Net;
-               Val : Valtyp;
-               Res : Valtyp;
+               Base : Valtyp;
+               Typ : Type_Acc;
+               Off : Value_Offsets;
+
+               Dyn : Dyn_Name;
             begin
-               Val := Synth_Expression (Syn_Inst, Pfx);
-               Strip_Const (Val);
-               Res_Typ := Val.Typ.Rec.E (Idx + 1).Typ;
-               if Res_Typ.W = 0 and then Val.Val.Kind /= Value_Memory then
-                  --  This is a null object.  As nothing can be done about it,
-                  --  returns 0.
-                  return Create_Value_Memtyp (Create_Memory_Zero (Res_Typ));
-               elsif Is_Static (Val.Val) then
-                  --  TODO: why a copy ?
-                  Res := Create_Value_Memory (Res_Typ, Current_Pool);
-                  Copy_Memory
-                    (Res.Val.Mem,
-                     Get_Memory (Val)
-                       + Val.Typ.Rec.E (Idx + 1).Offs.Mem_Off,
-                     Res_Typ.Sz);
-                  return Res;
-               else
-                  N := Build2_Extract (Ctxt, Get_Net (Ctxt, Val),
-                                       Val.Typ.Rec.E (Idx + 1).Offs.Net_Off,
-                                       Get_Type_Width (Res_Typ));
-                  Set_Location (N, Expr);
-                  return Create_Value_Net (N, Res_Typ);
-               end if;
-            end;
-         when Iir_Kind_Character_Literal =>
-            return Synth_Expression_With_Type
-              (Syn_Inst, Get_Named_Entity (Expr), Typ);
-         when Iir_Kind_Integer_Literal =>
-            declare
-               Res : Valtyp;
-               V : Int64;
-            begin
-               Res := Create_Value_Memory (Typ, Current_Pool);
-               V := Get_Value (Expr);
-               if Typ.Sz = 4
-                 and then (V < Int64 (Int32'First) or V > Int64 (Int32'Last))
-               then
-                  --  TODO: should not exist, should be an overflow.
-                  Error_Msg_Synth (Syn_Inst, Expr, "value out of range");
+               if Hook_Signal_Expr = null then
+                  Error_Msg_Synth
+                    (Syn_Inst, Expr, "signal attribute not supported");
                   return No_Valtyp;
                end if;
+
+               Synth_Object_Name
+                 (Syn_Inst, Syn_Inst, Expr, Base, Typ, Off, Dyn);
+
+               --  Subelements are not handled.
+               pragma Assert (Dyn.Voff = No_Net);
+               pragma Assert (Typ.Sz = Base.Typ.Sz);
+
+               return Hook_Signal_Expr (Base);
+            end;
+         when Iir_Kind_Integer_Literal =>
+            declare
+               V : constant Int64 := Get_Value (Expr);
+               Res : Valtyp;
+            begin
+               Res := Create_Value_Memory (Typ, Current_Pool);
                if not In_Range (Typ.Drange, V) then
-                  Error_Msg_Synth (Syn_Inst, Expr, "value out of range");
+                  Error_Msg_Synth (Syn_Inst, Expr, "literal out of range");
                end if;
                Write_Discrete (Res, V);
                return Res;
@@ -2631,7 +2433,15 @@ package body Synth.Vhdl_Expr is
          when Iir_Kind_String_Literal8 =>
             return Elab.Vhdl_Expr.Exec_String_Literal (Syn_Inst, Expr, Typ);
          when Iir_Kind_Enumeration_Literal =>
-            return Synth_Name (Syn_Inst, Expr);
+            declare
+               Typ : constant Type_Acc :=
+                 Get_Subtype_Object (Syn_Inst, Get_Type (Expr));
+               Res : Valtyp;
+            begin
+               Res := Create_Value_Memory (Typ, Current_Pool);
+               Write_Discrete (Res, Int64 (Get_Enum_Pos (Expr)));
+               return Res;
+            end;
          when Iir_Kind_Type_Conversion =>
             return Synth_Type_Conversion (Syn_Inst, Expr);
          when Iir_Kind_Qualified_Expression =>
@@ -2641,15 +2451,10 @@ package body Synth.Vhdl_Expr is
          when Iir_Kind_Function_Call =>
             declare
                Imp : Node;
+               Def : Iir_Predefined_Functions;
             begin
-               Imp := Get_Implementation (Expr);
-               --  Handle interface function.
-               while Get_Kind (Imp) = Iir_Kind_Interface_Function_Declaration
-               loop
-                  Imp := Get_Interface_Subprogram (Syn_Inst, Imp);
-               end loop;
-
-               case Get_Implicit_Definition (Imp) is
+               Get_Subprogram_Implementation (Syn_Inst, Expr, Imp, Def);
+               case Def is
                   when Iir_Predefined_Operators
                      | Iir_Predefined_Ieee_Numeric_Std_Binary_Operators
                      | Iir_Predefined_Ieee_Numeric_Std_Unsigned_Operators =>
@@ -2791,7 +2596,8 @@ package body Synth.Vhdl_Expr is
             declare
                Dtype : Type_Acc;
             begin
-               Dtype := Get_Subtype_Object (Syn_Inst, Get_Type (Expr));
+               Dtype := Get_Subtype_Object
+                 (Syn_Inst, Get_Type (Get_Prefix (Expr)));
                return Synth_Inc_Dec_Attribute
                  (Syn_Inst, Expr, Dtype, Dtype.Drange.Dir = Dir_Downto);
             end;
@@ -2799,7 +2605,8 @@ package body Synth.Vhdl_Expr is
             declare
                Dtype : Type_Acc;
             begin
-               Dtype := Get_Subtype_Object (Syn_Inst, Get_Type (Expr));
+               Dtype := Get_Subtype_Object
+                 (Syn_Inst, Get_Type (Get_Prefix (Expr)));
                return Synth_Inc_Dec_Attribute
                  (Syn_Inst, Expr, Dtype, Dtype.Drange.Dir = Dir_To);
             end;
@@ -2905,20 +2712,25 @@ package body Synth.Vhdl_Expr is
             Error_Msg_Synth (Syn_Inst, Expr,
                              "last_active attribute not allowed");
             return No_Valtyp;
+
+         --  GCOV_EXCL_START (AMS)
          when Iir_Kind_Dot_Attribute =>
             if Hook_Dot_Attribute /= null then
                return Hook_Dot_Attribute (Syn_Inst, Expr);
             end if;
             Error_Msg_Synth (Syn_Inst, Expr, "dot attribute not allowed");
             return No_Valtyp;
+         --  GCOV_EXCL_STOP
          when Iir_Kind_Psl_Endpoint_Declaration =>
             if Hook_Endpoint /= null then
                return Hook_Endpoint (Syn_Inst, Expr);
             end if;
+            --  GCOV_EXCL_START (not for synthesis)
             Error_Msg_Synth (Syn_Inst, Expr, "endpoint read not allowed");
             return No_Valtyp;
-         when others =>
-            Error_Kind ("synth_expression_with_type", Expr);
+            --  GCOV_EXCL_STOP
+
+         when others => Error_Kind ("synth_expression_with_type", Expr);
       end case;
    end Synth_Expression_With_Type;
 
@@ -2932,6 +2744,7 @@ package body Synth.Vhdl_Expr is
       case Get_Kind (Expr) is
          when Iir_Kind_Simple_Name
             | Iir_Kind_Indexed_Name
+            | Iir_Kind_Slice_Name
             | Iir_Kind_Selected_Element
             | Iir_Kind_Integer_Literal
             | Iir_Kind_String_Literal8

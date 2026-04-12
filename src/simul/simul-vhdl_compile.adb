@@ -21,13 +21,11 @@ with Ada.Unchecked_Conversion;
 
 with Types; use Types;
 with Tables;
-
 with Libraries;
 
 with Vhdl.Nodes; use Vhdl.Nodes;
 with Vhdl.Errors; use Vhdl.Errors;
 with Vhdl.Utils; use Vhdl.Utils;
-with Vhdl.Back_End;
 with Vhdl.Configuration;
 with Vhdl.Std_Package;
 with Vhdl.Ieee.Std_Logic_1164;
@@ -40,6 +38,7 @@ with Elab.Vhdl_Context; use Elab.Vhdl_Context;
 with Elab.Vhdl_Prot;
 with Elab.Vhdl_Heap;
 with Elab.Vhdl_Insts;
+with Elab.Vhdl_Debug;
 
 with Synth.Vhdl_Expr;
 with Synth.Vhdl_Stmts;
@@ -51,19 +50,21 @@ with Simul.Main;
 with Translation;
 with Trans; use Trans; use Trans.Chap10;
 with Trans.Chap4;
-with Trans.Chap7;
 with Trans.Chap9;
 with Trans.Rtis;
 with Trans_Link;
-with Trans_Foreign;
+with Trans_Foreign_Jit;
 with Trans_Decls;
 with Trans.Coverage;
 
 with Grt.Types; use Grt.Types;
 with Grt.Processes;
 with Grt.Signals;
-
+with Grt.Stdio;
+with Grt.Backtraces.Jit;
+with Grt.Rtis_Addr;
 with Grt.Rtis;
+
 with Grtlink;
 
 with Ortho_Nodes; use Ortho_Nodes;
@@ -268,6 +269,18 @@ package body Simul.Vhdl_Compile is
       end if;
    end Build_Scalar_Subtype_Range;
 
+   procedure Build_Float_Subtype_Range (Mem : Memory_Ptr;
+                                         Def : Node;
+                                         Typ : Type_Acc)
+   is
+      Tinfo : constant Type_Info_Acc := Get_Info (Def);
+      Rng : Float_Range_Type renames Typ.Frange;
+   begin
+      Write_Fp64 (Add_Field_Offset (Mem, Tinfo.B.Range_Left), Rng.Left);
+      Write_Fp64 (Add_Field_Offset (Mem, Tinfo.B.Range_Right), Rng.Right);
+      Write_Dir (Add_Field_Offset (Mem, Tinfo.B.Range_Dir), Rng.Dir);
+   end Build_Float_Subtype_Range;
+
    procedure Build_Composite_Subtype_Layout (Mem : Memory_Ptr;
                                              Def : Node;
                                              Typ : Type_Acc);
@@ -431,8 +444,7 @@ package body Simul.Vhdl_Compile is
             null;
          when Iir_Kind_Integer_Subtype_Definition
             | Iir_Kind_Enumeration_Subtype_Definition
-            | Iir_Kind_Physical_Subtype_Definition
-            | Iir_Kind_Floating_Subtype_Definition =>
+            | Iir_Kind_Physical_Subtype_Definition =>
             if Get_Type_Staticness (Def) = Locally then
                return;
             end if;
@@ -443,6 +455,19 @@ package body Simul.Vhdl_Compile is
                if not Info.S.Same_Range then
                   Rng_Mem := Get_Var_Mem (Mem, Info.S.Range_Var);
                   Build_Scalar_Subtype_Range (Rng_Mem, Def, Typ);
+               end if;
+            end;
+         when Iir_Kind_Floating_Subtype_Definition =>
+            if Get_Type_Staticness (Def) = Locally then
+               return;
+            end if;
+            declare
+               Info : constant Type_Info_Acc := Get_Info (Def);
+               Rng_Mem : Memory_Ptr;
+            begin
+               if not Info.S.Same_Range then
+                  Rng_Mem := Get_Var_Mem (Mem, Info.S.Range_Var);
+                  Build_Float_Subtype_Range (Rng_Mem, Def, Typ);
                end if;
             end;
          when Iir_Kind_Array_Subtype_Definition =>
@@ -769,6 +794,33 @@ package body Simul.Vhdl_Compile is
       Build_Object_Value (Mem, Inst, Decl);
    end Build_Object_Decl;
 
+   procedure Build_Generic_Map (Mem : Memory_Ptr;
+                                Inst : Synth_Instance_Acc;
+                                Hdr : Node)
+   is
+      Assoc, Assoc_Inter, Inter : Node;
+   begin
+      Assoc := Get_Generic_Map_Aspect_Chain (Hdr);
+      Assoc_Inter := Get_Generic_Chain (Hdr);
+      while Assoc /= Null_Node loop
+         Inter := Get_Association_Interface (Assoc, Assoc_Inter);
+
+         if Get_Kind (Inter) = Iir_Kind_Interface_Type_Declaration then
+            declare
+               Def : constant Node := Get_Actual (Assoc);
+            begin
+               if Is_Proper_Subtype_Indication (Def) then
+                  Build_Subtype_Indication (Mem, Inst, Def);
+               end if;
+            end;
+         else
+            Build_Decl_Instance (Mem, Inst, Inter);
+         end if;
+
+         Next_Association_Interface (Assoc, Assoc_Inter);
+      end loop;
+   end Build_Generic_Map;
+
    procedure Build_Package_Instantiation (Mem : Memory_Ptr;
                                           Inst : Synth_Instance_Acc;
                                           Pkg : Node)
@@ -778,31 +830,9 @@ package body Simul.Vhdl_Compile is
    begin
       if Info.Kind = Kind_Package then
          --  Macro-expanded (either at top-level or within an block)
+         Build_Generic_Map (Mem, Inst, Pkg);
+
          Pkg_Mem := Mem;
-         declare
-            Assoc, Assoc_Inter, Inter : Node;
-         begin
-            Assoc := Get_Generic_Map_Aspect_Chain (Pkg);
-            Assoc_Inter := Get_Generic_Chain (Pkg);
-            while Assoc /= Null_Node loop
-               Inter := Get_Association_Interface (Assoc, Assoc_Inter);
-
-               if Get_Kind (Inter) = Iir_Kind_Interface_Type_Declaration then
-                  declare
-                     Def : constant Node := Get_Actual (Assoc);
-                  begin
-                     if Is_Proper_Subtype_Indication (Def) then
-                        Build_Subtype_Indication (Mem, Inst, Def);
-                     end if;
-                  end;
-               else
-                  Build_Decl_Instance (Pkg_Mem, Inst, Inter);
-               end if;
-
-               Next_Association_Interface (Assoc, Assoc_Inter);
-            end loop;
-         end;
-
          Build_Decls_Instance (Pkg_Mem, Inst, Get_Declaration_Chain (Pkg));
 
          declare
@@ -911,6 +941,10 @@ package body Simul.Vhdl_Compile is
          end;
       end if;
 
+      if Info.Alias_Direct then
+         return;
+      end if;
+
       for Mode in Mode_Value .. Info.Alias_Kind loop
          Var_Mem := Get_Var_Mem (Mem, Info.Alias_Var (Mode));
          case Obj.Kind is
@@ -971,6 +1005,77 @@ package body Simul.Vhdl_Compile is
       end loop;
    end Build_Object_Alias;
 
+   procedure Build_Interfaces_Instance (Mem : Memory_Ptr;
+                                        Inst : Synth_Instance_Acc;
+                                        Decl : Node)
+   is
+      Inter : Node;
+   begin
+      Inter := Get_Interface_Declaration_Chain (Decl);
+      while Inter /= Null_Node loop
+         Build_Subtype_Indication
+           (Mem, Inst, Get_Subtype_Indication (Inter));
+         Inter := Get_Chain (Inter);
+      end loop;
+   end Build_Interfaces_Instance;
+
+   procedure Build_Signal_Interface (Mem : Memory_Ptr;
+                                     Inst : Synth_Instance_Acc;
+                                     Decl : Node)
+   is
+      use Simul.Vhdl_Simul;
+      Sig_Info : constant Signal_Info_Acc := Get_Info (Decl);
+      Sig_Type : constant Node := Get_Type (Decl);
+      Tinfo : constant Type_Info_Acc := Get_Info (Sig_Type);
+      Src : constant Valtyp := Get_Value (Inst, Decl);
+      E : Signal_Entry renames Signals_Table.Table (Src.Val.S);
+      Valp : Memory_Ptr;
+      Sig : Memory_Ptr;
+   begin
+      pragma Assert (Sig_Info.Signal_Driver = Null_Var);
+      Build_Subtype_Indication (Mem, Inst, Get_Subtype_Indication (Decl));
+
+      --  Set Sig and Valp.
+      Valp := Get_Var_Mem (Mem, Sig_Info.Signal_Valp);
+      Sig := Get_Var_Mem (Mem, Sig_Info.Signal_Sig);
+
+      if E.Collapsed_By = No_Signal_Index then
+         --  A normal signal
+
+         if Is_Unbounded_Type (Tinfo) then
+            E.Sig := Alloc_Mem (Size_Type (Src.Typ.W) * Sig_Size);
+
+            Build_Unbounded_Signal
+              (Valp, Sig, Tinfo, Sig_Type, Src.Typ, E.Val, E.Sig);
+         elsif Is_Complex_Type (Tinfo) then
+            E.Sig := Alloc_Mem (Size_Type (Src.Typ.W) * Sig_Size);
+            Write_Ptr (Sig, E.Sig);
+            Write_Ptr (Valp, E.Val);
+         else
+            E.Sig := Sig;
+            Write_Ptr (Valp, E.Val);
+         end if;
+         Create_Signal (E);
+      else
+         --  A collapsed signal.
+         --  Copy sig.
+         --  FIXME: what about a sub part, need an offset!
+         Vhdl_Simul.Collapse_Signal (E);
+
+         if Is_Unbounded_Type (Tinfo) then
+            Build_Unbounded_Signal
+              (Valp, Sig, Tinfo, Sig_Type, Src.Typ, E.Val, E.Sig);
+         elsif Is_Complex_Type (Tinfo) then
+            Write_Ptr (Sig, E.Sig);
+            Write_Ptr (Valp, E.Val);
+         else
+            Elab.Vhdl_Objtypes.Copy_Memory
+              (Sig, E.Sig, Size_Type (Src.Typ.W) * Sig_Size);
+            Write_Ptr (Valp, E.Val);
+         end if;
+      end if;
+   end Build_Signal_Interface;
+
    procedure Build_Decl_Instance (Mem : Memory_Ptr;
                                   Inst : Synth_Instance_Acc;
                                   Decl : Node) is
@@ -990,61 +1095,9 @@ package body Simul.Vhdl_Compile is
 
                Src.Val.Mem := Dst_Mem;
             end;
-         when Iir_Kind_Interface_Signal_Declaration =>
-            declare
-               use Simul.Vhdl_Simul;
-               Sig_Info : constant Signal_Info_Acc := Get_Info (Decl);
-               Sig_Type : constant Node := Get_Type (Decl);
-               Tinfo : constant Type_Info_Acc := Get_Info (Sig_Type);
-               Src : constant Valtyp := Get_Value (Inst, Decl);
-               E : Signal_Entry renames Signals_Table.Table (Src.Val.S);
-               Valp : Memory_Ptr;
-               Sig : Memory_Ptr;
-            begin
-               pragma Assert (Sig_Info.Signal_Driver = Null_Var);
-               Build_Subtype_Indication
-                 (Mem, Inst, Get_Subtype_Indication (Decl));
-
-               --  Set Sig and Valp.
-               Valp := Get_Var_Mem (Mem, Sig_Info.Signal_Valp);
-               Sig := Get_Var_Mem (Mem, Sig_Info.Signal_Sig);
-
-               if E.Collapsed_By = No_Signal_Index then
-                  --  A normal signal
-
-                  if Is_Unbounded_Type (Tinfo) then
-                     E.Sig := Alloc_Mem (Size_Type (Src.Typ.W) * Sig_Size);
-
-                     Build_Unbounded_Signal
-                       (Valp, Sig, Tinfo, Sig_Type, Src.Typ, E.Val, E.Sig);
-                  elsif Is_Complex_Type (Tinfo) then
-                     E.Sig := Alloc_Mem (Size_Type (Src.Typ.W) * Sig_Size);
-                     Write_Ptr (Sig, E.Sig);
-                     Write_Ptr (Valp, E.Val);
-                  else
-                     E.Sig := Sig;
-                     Write_Ptr (Valp, E.Val);
-                  end if;
-                  Create_Signal (E);
-               else
-                  --  A collapsed signal.
-                  --  Copy sig.
-                  --  FIXME: what about a sub part, need an offset!
-                  Vhdl_Simul.Collapse_Signal (E);
-
-                  if Is_Unbounded_Type (Tinfo) then
-                     Build_Unbounded_Signal
-                       (Valp, Sig, Tinfo, Sig_Type, Src.Typ, E.Val, E.Sig);
-                  elsif Is_Complex_Type (Tinfo) then
-                     Write_Ptr (Sig, E.Sig);
-                     Write_Ptr (Valp, E.Val);
-                  else
-                     Elab.Vhdl_Objtypes.Copy_Memory
-                       (Sig, E.Sig, Size_Type (Src.Typ.W) * Sig_Size);
-                     Write_Ptr (Valp, E.Val);
-                  end if;
-               end if;
-            end;
+         when Iir_Kind_Interface_Signal_Declaration
+           | Iir_Kind_Interface_View_Declaration =>
+            Build_Signal_Interface (Mem, Inst, Decl);
          when Iir_Kind_Interface_Package_Declaration =>
             declare
                Pkg_Inst : constant Synth_Instance_Acc :=
@@ -1113,7 +1166,7 @@ package body Simul.Vhdl_Compile is
                      Build_Subtype_Definition (Mem, Def, Val.Typ);
                   end if;
                end;
-               if not Trans.Chap7.Is_Static_Constant (Decl) then
+               if not Get_Info (Decl).Object_Static then
                   Build_Object_Value (Mem, Inst, Decl);
                end if;
             end if;
@@ -1124,6 +1177,8 @@ package body Simul.Vhdl_Compile is
                case Get_Kind (Name) is
                   when Iir_Kind_External_Signal_Name
                     | Iir_Kind_External_Variable_Name =>
+                     Build_Subtype_Indication
+                       (Mem, Inst, Get_Subtype_Indication (Name));
                      External_Names_Table.Append ((Mem, Inst, Decl));
                   when others =>
                      Build_Object_Alias (Mem, Inst, Decl);
@@ -1141,6 +1196,8 @@ package body Simul.Vhdl_Compile is
             end;
 
          when Iir_Kinds_External_Name =>
+            Build_Subtype_Indication
+              (Mem, Inst, Get_Subtype_Indication (Decl));
             External_Names_Table.Append ((Mem, Inst, Decl));
 
          when Iir_Kind_File_Declaration =>
@@ -1160,6 +1217,9 @@ package body Simul.Vhdl_Compile is
          when Iir_Kind_Subtype_Declaration =>
             Build_Subtype_Indication
               (Mem, Inst, Get_Subtype_Indication (Decl));
+
+         when Iir_Kind_Mode_View_Declaration =>
+            null;
 
          when Iir_Kind_Package_Declaration =>
             if not Is_Uninstantiated_Package (Decl) then
@@ -1205,21 +1265,24 @@ package body Simul.Vhdl_Compile is
 
          when Iir_Kind_Function_Declaration
            | Iir_Kind_Procedure_Declaration =>
-            if Is_Second_Subprogram_Specification (Decl) then
+            if Get_Implicit_Definition (Decl) < Iir_Predefined_None
+              or else Is_Second_Subprogram_Specification (Decl)
+            then
+               --  No subtype indication to elaborate.
                return;
             end if;
-            declare
-               Inter : Node;
-            begin
-               Inter := Get_Interface_Declaration_Chain (Decl);
-               while Inter /= Null_Node loop
-                  Build_Subtype_Indication
-                    (Mem, Inst, Get_Subtype_Indication (Inter));
-                  Inter := Get_Chain (Inter);
-               end loop;
-            end;
+            if not Get_Use_Flag (Decl) then
+               return;
+            end if;
+            Build_Interfaces_Instance (Mem, Inst, Decl);
+         when Iir_Kinds_Subprogram_Instantiation_Declaration =>
+            if Get_Use_Flag (Decl) then
+               Build_Generic_Map (Mem, Inst, Decl);
+               Build_Interfaces_Instance (Mem, Inst, Decl);
+            end if;
          when Iir_Kind_Function_Body
-           | Iir_Kind_Procedure_Body =>
+            | Iir_Kind_Procedure_Body
+            | Iir_Kind_Subprogram_Instantiation_Body =>
             null;
          when Iir_Kind_Protected_Type_Body =>
             null;
@@ -1479,6 +1542,7 @@ package body Simul.Vhdl_Compile is
    is
       Res : Uns32;
       N : Node;
+      B : Node;
    begin
       pragma Assert (Get_Kind (Bod) = Iir_Kind_Generate_Statement_Body);
       Res := 0;
@@ -1486,10 +1550,13 @@ package body Simul.Vhdl_Compile is
          when Iir_Kind_If_Generate_Statement =>
             N := Stmt;
             while N /= Null_Node loop
-               if Get_Generate_Statement_Body (N) = Bod then
+               B := Get_Generate_Statement_Body (N);
+               if B = Bod then
                   return Res;
                end if;
-               Res := Res + 1;
+               if Get_Use_Flag (B) then
+                  Res := Res + 1;
+               end if;
                N := Get_Generate_Else_Clause (N);
             end loop;
             raise Internal_Error;
@@ -1497,10 +1564,13 @@ package body Simul.Vhdl_Compile is
             N := Get_Case_Statement_Alternative_Chain (Stmt);
             while N /= Null_Node loop
                if not Get_Same_Alternative_Flag (N) then
-                  if Get_Associated_Block (N) = Bod then
+                  B := Get_Associated_Block (N);
+                  if B = Bod then
                      return Res;
                   end if;
-                  Res := Res + 1;
+                  if Get_Use_Flag (B) then
+                     Res := Res + 1;
+                  end if;
                end if;
                N := Get_Chain (N);
             end loop;
@@ -1765,7 +1835,7 @@ package body Simul.Vhdl_Compile is
          begin
             Mark_Expr_Pool (Marker);
 
-            Synth.Vhdl_Stmts.Synth_Assignment_Prefix
+            Synth.Vhdl_Stmts.Synth_Object_Name
               (Proc.Inst, Ddrv.Sig, Sig, Typ, Off);
             pragma Assert (Sig /= No_Valtyp);
 
@@ -1966,27 +2036,31 @@ package body Simul.Vhdl_Compile is
 
       for I in Processes_Table.First .. Processes_Table.Last loop
          declare
-            P : Process_State_Type renames Processes_State (I);
-            Proc : constant Node := Processes_Table.Table (I).Proc;
+            use System;
+            S : Process_State_Type renames Processes_State (I);
+            P : Proc_Record_Type renames Processes_Table.Table (I);
+            Proc : constant Node := P.Proc;
+            Proc_Addr : constant Address :=
+              Processes_Table.Table (I).Inst.all'Address;
          begin
             case Get_Kind (Proc) is
                when Iir_Kind_Sensitized_Process_Statement =>
                   if Get_Postponed_Flag (Proc) then
                      Grt.Processes.Ghdl_Postponed_Sensitized_Process_Register
-                       (P.This, P.Subprg, null, System.Null_Address);
+                       (S.This, S.Subprg, null, Proc_Addr);
                   else
                      Grt.Processes.Ghdl_Sensitized_Process_Register
-                       (P.This, P.Subprg, null, System.Null_Address);
+                       (S.This, S.Subprg, null, Proc_Addr);
                   end if;
                   Simul.Vhdl_Simul.Register_Sensitivity (I);
                   Create_Process_Drivers (I);
                when Iir_Kind_Process_Statement =>
                   if Get_Postponed_Flag (Proc) then
                      Grt.Processes.Ghdl_Postponed_Process_Register
-                       (P.This, P.Subprg, null, System.Null_Address);
+                       (S.This, S.Subprg, null, Proc_Addr);
                   else
                      Grt.Processes.Ghdl_Process_Register
-                       (P.This, P.Subprg, null, System.Null_Address);
+                       (S.This, S.Subprg, null, Proc_Addr);
                   end if;
                   Create_Process_Drivers (I);
                when Iir_Kind_Psl_Assert_Directive
@@ -1994,7 +2068,7 @@ package body Simul.Vhdl_Compile is
                  | Iir_Kind_Psl_Cover_Directive
                  | Iir_Kind_Psl_Endpoint_Declaration =>
                   Grt.Processes.Ghdl_Sensitized_Process_Register
-                    (P.This, P.Subprg, null, System.Null_Address);
+                    (S.This, S.Subprg, null, Proc_Addr);
                   --  TODO: also async sensitivity ?
                   Simul.Vhdl_Simul.Register_Sensitivity (I);
                   --  Finalizer.
@@ -2003,14 +2077,14 @@ package body Simul.Vhdl_Compile is
                   begin
                      if Info.Psl_Proc_Final_Subprg /= O_Dnode_Null then
                         Grt.Processes.Ghdl_Finalize_Register
-                          (P.This,
+                          (S.This,
                            To_Proc_Acc
                              (Get_Address (Info.Psl_Proc_Final_Subprg)));
                      end if;
                   end;
                when Iir_Kind_Association_Element_By_Expression =>
                   Grt.Processes.Ghdl_Sensitized_Process_Register
-                    (P.This, P.Subprg, null, System.Null_Address);
+                    (S.This, S.Subprg, null, Proc_Addr);
                   Simul.Vhdl_Simul.Register_Sensitivity (I);
                   --  TODO: support direct drivers for inertial assocs
                   Simul.Vhdl_Simul.Create_Process_Drivers (I);
@@ -2027,18 +2101,26 @@ package body Simul.Vhdl_Compile is
    procedure Def (Decl : O_Dnode; Addr : System.Address)
      renames Ortho_Jit.Set_Address;
 
-   procedure Foreign_Hook (Decl : Iir;
-                           Info : Vhdl.Back_End.Foreign_Info_Type;
-                           Ortho : O_Dnode)
+   procedure Disp_Process_Name (Stream : Grt.Stdio.FILEs;
+                                Proc : Grt.Signals.Process_Acc)
    is
       use System;
-      Res : Address;
+      use Grt.Processes;
+      use Grt.Rtis_Addr;
+      use Grt.Rtis;
+
+      function To_Synth_Instance_Acc is new Ada.Unchecked_Conversion
+        (Address, Synth_Instance_Acc);
+
+      Proc_Rti : Rti_Context;
+      Sproc : Synth_Instance_Acc;
    begin
-      Res := Trans_Foreign.Get_Foreign_Address (Decl, Info);
-      if Res /= Null_Address then
-         Def (Ortho, Res);
-      end if;
-   end Foreign_Hook;
+      Proc_Rti := Get_Rti_Context (Proc);
+      pragma Assert (Proc_Rti.Block = null);
+
+      Sproc := To_Synth_Instance_Acc (Proc_Rti.Base);
+      Elab.Vhdl_Debug.Disp_Instance_Path (Stream, Sproc);
+   end Disp_Process_Name;
 
    procedure Simulation
    is
@@ -2047,8 +2129,8 @@ package body Simul.Vhdl_Compile is
    begin
       Ortho_Jit.Init;
 
-      Translation.Foreign_Hook := Foreign_Hook'Access;
-      Trans_Foreign.Init;
+      Translation.Foreign_Hook := Trans_Foreign_Jit.Foreign_Hook'Access;
+      Trans_Foreign_Jit.Init;
 
       Translation.Initialize;
 
@@ -2172,6 +2254,8 @@ package body Simul.Vhdl_Compile is
          end;
       end if;
 
+      Grt.Backtraces.Jit.Symbolizer_Proc := Ortho_Jit.Symbolize'Access;
+
       --  Note: we don't want to finish ortho_jit as we still need to have
       --  access to the symbols.
 
@@ -2182,6 +2266,8 @@ package body Simul.Vhdl_Compile is
       --  Set hooks for debugger.
       Synth.Vhdl_Expr.Hook_Signal_Expr :=
         Simul.Vhdl_Simul.Hook_Signal_Expr'Access;
+
+      Grt.Processes.Disp_Process_Name_Hook := Disp_Process_Name'Access;
 
       Simul.Main.Simulation;
    end Simulation;

@@ -986,7 +986,8 @@ package body Vhdl.Sem_Expr is
                      Staticness := None;
                   end if;
             end case;
-         when Iir_Kind_Interface_Function_Declaration =>
+         when Iir_Kind_Interface_Function_Declaration
+           | Iir_Kind_Function_Instantiation_Declaration =>
             Staticness := None;
          when others =>
             Error_Kind ("set_function_call_staticness", Imp);
@@ -1172,7 +1173,8 @@ package body Vhdl.Sem_Expr is
 
       --  If subprogram called is pure, then there is no signals reference.
       case Get_Kind (Callee) is
-         when Iir_Kind_Function_Declaration =>
+         when Iir_Kind_Function_Declaration
+           | Iir_Kind_Function_Instantiation_Declaration =>
             if Get_Pure_Flag (Callee) then
                return;
             end if;
@@ -1181,7 +1183,8 @@ package body Vhdl.Sem_Expr is
                return;
             end if;
          when Iir_Kind_Interface_Function_Declaration
-           | Iir_Kind_Interface_Procedure_Declaration =>
+           | Iir_Kind_Interface_Procedure_Declaration
+           | Iir_Kind_Procedure_Instantiation_Declaration =>
             --  FIXME: how to compute sensitivity ?  Recurse ?
             return;
          when others =>
@@ -1218,10 +1221,12 @@ package body Vhdl.Sem_Expr is
                when Iir_Kind_Process_Statement =>
                   return;
                when Iir_Kind_Function_Declaration
-                 | Iir_Kind_Procedure_Declaration =>
+                 | Iir_Kind_Procedure_Declaration
+                 | Iir_Kind_Procedure_Instantiation_Declaration
+                 | Iir_Kind_Function_Instantiation_Declaration =>
                   Set_All_Sensitized_State (Subprg, Invalid_Signal);
                when others =>
-                  Error_Kind ("sem_call_all_sensitized_check", Subprg);
+                  Error_Kind ("sem_call_all_sensitized_check2", Subprg);
             end case;
          when Read_Signal =>
             --  Put this subprogram in callees list as it may read a signal.
@@ -1327,14 +1332,16 @@ package body Vhdl.Sem_Expr is
 
          case Get_Kind (A_Func) is
             when Iir_Kinds_Functions_And_Literals
-              | Iir_Kind_Interface_Function_Declaration =>
+              | Iir_Kind_Interface_Function_Declaration
+              | Iir_Kind_Function_Instantiation_Declaration =>
                if not Is_Func_Call then
                   --  The identifier of a function call must be a function or
                   --  an enumeration literal.
                   goto Continue;
                end if;
             when Iir_Kind_Procedure_Declaration
-              | Iir_Kind_Interface_Procedure_Declaration =>
+              | Iir_Kind_Interface_Procedure_Declaration
+              | Iir_Kind_Procedure_Instantiation_Declaration =>
                if Is_Func_Call then
                   --  The identifier of a procedure call must be a procedure.
                   goto Continue;
@@ -2288,7 +2295,7 @@ package body Vhdl.Sem_Expr is
          --  The type of the context is constrained.
          Index_Type := Get_Index_Type (Lit_Type, 0);
          if Get_Type_Staticness (Index_Type) = Locally then
-            if Eval_Discrete_Type_Length (Index_Type) = Int64 (Len) then
+            if Eval_Discrete_Type_Length (Index_Type) = Uns64 (Len) then
                return;
             else
                Error_Msg_Sem (+Lit, "string length does not match that of %n",
@@ -2422,10 +2429,10 @@ package body Vhdl.Sem_Expr is
       --  Type of the element of SEL.
       Sel_El_Type : Iir;
       --  Number of literals in the element type.
-      Sel_El_Length : Int64;
+      Sel_El_Length : Uns64;
 
       --  Length of SEL (number of characters in SEL).
-      Sel_Length : Int64;
+      Sel_Length : Uns64;
 
       --  True if length of a choice mismatches
       Has_Length_Error : Boolean := False;
@@ -2437,7 +2444,7 @@ package body Vhdl.Sem_Expr is
       procedure Sem_Simple_Choice (Choice : Iir)
       is
          Expr : Iir;
-         Choice_Len : Int64;
+         Choice_Len : Uns64;
       begin
          --  LRM93 8.8
          --  In such case, each choice appearing in any of the case statement
@@ -2587,7 +2594,7 @@ package body Vhdl.Sem_Expr is
       --  easily overflow.
       if Info.Others_Choice = Null_Iir then
          declare
-            Nbr : Int64 := Int64 (Info.Nbr_Choices);
+            Nbr : Uns64 := Uns64 (Info.Nbr_Choices);
          begin
             for I in 1 .. Sel_Length loop
                Nbr := Nbr / Sel_El_Length;
@@ -2917,7 +2924,7 @@ package body Vhdl.Sem_Expr is
                                 Is_Case_Stmt : Boolean)
    is
       --  Number of positionnal choice.
-      Nbr_Pos : Int64;
+      Nbr_Pos : Uns64;
 
       --  Number of named choices.
       Nbr_Named : Natural;
@@ -2931,7 +2938,7 @@ package body Vhdl.Sem_Expr is
 
       Has_Error : Boolean;
 
-      Pos_Max : Int64;
+      Pos_Max : Uns64;
       El : Iir;
       Prev_El : Iir;
 
@@ -3663,8 +3670,10 @@ package body Vhdl.Sem_Expr is
                  and then not Eval_Is_In_Bound (Expr, Element_Type)
                then
                   Info.Has_Bound_Error := True;
-                  Warning_Msg_Sem (Warnid_Runtime_Error, +Expr,
-                                   "element is out of the bounds");
+                  if Get_Kind (Expr) /= Iir_Kind_Overflow_Literal then
+                     Warning_Msg_Sem (Warnid_Runtime_Error, +Expr,
+                                      "element is out of the bounds");
+                  end if;
                end if;
 
                if Is_Array
@@ -3829,17 +3838,17 @@ package body Vhdl.Sem_Expr is
    end Sem_Array_Aggregate_Extract_Element_Subtype;
 
    --  Return FALSE in case of known mismatch.
-   function Check_Matching_Subtype (Expr : Iir; St : Iir) return Boolean
-   is
-      Et : constant Iir := Get_Type (Expr);
+   function Check_Matching_Subtype
+     (Et : Iir; St : Iir; Expr : Iir) return Boolean is
    begin
+      --  Fast check.
+      if Et = St then
+         return True;
+      end if;
+
       case Get_Kind (St) is
          when Iir_Kind_Array_Subtype_Definition =>
             if Get_Kind (Et) /= Iir_Kind_Array_Subtype_Definition then
-               return True;
-            end if;
-            --  Fast check.
-            if Et = St then
                return True;
             end if;
 
@@ -3870,7 +3879,9 @@ package body Vhdl.Sem_Expr is
                end;
             end if;
 
-            --  TODO: element array element ?
+            return Check_Matching_Subtype
+              (Get_Element_Subtype (Et), Get_Element_Subtype (St), Expr);
+
          when Iir_Kind_Record_Subtype_Definition =>
             --  TODO
             null;
@@ -3908,7 +3919,9 @@ package body Vhdl.Sem_Expr is
             else
                if Get_Element_Type_Flag (Assoc) then
                   --  TODO: only report the first error ?
-                  if not Check_Matching_Subtype (Sub_Aggr, El_Subtype) then
+                  if not Check_Matching_Subtype
+                    (Get_Type (Sub_Aggr), El_Subtype, Sub_Aggr)
+                  then
                      Ok := False;
                   end if;
                end if;
@@ -4180,7 +4193,7 @@ package body Vhdl.Sem_Expr is
                --  from associated expressions.
                if Vhdl_Std >= Vhdl_08
                  and then Get_Index_Constraint_Flag (A_Type)
-                 and then Eval_Discrete_Type_Length (Index_Type) /= Int64 (Len)
+                 and then Eval_Discrete_Type_Length (Index_Type) /= Uns64 (Len)
                then
                   Error_Msg_Sem (+Aggr, "incorrect number of elements");
                end if;
@@ -4311,7 +4324,7 @@ package body Vhdl.Sem_Expr is
                Error_Msg_Sem (+Aggr, "subaggregate bounds mismatch");
             else
                if Eval_Discrete_Type_Length (Info.Index_Subtype)
-                 /= Int64 (Len)
+                 /= Uns64 (Len)
                then
                   Error_Msg_Sem (+Aggr, "subaggregate length mismatch");
                end if;
@@ -4381,9 +4394,6 @@ package body Vhdl.Sem_Expr is
            (Aggr, 1, Nbr_Dim, El_Subtype);
          if El_Subtype = Null_Iir then
             El_Subtype := El_Type;
-         else
-            --  TODO: check constraints of elements (if El_Subtype is static)
-            null;
          end if;
       else
          El_Subtype := El_Type;
@@ -4441,7 +4451,7 @@ package body Vhdl.Sem_Expr is
             --  Compute ratio of elements vs size of the aggregate to determine
             --  if the aggregate can be expanded.
             declare
-               Size : Int64;
+               Size : Uns64;
             begin
                Size := 1;
                for I in Infos'Range loop
@@ -5261,49 +5271,31 @@ package body Vhdl.Sem_Expr is
       end if;
    end Check_Constant_Restriction;
 
-   function Sem_Dyadic_Operator (Expr : Iir; Atype : Iir) return Iir
+   procedure Sem_Dyadic_Operator_Array
+     (Arr : in out Iir_Array; Atype : Iir; Res : out Iir)
    is
-      Arr : Iir_Array (1 .. 128);
-      Len : Natural;
+      pragma Assert (Arr'First = 1);
+      Expr : constant Iir := Arr (1);
+      Len : constant Positive := Arr'Last;
    begin
-      --  Try to linearize the tree in order to reduce recursion depth
-      --  and also improve speed of evaluation.
-      --  This is particularly useful for repeated concatenations.
-      declare
-         Left : Iir;
-      begin
-         Len := 0;
-         Left := Expr;
-         while Len < Arr'Last
-           and then Get_Kind (Left) in Iir_Kinds_Dyadic_Operator
-         loop
-            Len := Len + 1;
-            Arr (Len) := Left;
-            Left := Get_Left (Left);
-         end loop;
-      end;
-
-      --  No possibility to linearize...
-      if Len = 1 then
-         return Sem_Operator (Expr, Atype);
-      end if;
+      Res := Null_Iir;
 
       if Get_Type (Expr) = Null_Iir then
          --  First pass.
          Arr (Len) := Sem_Operator_Pass1 (Arr (Len), Null_Iir);
          if Arr (Len) = Null_Iir then
-            return Null_Iir;
+            return;
          end if;
          for I in reverse 2 .. Len - 1 loop
             Set_Left (Arr (I), Arr (I + 1));
             Arr (I) := Sem_Operator_Pass1 (Arr (I), Null_Iir);
             if Arr (I) = Null_Iir then
-               return Null_Iir;
+               return;
             end if;
          end loop;
+         --  Use Atype for the last operator.
          Set_Left (Arr (1), Arr (2));
-         Arr (1) := Sem_Operator_Pass1 (Arr (1), Atype);
-         return Arr (1);
+         Res := Sem_Operator_Pass1 (Arr (1), Atype);
       else
          --  Second pass.
          declare
@@ -5322,11 +5314,10 @@ package body Vhdl.Sem_Expr is
                   pragma Assert (I > 1);
                   exit;
                end if;
-               Decl := Sem_Operator_Pass2_Interpretation
-                 (Arr (I), Op_Type);
+               Decl := Sem_Operator_Pass2_Interpretation (Arr (I), Op_Type);
                if Decl = Null_Iir then
                   --  Stop in case of error.
-                  return Null_Iir;
+                  return;
                end if;
                Set_Type (Arr (I), Get_Return_Type (Decl));
                Set_Implementation (Arr (I), Decl);
@@ -5388,8 +5379,51 @@ package body Vhdl.Sem_Expr is
                   end loop;
                end if;
             end if;
-            return Arr (1);
+            Res := Arr (1);
          end;
+      end if;
+   end Sem_Dyadic_Operator_Array;
+
+   function Sem_Dyadic_Operator (Expr : Iir; Atype : Iir) return Iir
+   is
+      Arr : aliased Iir_Array (1 .. 128);
+      Arr_P, N_Arr_P : Iir_Array_Acc;
+      Len : Natural;
+      Res : Iir;
+   begin
+      --  Try to linearize the tree in order to reduce recursion depth
+      --  and also improve speed of evaluation.
+      --  This is particularly useful for repeated concatenations.
+      declare
+         Left : Iir;
+      begin
+         Len := 0;
+         Left := Expr;
+         Arr_P := Arr'Unrestricted_Access;
+         while Get_Kind (Left) in Iir_Kinds_Dyadic_Operator loop
+            Len := Len + 1;
+            if Len > Arr_P'Last then
+               N_Arr_P := new Iir_Array (1 .. Arr_P'Last * 2);
+               N_Arr_P (Arr_P'Range) := Arr_P.all;
+               if Arr_P'Length /= Arr'Length then
+                  Free (Arr_P);
+               end if;
+               Arr_P := N_Arr_P;
+            end if;
+            Arr_P (Len) := Left;
+            Left := Get_Left (Left);
+         end loop;
+      end;
+
+      --  No possibility to linearize...
+      if Len = 1 then
+         return Sem_Operator (Expr, Atype);
+      else
+         Sem_Dyadic_Operator_Array (Arr_P (1 .. Len), Atype, Res);
+         if Arr_P'Length /= Arr'Length then
+            Free (Arr_P);
+         end if;
+         return Res;
       end if;
    end Sem_Dyadic_Operator;
 

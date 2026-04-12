@@ -35,11 +35,11 @@ package Synth.Vhdl_Context is
    --  Values are stored into Synth_Instance, which is parallel to simulation
    --  Block_Instance_Type.
 
-   --  Create the root instance.
-   procedure Make_Base_Instance (Base : Base_Instance_Acc);
+   --  Use BASE for the root instance.
+   procedure Set_Base_Instance (Base : Base_Instance_Acc);
 
-   --  Free the first instance.
-   procedure Free_Base_Instance;
+   --  Free the extra table
+   procedure Free_Extra;
 
    --  Create a synth instance.
    procedure Set_Extra (Inst : Synth_Instance_Acc;
@@ -57,12 +57,6 @@ package Synth.Vhdl_Context is
 
    procedure Free_Instance (Synth_Inst : in out Synth_Instance_Acc);
 
-   --  Only useful for subprograms: set the base (which can be different from
-   --  the parent).  Ideally it should be part of Make_Instance, but in most
-   --  cases they are the same (except sometimes for subprograms).
-   procedure Set_Instance_Base (Inst : Synth_Instance_Acc;
-                                Base : Synth_Instance_Acc);
-
    function Get_Sname (Inst : Synth_Instance_Acc) return Sname;
    pragma Inline (Get_Sname);
 
@@ -76,12 +70,6 @@ package Synth.Vhdl_Context is
 
    --  Start the definition of module M (using INST).
    procedure Set_Instance_Module (Inst : Synth_Instance_Acc; M : Module);
-
-   --  Build the value for object OBJ.
-   --  KIND must be Wire_Variable or Wire_Signal.
-   procedure Create_Wire_Object (Syn_Inst : Synth_Instance_Acc;
-                                 Kind : Wire_Kind;
-                                 Obj : Node);
 
    --  Get a net from a scalar/vector value.  This will automatically create
    --  a net for literals.
@@ -105,7 +93,7 @@ package Synth.Vhdl_Context is
 
    --  Create a Value_Net.
    function Create_Value_Net (N : Net; Pool : Areapool_Acc) return Value_Acc;
-   function Create_Value_Net (N : Net;Ntype : Type_Acc) return Valtyp;
+   function Create_Value_Net (N : Net; Ntype : Type_Acc) return Valtyp;
    function Create_Value_Net (N : Net;
                               Ntype : Type_Acc;
                               Pool : Areapool_Acc) return Valtyp;
