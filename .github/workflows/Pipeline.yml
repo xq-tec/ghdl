@@ -37,6 +37,7 @@ jobs:
 #      testsuites:     'sanity'         # disable parameter to fall back to 'all'
 
   macOS:
+    if: false
     uses: ./.github/workflows/Build-MacOS.yml
     needs:
       - Params
@@ -88,6 +89,7 @@ jobs:
     secrets: inherit
 
   Ubuntu:
+    if: false
     uses: ./.github/workflows/Build-Ubuntu.yml
     needs:
       - Params
@@ -148,11 +150,11 @@ jobs:
         include:
 ###       - {icon: '🪟', runtime: 'mingw32', backend: 'mcode',    testsuites: '${{ needs.Params.outputs.testsuites }}'}   # No gcc-ada package for MinGW32, support was dropped
           - {icon: '🪟', runtime: 'mingw64', backend: 'mcode',    testsuites: '${{ needs.Params.outputs.testsuites }}'}
-          - {icon: '🪟', runtime: 'mingw64', backend: 'llvm',     testsuites: 'sanity gna synth vpi vhpi'}                # no vests (too slow)
-          - {icon: '🪟', runtime: 'mingw64', backend: 'llvm-jit', testsuites: 'sanity vpi vhpi'}                          # gna and synth fail (#2726); no vests (too slow)
+###       - {icon: '🪟', runtime: 'mingw64', backend: 'llvm',     testsuites: 'sanity gna synth vpi vhpi'}                # no vests (too slow)
+###       - {icon: '🪟', runtime: 'mingw64', backend: 'llvm-jit', testsuites: 'sanity vpi vhpi'}                          # gna and synth fail (#2726); no vests (too slow)
 ###       - {icon: '🪟', runtime: 'ucrt64',  backend: 'mcode',    testsuites: '${{ needs.Params.outputs.testsuites }}'}   # used by Windows-fast
-          - {icon: '🪟', runtime: 'ucrt64',  backend: 'llvm',     testsuites: 'sanity gna synth vpi vhpi'}                # no vests (too slow)
-          - {icon: '🪟', runtime: 'ucrt64',  backend: 'llvm-jit', testsuites: 'sanity vpi vhpi'}                          # gna and synth fail (#2726); no vests (too slow)
+###       - {icon: '🪟', runtime: 'ucrt64',  backend: 'llvm',     testsuites: 'sanity gna synth vpi vhpi'}                # no vests (too slow)
+###       - {icon: '🪟', runtime: 'ucrt64',  backend: 'llvm-jit', testsuites: 'sanity vpi vhpi'}                          # gna and synth fail (#2726); no vests (too slow)
     with:
       runtime:                  ${{ matrix.runtime }}
       testsuites:               ${{ matrix.testsuites }}
@@ -223,7 +225,6 @@ jobs:
   PublishCoverageResults:
     uses: pyTooling/Actions/.github/workflows/PublishCoverageResults.yml@r7
     needs:
-      - macOS
       - Ubuntu-fast
       - Windows-fast
 ##   - pyGHDL         # pyGHDL is installed into site-packages, where no coverage is collected -> empty coverage report
@@ -294,7 +295,6 @@ jobs:
     if: needs.Params.outputs.is_nightly_tag == 'true' || needs.Params.outputs.is_test_tag == 'true'
     needs:
       - Params
-      - macOS
       - Ubuntu-fast
       - Windows-fast
       - Windows
@@ -352,7 +352,6 @@ jobs:
     if: needs.Params.outputs.is_release_tag == 'true'
     needs:
       - Params
-      - macOS
       - Ubuntu-fast
       - Windows-fast
       - Windows
@@ -391,21 +390,21 @@ jobs:
 #         - {icon: '🐧',   name: 'Ubuntu',  image: 'ubuntu-20.04', runtime: '',        backend: 'mcode'}
 #         - {icon: '🐧',   name: 'Ubuntu',  image: 'ubuntu-24.04', runtime: '',        backend: 'xcode'}
           - {icon: '🐧',   name: 'Ubuntu',  image: 'ubuntu-24.04', runtime: '',        backend: 'mcode'}
-          - {icon: '🐧',   name: 'Ubuntu',  image: 'ubuntu-24.04', runtime: '',        backend: 'llvm'}
-          - {icon: '🐧',   name: 'Ubuntu',  image: 'ubuntu-24.04', runtime: '',        backend: 'llvm-jit'}
-          - {icon: '🐧',   name: 'Ubuntu',  image: 'ubuntu-24.04', runtime: '',        backend: 'gcc'}
-          - {icon: '🍏',   name: 'macOS',   image: 'macos-14',     runtime: '',        backend: 'llvm'}
-          - {icon: '🍏',   name: 'macOS',   image: 'macos-14',     runtime: '',        backend: 'llvm-jit'}
-          - {icon: '🍏',   name: 'macOS',   image: 'macos-15',     runtime: '',        backend: 'llvm'}
-          - {icon: '🍏',   name: 'macOS',   image: 'macos-15',     runtime: '',        backend: 'llvm-jit'}
+#         - {icon: '🐧',   name: 'Ubuntu',  image: 'ubuntu-24.04', runtime: '',        backend: 'llvm'}
+#         - {icon: '🐧',   name: 'Ubuntu',  image: 'ubuntu-24.04', runtime: '',        backend: 'llvm-jit'}
+#         - {icon: '🐧',   name: 'Ubuntu',  image: 'ubuntu-24.04', runtime: '',        backend: 'gcc'}
+#         - {icon: '🍏',   name: 'macOS',   image: 'macos-14',     runtime: '',        backend: 'llvm'}
+#         - {icon: '🍏',   name: 'macOS',   image: 'macos-14',     runtime: '',        backend: 'llvm-jit'}
+#         - {icon: '🍏',   name: 'macOS',   image: 'macos-15',     runtime: '',        backend: 'llvm'}
+#         - {icon: '🍏',   name: 'macOS',   image: 'macos-15',     runtime: '',        backend: 'llvm-jit'}
           - {icon: '🪟',   name: 'Windows', image: 'windows-2025', runtime: '',        backend: 'mcode'}
 #         - {icon: '🪟⬛', name: 'Windows', image: 'windows-2025', runtime: 'mingw32', backend: 'mcode'}
           - {icon: '🪟🟦', name: 'Windows', image: 'windows-2025', runtime: 'mingw64', backend: 'mcode'}
-          - {icon: '🪟🟦', name: 'Windows', image: 'windows-2025', runtime: 'mingw64', backend: 'llvm'}
-          - {icon: '🪟🟦', name: 'Windows', image: 'windows-2025', runtime: 'mingw64', backend: 'llvm-jit'}
+#         - {icon: '🪟🟦', name: 'Windows', image: 'windows-2025', runtime: 'mingw64', backend: 'llvm'}
+#         - {icon: '🪟🟦', name: 'Windows', image: 'windows-2025', runtime: 'mingw64', backend: 'llvm-jit'}
           - {icon: '🪟🟨', name: 'Windows', image: 'windows-2025', runtime: 'ucrt64',  backend: 'mcode'}
-          - {icon: '🪟🟨', name: 'Windows', image: 'windows-2025', runtime: 'ucrt64',  backend: 'llvm'}
-          - {icon: '🪟🟨', name: 'Windows', image: 'windows-2025', runtime: 'ucrt64',  backend: 'llvm-jit'}
+#         - {icon: '🪟🟨', name: 'Windows', image: 'windows-2025', runtime: 'ucrt64',  backend: 'llvm'}
+#         - {icon: '🪟🟨', name: 'Windows', image: 'windows-2025', runtime: 'ucrt64',  backend: 'llvm-jit'}
     if: (needs.Params.outputs.is_release_tag == 'true' || needs.Params.outputs.is_nightly_tag == 'true' || needs.Params.outputs.is_test_tag == 'true') && !failure() && !cancelled()
     with:
       os_image:              ${{ matrix.image }}

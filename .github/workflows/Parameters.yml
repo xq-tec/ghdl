@@ -550,7 +550,7 @@ jobs:
           ghdl_version=${ghdl_version}
           EOF
 
-          if [[ "${ghdl_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if [[ "${ghdl_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+-risim$ ]]; then
             pyghdl_version="${ghdl_version}"
             pacghdl_version="${ghdl_version}-${pacmanPackageRelease}"
             setup_version="${ghdl_version}"
