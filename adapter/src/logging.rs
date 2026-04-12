@@ -1,3 +1,5 @@
+use std::io;
+
 use opentelemetry::global;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry::KeyValue;
@@ -61,7 +63,11 @@ pub(crate) fn init_logging() {
     let otel_log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
 
     tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer().with_target(true))
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_target(true)
+                .with_writer(io::stderr),
+        )
         .with(tracing_subscriber::EnvFilter::new("info"))
         .with(otel_trace_layer)
         .with(otel_log_layer)
