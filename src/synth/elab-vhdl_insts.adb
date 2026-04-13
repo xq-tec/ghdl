@@ -697,6 +697,7 @@ package body Elab.Vhdl_Insts is
                Els := Create_Rec_El_Array (Parent_Rec.Len);
                --  For each element:
                for I in 1 .. Parent_Rec.Len loop
+                  Els.E (I).Decl := Parent_Rec.E (I).Decl;
                   Sub_Cnt := 0;
                   for J in Assocs'Range loop
                      Formal := Assocs (J).Formal;
