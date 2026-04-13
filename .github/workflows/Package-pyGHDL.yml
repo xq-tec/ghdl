@@ -23,6 +23,11 @@ on:
         description: 'Python version to use for packaging.'
         required: true
         type: string
+      backend:
+        description: 'Name of the GHDL backend.'
+        required: false
+        default: 'mcode'
+        type: string
       libghdl_artifact:
         description: 'Name of the libghdl artifact.'
         required: true
@@ -81,7 +86,7 @@ jobs:
       - name: 📥 Download artifacts '${{ inputs.libghdl_artifact }}-${{ inputs.backend }}' from 'Build' job
         uses: pyTooling/download-artifact@v7
         with:
-          name: ${{ inputs.libghdl_artifact }}-mcode
+          name: ${{ inputs.libghdl_artifact }}-${{ inputs.backend }}
           path: install
 
       - name: Copy libghdl files (Ubuntu, MSYS2)

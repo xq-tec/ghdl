@@ -57,6 +57,7 @@ jobs:
       macos_image:              ${{ matrix.macos_image }}
       gnat_arch:                ${{ matrix.gnat_arch }}
       gnat_version:             ${{ matrix.gnat_version }}
+      backend:                  ${{ matrix.backend }}
       testsuites:               ${{ matrix.testsuites }}
       macos_artifact:           ${{ needs.Params.outputs.ghdl_basename }}-${{ matrix.macos_image }}-${{ matrix.gnat_arch }}
       pyunit_testsuites:        'testsuite/pyunit/libghdl testsuite/pyunit/lsp'
@@ -130,6 +131,7 @@ jobs:
           - {icon: '🪟', runtime: 'ucrt64',  backend: 'mcode',    testsuites: '${{ needs.Params.outputs.testsuites }}'}
     with:
       runtime:                  ${{ matrix.runtime }}
+      backend:                  ${{ matrix.backend }}
       testsuites:               ${{ matrix.testsuites }}
       msys2_artifact:           ${{ needs.Params.outputs.ghdl_basename }}-MSYS2
       pacman_artifact:          ${{ needs.Params.outputs.ghdl_basename }}-Pacman
@@ -157,6 +159,7 @@ jobs:
 ###       - {icon: '🪟', runtime: 'ucrt64',  backend: 'llvm-jit', testsuites: 'sanity vpi vhpi'}                          # gna and synth fail (#2726); no vests (too slow)
     with:
       runtime:                  ${{ matrix.runtime }}
+      backend:                  ${{ matrix.backend }}
       testsuites:               ${{ matrix.testsuites }}
       msys2_artifact:           ${{ needs.Params.outputs.ghdl_basename }}-MSYS2
       pacman_artifact:          ${{ needs.Params.outputs.ghdl_basename }}-Pacman
@@ -296,6 +299,7 @@ jobs:
     needs:
       - Params
       - Ubuntu-fast
+      - Ubuntu
       - Windows-fast
       - Windows
       - Python
@@ -353,6 +357,7 @@ jobs:
     needs:
       - Params
       - Ubuntu-fast
+      - Ubuntu
       - Windows-fast
       - Windows
       - Python
