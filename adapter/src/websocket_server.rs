@@ -12,7 +12,7 @@ use crossbeam_channel::Sender;
 use futures_util::SinkExt;
 use futures_util::StreamExt;
 use futures_util::stream::SplitStream;
-use hdl_simulation_protocol::SimulationInstanceId;
+use hdl_simulation_protocol::SimulationId;
 use hdl_simulation_protocol::SimulationStatus;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchy;
 use hdl_simulation_protocol::design_hierarchy::SignalElementId;
@@ -47,7 +47,7 @@ extern "C" fn remove_server_marker_atexit() {
 }
 
 /// Creates an empty `{port}-{simulation_id:014x}.server` file and registers a one-time `atexit` handler to remove it.
-fn create_server_marker_and_register_cleanup(port: u16, simulation_id: SimulationInstanceId) -> io::Result<()> {
+fn create_server_marker_and_register_cleanup(port: u16, simulation_id: SimulationId) -> io::Result<()> {
     let dir = server_marker::markers_directory();
     std::fs::create_dir_all(&dir)?;
     let path = server_marker::marker_path(port, simulation_id);
@@ -179,7 +179,7 @@ pub(crate) async fn run_websocket_server(
         },
     };
 
-    let simulation_id = SimulationInstanceId::new_random();
+    let simulation_id = SimulationId::new_random();
     if let Err(e) = create_server_marker_and_register_cleanup(addr.port(), simulation_id) {
         error!(%addr, "failed to create server marker file: {e}");
         return;

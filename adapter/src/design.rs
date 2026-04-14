@@ -6,7 +6,7 @@ use std::num::NonZeroU32;
 use compact_str::CompactString;
 use compact_str::format_compact;
 use ghdl_ast as ast;
-use hdl_simulation_protocol::SimulationInstanceId;
+use hdl_simulation_protocol::SimulationId;
 use hdl_simulation_protocol::design_hierarchy as hierarchy;
 use hdl_simulation_protocol::design_hierarchy::SignalInstanceId;
 use serde::Deserialize;
@@ -233,7 +233,7 @@ extern "C" fn adapter_register_design(
 
     let name = unsafe { get_string_opt(name_str, name_len) };
     let hierarchy = hierarchy::DesignHierarchy {
-        simulation_id: SimulationInstanceId::new_random(), // FIXME was a zero before
+        simulation_id: SimulationId::ZERO,
         name,
         root_modules,
     };
