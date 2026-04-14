@@ -193,6 +193,11 @@ package body Trans.Chap9 is
 
       if Is_Component_Instantiation (Inst) then
          Ports := Get_Named_Entity (Get_Instantiated_Unit (Inst));
+         if Get_Macro_Expand_Flag (Ports) then
+            --  Get the macro-expanded component.
+            Ports := Get_Instantiated_Header (Inst);
+            Chap4.Translate_Component_Declaration (Ports);
+         end if;
       else
          Ports := Get_Entity_From_Entity_Aspect (Get_Instantiated_Unit (Inst));
       end if;
@@ -551,7 +556,7 @@ package body Trans.Chap9 is
       Instance   : O_Dnode;
       Pass       : O_Dnode;
       Loc        : O_Dnode;
-      Msg_Var    : O_Dnode;
+      Msg_Var    : Mnode;
       Blk        : O_If_Block;
       Expr       : Iir;
       Assocs     : O_Assoc_List;
@@ -566,26 +571,23 @@ package body Trans.Chap9 is
 
       Start_Subprogram_Body (Proc);
       Push_Local_Factory;
+      Open_Temp;
       --  Push scope for architecture declarations.
       Set_Scope_Via_Param_Ptr (Base.Block_Scope, Instance);
 
       Loc := Chap4.Get_Location (Stmt);
-      New_Var_Decl (Msg_Var, Get_Identifier ("msg"), O_Storage_Local,
-                    Std_String_Ptr_Node);
       Expr := Get_Report_Expression (Stmt);
       if Expr = Null_Iir then
-         New_Assign_Stmt (New_Obj (Msg_Var),
-                          New_Lit (New_Null_Access (Std_String_Ptr_Node)));
+         Msg_Var := Mnode_Null;
       else
-         New_Assign_Stmt
-           (New_Obj (Msg_Var),
-            Chap7.Translate_Expression (Expr, String_Type_Definition));
+         Msg_Var := Chap7.Translate_Expression (Expr, String_Type_Definition);
+         Stabilize (Msg_Var);
       end if;
 
       Start_If_Stmt (Blk, New_Obj_Value (Pass));
 
       Start_Association (Assocs, Ghdl_Psl_Cover);
-      New_Association (Assocs, New_Obj_Value (Msg_Var));
+      Chap8.New_Association_String_Base_Len (Assocs, Msg_Var);
       New_Association (Assocs, New_Lit (Get_Ortho_Literal
                                           (Severity_Level_Note)));
       New_Association (Assocs, New_Address (New_Obj (Loc),
@@ -595,7 +597,7 @@ package body Trans.Chap9 is
       New_Else_Stmt (Blk);
 
       Start_Association (Assocs, Ghdl_Psl_Cover_Failed);
-      New_Association (Assocs, New_Obj_Value (Msg_Var));
+      Chap8.New_Association_String_Base_Len (Assocs, Msg_Var);
       New_Association (Assocs, New_Lit (Get_Ortho_Literal
                                           (Severity_Level_Warning)));
       New_Association (Assocs, New_Address (New_Obj (Loc),
@@ -605,6 +607,7 @@ package body Trans.Chap9 is
       Finish_If_Stmt (Blk);
 
       Clear_Scope (Base.Block_Scope);
+      Close_Temp;
       Pop_Local_Factory;
       Finish_Subprogram_Body;
    end Translate_Psl_Report;
@@ -1359,24 +1362,27 @@ package body Trans.Chap9 is
             when Iir_Kind_Component_Instantiation_Statement =>
                declare
                   Hdr : constant Iir := Get_Instantiated_Header (Stmt);
+                  Ent : Iir;
                begin
                   if Hdr /= Null_Iir
                     and then Get_Kind (Hdr) = Iir_Kind_Entity_Declaration
                     and then Get_Macro_Expand_Flag (Hdr)
                     and then Get_Parent (Hdr) /= Null_Iir
                   then
+                     Ent := Hdr;
                      Chap1.Translate_Entity_Subprograms (Hdr);
+                  else
+                     Ent := Get_Entity_From_Entity_Aspect
+                       (Get_Instantiated_Unit (Stmt));
+                  end if;
+
+                  Chap4.Translate_Association_Subprograms
+                    (Stmt, Block, Base_Block, Ent);
+                  if Flag_Elaboration then
+                     Translate_Component_Instantiation_Subprogram
+                       (Stmt, Base_Info);
                   end if;
                end;
-
-               Chap4.Translate_Association_Subprograms
-                 (Stmt, Block, Base_Block,
-                  Get_Entity_From_Entity_Aspect
-                    (Get_Instantiated_Unit (Stmt)));
-               if Flag_Elaboration then
-                  Translate_Component_Instantiation_Subprogram
-                    (Stmt, Base_Info);
-               end if;
             when Iir_Kind_Block_Statement =>
                declare
                   Guard : constant Iir := Get_Guard_Decl (Stmt);
@@ -2562,13 +2568,14 @@ package body Trans.Chap9 is
                end loop;
             end;
          when Iir_Kind_Case_Generate_Statement =>
-            --  FIXME: handle one-dimensional expressions.
             declare
                Expr : constant Iir := Get_Expression (Stmt);
                Expr_Type : constant Iir := Get_Type (Expr);
                Base_Type : constant Iir := Get_Base_Type (Expr_Type);
                Tinfo : constant Type_Info_Acc := Get_Info (Base_Type);
-               E : O_Dnode;
+               Is_String : constant Boolean :=
+                 Get_Kind (Base_Type) = Iir_Kind_Array_Type_Definition;
+               E : Mnode;
                Alt : Iir;
                Cur_Alt : Iir;
                Cond : O_Enode;
@@ -2576,13 +2583,21 @@ package body Trans.Chap9 is
                Var_Rng : O_Dnode;
                Rng : Mnode;
                C1, C2 : O_Enode;
+               Ch_Expr : Mnode;
                Blk       : O_If_Block;
+               Eq_Func : Iir;
             begin
                Open_Temp;
                Alt := Get_Case_Statement_Alternative_Chain (Stmt);
-               E := Create_Temp_Init
-                 (Tinfo.Ortho_Type (Mode_Value),
-                  Chap7.Translate_Expression (Expr, Base_Type));
+               E := Chap7.Translate_Expression (Expr, Base_Type);
+               E := Stabilize (E, True);
+
+               if Is_String then
+                  Eq_Func := Chap7.Find_Predefined_Function
+                    (Base_Type, Iir_Predefined_Array_Equality);
+               else
+                  Eq_Func := Null_Iir;
+               end if;
 
                loop
                   Open_Temp;
@@ -2596,12 +2611,17 @@ package body Trans.Chap9 is
                            pragma Assert (Get_Chain (Alt) = Null_Iir);
                            Sub_Cond := O_Enode_Null;
                         when Iir_Kind_Choice_By_Expression =>
-                           Sub_Cond := New_Compare_Op
-                             (ON_Eq,
-                              New_Obj_Value (E),
-                              Chap7.Translate_Expression
-                                (Get_Choice_Expression (Alt), Base_Type),
-                              Ghdl_Bool_Type);
+                           Ch_Expr := Chap7.Translate_Expression
+                             (Get_Choice_Expression (Alt), Base_Type);
+
+                           if Is_String then
+                              Sub_Cond := Chap8.Translate_Simple_String_Choice
+                                (E, Ch_Expr, Eq_Func);
+                           else
+                              Sub_Cond := New_Compare_Op
+                                (ON_Eq, M2E (E), M2E (Ch_Expr),
+                                Ghdl_Bool_Type);
+                           end if;
                         when Iir_Kind_Choice_By_Range =>
                            Var_Rng := Create_Temp (Tinfo.B.Range_Type);
                            Rng := Dv2M (Var_Rng, Tinfo, Mode_Value,
@@ -2620,12 +2640,12 @@ package body Trans.Chap9 is
                                 (ON_And,
                                  New_Compare_Op
                                    (ON_Ge,
-                                    New_Obj_Value (E),
+                                    M2E (E),
                                     M2E (Chap3.Range_To_Left (Rng)),
                                     Ghdl_Bool_Type),
                                  New_Compare_Op
                                    (ON_Le,
-                                    New_Obj_Value (E),
+                                    M2E (E),
                                     M2E (Chap3.Range_To_Right (Rng)),
                                     Ghdl_Bool_Type)));
                            C2 := New_Dyadic_Op
@@ -2639,12 +2659,12 @@ package body Trans.Chap9 is
                                 (ON_And,
                                  New_Compare_Op
                                    (ON_Le,
-                                    New_Obj_Value (E),
+                                    M2E (E),
                                     M2E (Chap3.Range_To_Left (Rng)),
                                     Ghdl_Bool_Type),
                                  New_Compare_Op
                                    (ON_Ge,
-                                    New_Obj_Value (E),
+                                    M2E (E),
                                     M2E (Chap3.Range_To_Right (Rng)),
                                     Ghdl_Bool_Type)));
                            Sub_Cond := New_Dyadic_Op (ON_Or, C1, C2);

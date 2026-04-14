@@ -27,13 +27,19 @@ with Synth.Context; use Synth.Context;
 with Synth.Flags; use Synth.Flags;
 
 package Synth.Vhdl_Insts is
-   --  Create the declaration of the top entity.
-   procedure Synth_Top_Entity (Base : Base_Instance_Acc;
-                               Design_Unit : Node;
-                               Encoding : Name_Encoding;
-                               Syn_Inst : Synth_Instance_Acc);
+   --  Initialization: set base module.
+   --  Must be called before synth_top_entity.
+   procedure Set_Base_Instance (Base : Base_Instance_Acc);
+   procedure Free_Base_Instance;
 
-   --  Synthesize the top entity and all the sub-modules.
+   --  Create the declaration of the top entity.
+   function Synth_Top_Entity (Design_Unit : Node;
+                              Encoding : Name_Encoding;
+                              Syn_Inst : Synth_Instance_Acc)
+                             return Synth_Instance_Acc;
+
+   --  Synthesize the top entity and all the sub-modules (well, only the new
+   --  ones added since the last call).
    procedure Synth_All_Instances;
 
    procedure Synth_Design_Instantiation_Statement

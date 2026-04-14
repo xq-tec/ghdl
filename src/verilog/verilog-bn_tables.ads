@@ -25,4 +25,7 @@ package Verilog.Bn_Tables is
       Table_Low_Bound => No_Bn_Index + 1);
 
    Bn_Table : Bignum_Table.Instance;
+
+   --  For foreign languages
+   function Get_Logic_32 (Bn : Bn_Index) return Logic_32;
 end Verilog.Bn_Tables;

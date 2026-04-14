@@ -11,44 +11,44 @@ try:
 except:
     import pnodes
 
-libname = "libghdl"
 
-
-def print_enum(name, vals):
+def print_enum(name, vals, extra_derives=[], keep_underscore=True):
+    if len(vals) < 256:
+        repr = 8
+    elif len(vals) < 65536:
+        repr = 16
+    else:
+        repr = 32
+    print(f"#[repr(u{repr})]")
+    derives = ["Copy", "Clone", "PartialEq"]
+    derives.extend(extra_derives)
+    derives_str = ", ".join(derives)
+    print(f"#[derive({derives_str})]")
     print(f"pub enum {name} {{")
     for k in vals:
-        print(f"    {k},")
+        val_name = k if keep_underscore else k.replace('_', '')
+        print(f"    {val_name},")
     print(f"}}");
 
     print(f"")
     print(f"impl {name} {{")
-    print(f"    const VALUES: [Self; {len(vals)}] = [")
+    print(f"    pub const VALUES: [Self; {len(vals)}] = [")
     for k in vals:
-        print(f"        Self::{k},")
+        val_name = k if keep_underscore else k.replace('_', '')
+        print(f"        Self::{val_name},")
     print(f"    ];");
     print(f"")
-    print(f"    const IMAGES: [&'static str; {len(vals)}] = [")
+    print(f"    pub const IMAGES: [&'static str; {len(vals)}] = [")
     for k in vals:
-        print(f"        \"{k.lower()}\",")
+        val_name = k if keep_underscore else k.replace('_', '-')
+        print(f"        \"{val_name.lower()}\",")
     print(f"    ];");
     print(f"}}")
 
-def print_file_header(includeIntEnumUnique=True, includeBindToLibGHDL=True):
-    print(dedent("""\
-            # Auto generated Python source file from Ada sources
-            # Call 'make' in 'src/vhdl' to regenerate:
-            #
-        """) + "{sysImports}from pyTooling.Decorators import export\n{moduleImports}".format(
-            sysImports = "from enum import IntEnum, unique\n" if includeIntEnumUnique else "",
-            moduleImports = "\nfrom pyGHDL.libghdl._decorator import BindToLibGHDL\n" if includeBindToLibGHDL else "",
-        )
-    )
-
-
 def do_class_kinds():
     typ = "Kind"
-    print(f"#[derive(PartialEq, PartialOrd)]")
-    print_enum(typ, pnodes.kinds)
+    # print(f"#[derive(Copy, Clone, PartialEq, PartialOrd)]")
+    print_enum(typ, pnodes.kinds, extra_derives=["PartialOrd"])
     print(f"impl {typ} {{")
     for k, v in pnodes.kinds_ranges.items():
         print(f"    fn is_{k.lower()}(self: Self) -> bool {{")
@@ -57,86 +57,162 @@ def do_class_kinds():
         print()
     print(f"}}")
 
-def do_iirs_subprg():
-    pfx = "vhdl__nodes"
-    print(f'type Iir = u32;')
-    print(f'type FileChecksumId = u32;')
-    print(f'type TimeStampId = u32;')
-    print(f'type SourceFileEntry = u32;')
-    print(f'type DateType = u32;')
-    print(f'type NameId = u32;')
-    print(f'type SourcePtr = u32;')
-    print(f'type String8Id = u32;')
-    print(f'type PSLNode = u32;')
-    print(f'type PSLNFA = u32;')
-    print(f'type Tok = u8;') # FIXME
-    print(f'pub enum TriStateType {{')
-    print(f'   Unknown,')
-    print(f'   False,')
-    print(f'   True,')
-    print(f'}}')
-    print(f'pub enum DirectionType {{')
-    print(f'   To,')
-    print(f'   Downto,')
-    print(f'}}')
-    print()
+def common_subprg_import_header(pfx, nname):
     print(f'extern "C" {{')
-    print(f'  #[link_name = "{pfx}__get_kind"]')
-    print(f"  fn get_kind(n: u32) -> Kind;")
+    print(f'    #[link_name = "{pfx}__create_{nname}"]')
+    print(f"    fn create(k: Kind) -> Node;")
     print()
-    print(f'  #[link_name = "{pfx}__get_location"]')
-    print(f"  fn get_location(n: u32) -> u32;")
+    print(f'    #[link_name = "{pfx}__get_kind"]')
+    print(f"    fn get_kind(n: Node) -> Kind;")
     print()
+    print(f'    #[link_name = "{pfx}__get_location"]')
+    print(f"    fn get_location(n: Node) -> Location;")
+    print()
+    print(f'    #[link_name = "{pfx}__set_location"]')
+    print(f"    fn set_location(n: Node, loc: Location);")
+    print()
+
+def common_subprg_import(pnodes, pfx, nname, convert):
+    common_subprg_import_header(pfx, nname)
+    for k in pnodes.funcs:
+        rtype = convert(k.rtype)
+        name = k.name.lower()
+        print(f'    #[link_name = "{pfx}__get_{name}"]')
+        print(f"    fn get_{name}(n: Node) -> {rtype};")
+        print()
+        print(f'    #[link_name = "{pfx}__set_{name}"]')
+        print(f"    fn set_{name}(n: Node, v: {rtype});")
+        print()
+
+
+def common_subprg_impl_header():
+    print()
+    print('impl Node {')
+    print('    pub const NULL: Self = Node(0);')
+    print()
+    print('    pub fn new(k: Kind) -> Self {')
+    print('        unsafe { create(k) }')
+    print('    }')
+    print()
+    print('    pub fn kind(self: Self) -> Kind {')
+    print('        unsafe { get_kind(self) }')
+    print('    }')
+    print()
+    print('    pub fn raw_id(self: Self) -> u32 {')
+    print('        self.0')
+    print('    }')
+    print()
+    print('    pub fn location(self: Self) -> Location {')
+    print('        unsafe { get_location(self) }')
+    print('    }')
+    print()
+    print('    pub fn set_location(self: Self, loc: Location) {')
+    print('        unsafe { set_location(self, loc) }')
+    print('    }')
+    print()
+
+def common_subprg_impl(pnodes, convert):
+    namemap = {'type': 'typed'}
+    common_subprg_impl_header()
+    for k in pnodes.funcs:
+        rtype = convert(k.rtype)
+
+        name = k.name.lower()
+        rname = namemap.get(name, name)
+        print(f'    pub fn {rname}(self: Self) -> {rtype} {{')
+        print(f'        unsafe {{ get_{name}(self) }}')
+        print(f'    }}')
+        print()
+        print(f'    pub fn set_{rname}(self: Self, v : {rtype}) {{')
+        print(f'        unsafe {{ set_{name}(self, v); }}')
+        print(f'    }}')
+        print()
+    print(f"}}")
+
+def convert_vhdl_type_name(rtype):
     typmap = {'TokenType': 'Tok',
               'Boolean' : 'bool',
               'Int32': 'i32',
               'Int64': 'i64',
               'Fp64': 'f64',
+              'Iir': 'Node',
               }
-    for k in pnodes.funcs:
-        # Don't use the Iir_* subtypes (as they are not described).
-        rtype = k.rtype.replace("_", "") if not k.rtype.startswith("Iir_") else "Iir"
-        # Exceptions...
-        rtype = typmap.get(rtype, rtype)
+    # Don't use the Iir_* subtypes (as they are not described).
+    rtype = rtype.replace("Iir_", "")
+    rtype = rtype.replace("_", "")
+    rtype = rtype if not rtype.startswith("Kind_") else "Iir"
+    # Exceptions...
+    rtype = typmap.get(rtype, rtype)
+    return rtype
 
-        name = k.name.lower()
-        print(f'  #[link_name = "{pfx}__get_{name}"]')
-        print(f"  fn get_{name}(n: u32) -> {rtype};")
-        print()
-        print(f'  #[link_name = "{pfx}__set_{name}"]')
-        print(f"  fn set_{name}(n: u32, v: {rtype});")
-        print()
+def do_vhdl_subprg():
+    pfx = "vhdl__nodes"
+    print(f'#[repr(transparent)]')
+    print(f'#[derive(Copy, Clone, PartialEq)]')
+    print(f'pub struct Node(u32);')
+    print()
+    print(f'#[repr(transparent)]')
+    print(f'#[derive(Copy, Clone, PartialEq)]')
+    print(f'pub struct Flist(u32);')
+#    print(f'type Iir = u32;')
+#    print(f'type FileChecksumId = u32;')
+#    print(f'type TimeStampId = u32;')
+#    print(f'type SourceFileEntry = u32;')
+#    print(f'type DateType = u32;')
+#    print(f'type NameId = u32;')
+#    print(f'type SourcePtr = u32;')
+#    print(f'type String8Id = u32;')
+    print(f'type PSLNode = u32;')
+    print(f'type PSLNFA = u32;')
+    print(f'type Tok = u8;') # FIXME
+    print(f'type List = u32;')
+    print(f'type Index32 = i32;')
+    print()
+    print(f'#[repr(u8)]')
+    print(f'pub enum TriStateType {{')
+    print(f'    Unknown,')
+    print(f'    False,')
+    print(f'    True,')
+    print(f'}}')
+    print()
+    print(f'#[repr(u8)]')
+    print(f'pub enum DirectionType {{')
+    print(f'    To,')
+    print(f'    Downto,')
+    print(f'}}')
+    print()
+
+    common_subprg_import(pnodes, pfx, "iir", convert_vhdl_type_name)
+    print('    #[link_name = "vhdl__flists__create_flist"]')
+    print('    fn create_flist(len: u32) -> Flist;')
+    print()
+    print('    #[link_name = "vhdl__flists__set_nth_element"]')
+    print('    fn set_nth_element(flist: Flist, idx: u32, el: Node);')
+    print()
+    print('    #[link_name = "vhdl__flists__get_nth_element"]')
+    print('    fn get_nth_element(flist: Flist, idx: u32) -> Node;')
+    print()
     print(f"}}")
 
-def do_libghdl_elocations():
-    classname = "vhdl__elocations"
-    print_file_header(includeIntEnumUnique=False, includeBindToLibGHDL=False)
-    print("from pyGHDL.libghdl import libghdl")
+    common_subprg_impl(pnodes, convert_vhdl_type_name)
+
+    print('impl Flist {')
+    print('    pub fn new(len: u32) -> Self {')
+    print('        unsafe { create_flist(len) }')
+    print('    }')
     print()
-    for k in pnodes.funcs:
-        print(dedent(f"""
-            @export
-            def Get_{k.name}(obj):
-                return {libname}.{classname}__get_{k.name.lower()}(obj)
-            @export
-            def Set_{k.name}(obj, value) -> None:
-                {libname}.{classname}__set_{k.name.lower()}(obj, value)
-            """)
-        )
+    print('    pub fn set(self: Self, idx: u32, el: Node) {')
+    print('        unsafe { set_nth_element(self, idx, el); }')
+    print('    }')
+    print()
+    print('    pub fn get(self: Self, idx: u32) -> Node {')
+    print('        unsafe { get_nth_element(self, idx) }')
+    print('    }')
+    print('}')
 
 
 def do_class_types():
     print_enum("types", pnodes.get_types())
-
-
-def do_types_subprg():
-    print()
-    for k in pnodes.get_types():
-        print(dedent(f"""
-            def Get_{k}(node, field):
-                return {libname}.vhdl__nodes_meta__get_{k.lower()}(node, field)
-            """)
-        )
 
 
 def do_has_subprg():
@@ -159,179 +235,109 @@ def do_class_fields():
     print_enum("fields", [f.name for f in pnodes.funcs])
 
 
-def read_enum(filename, type_name, prefix, g=lambda m: m.group(1)):
-    """Read an enumeration declaration from :param filename:."""
-    pat_decl = re.compile(r"   type {0} is$".format(type_name))
-    pat_enum = re.compile(r"      {0}(\w+),?( *-- .*)?$".format(prefix))
-    pat_comment = re.compile(r" *-- .*$")
-    lr = pnodes.linereader(filename)
-    while not pat_decl.match(lr.get()):
-        pass
-    line = lr.get()
-    if line != "     (\n":
-        raise pnodes.ParseError(lr, f"{filename}:{lr.lineno}: missing open parenthesis")
-    toks = []
-    while True:
-        line = lr.get()
-        if line == "     );\n":
-            break
-        m = pat_enum.match(line)
-        if m:
-            toks.append(g(m))
-        elif pat_comment.match(line):
-            pass
-        elif line == "\n":
-            pass
-        else:
-            print(line, file=sys.stderr)
-            raise pnodes.ParseError(
-                lr,
-                f"{filename}:{ lr.lineno}: incorrect line in enum {type_name}"
-            )
-    return toks
-
-
 def read_spec_enum(type_name, prefix, class_name):
-    """Read an enumeration declaration from iirs.ads."""
-    toks = read_enum(pnodes.kind_file, type_name, prefix)
+    """Read an enumeration declaration from kind file."""
+    toks = pnodes.read_enum(pnodes.kind_file, type_name, prefix)
     print_enum(class_name, toks)
 
 
-def do_nodes():
+def do_vhdl_nodes():
+    """Convert vhdl-nodes.ads"""
+    print("#![allow(non_camel_case_types, dead_code)]")
+    print("use crate::types::*;")
+    print("use crate::files_map::{Location, SourceFileEntry};")
+    print("use crate::NameId;")
+    print("use crate::str_table::String8Id;")
+    print()
     do_class_kinds()
-    read_spec_enum("Iir_Mode", "Iir_", "Iir_Mode")
+    read_spec_enum("Iir_Mode", "Iir_", "Mode")
     read_spec_enum("Scalar_Size", "", "ScalarSize")
-    read_spec_enum("Iir_Staticness", "", "Iir_Staticness")
+    read_spec_enum("Iir_Staticness", "", "Staticness")
     read_spec_enum("Iir_Constraint", "", "Iir_Constraint")
-    read_spec_enum("Iir_Delay_Mechanism", "Iir_", "Iir_Delay_Mechanism")
+    read_spec_enum("Iir_Delay_Mechanism", "Iir_", "DelayMechanism")
+    read_spec_enum("Iir_Pure_State", "", "PureState")
+    read_spec_enum("Iir_All_Sensitized", "", "AllSensitized")
+    read_spec_enum("Iir_Signal_Kind", "Iir_", "SignalKind")
+    read_spec_enum("Iir_Constraint", "", "Constraint")
+    read_spec_enum("Iir_Force_Mode", "Iir_", "ForceMode")
     read_spec_enum("Date_State_Type", "Date_", "DateStateType")
     read_spec_enum("Number_Base_Type", "", "NumberBaseType")
-    read_spec_enum("Iir_Predefined_Functions", "Iir_Predefined_", "Iir_Predefined")
-    do_iirs_subprg()
+    read_spec_enum("Iir_Predefined_Functions", "Iir_Predefined_", "PredefinedFunctions")
+    do_vhdl_subprg()
 
 
-def do_libghdl_meta():
-    print_file_header()
-    print(dedent("""\
-        from pyGHDL.libghdl import libghdl
-        from pyGHDL.libghdl._types import IirKind
+def convert_verilog_type_name(rtype):
+    typmap = {'Boolean' : 'bool',
+              'Int32': 'i32',
+              'Int64': 'i64',
+              'Fp64': 'f64',
+              'Uns32': 'u32',
+              }
+    # Rename '_' and 'Type'
+    rtype = rtype.replace("_", "").replace("Type","")
+    # Exceptions...
+    rtype = typmap.get(rtype, rtype)
+    return rtype
 
 
-        # From nodes_meta
-        @export
-        @BindToLibGHDL("vhdl__nodes_meta__get_fields_first")
-        def get_fields_first(K: IirKind) -> int:
-            \"\"\"
-            Return the list of fields for node :obj:`K`.
+def do_verilog_subprg():
+    pfx = "verilog__nodes"
+    print()
+    common_subprg_import(pnodes, pfx, "node", convert_verilog_type_name)
+    print(f"}}")
 
-            In Ada ``Vhdl.Nodes_Meta.Get_Fields`` returns a ``Fields_Array``. To emulate
-            this array access, the API provides ``get_fields_first`` and :func:`get_fields_last`.
-
-            The fields are sorted: first the non nodes/list of nodes, then the
-            nodes/lists that aren't reference, and then the reference.
-
-            :param K: Node to get first array index from.
-            \"\"\"
-            return 0
+    common_subprg_impl(pnodes, convert_verilog_type_name)
 
 
-        @export
-        @BindToLibGHDL("vhdl__nodes_meta__get_fields_last")
-        def get_fields_last(K: IirKind) -> int:
-            \"\"\"
-            Return the list of fields for node :obj:`K`.
-
-            In Ada ``Vhdl.Nodes_Meta.Get_Fields`` returns a ``Fields_Array``. To emulate
-            this array access, the API provides :func:`get_fields_first` and ``get_fields_last``.
-
-            The fields are sorted: first the non nodes/list of nodes, then the
-            nodes/lists that aren't reference, and then the reference.
-
-            :param K: Node to get last array index from.
-            \"\"\"
-            return 0
-
-        @export
-        @BindToLibGHDL("vhdl__nodes_meta__get_field_by_index")
-        def get_field_by_index(K: IirKind) -> int:
-            \"\"\"\"\"\"
-            return 0
-
-        @export
-        def get_field_type(*args):
-            return libghdl.vhdl__nodes_meta__get_field_type(*args)
-
-        @export
-        def get_field_attribute(*args):
-            return libghdl.vhdl__nodes_meta__get_field_attribute(*args)
-        """), end=''
-    )
-
-    do_class_types()
-    do_class_field_attributes()
-    do_class_fields()
-    do_types_subprg()
-    do_has_subprg()
+def do_verilog_nodes():
+    """Convert verilog-nodes.ads"""
+    print("#![allow(non_camel_case_types, dead_code)]")
+    print()
+    print("use crate::verilog::types::*;")
+    print("use crate::files_map::Location;")
+    print("use crate::NameId;")
+    print("use crate::str_table::String8Id;")
+    print()
+    print("#[repr(transparent)]")
+    print("#[derive(Copy, Clone, PartialEq)]")
+    print("pub struct Node(u32);")
+    print()
+    do_class_kinds()
+    read_spec_enum("Violation_Type", "Violation_", "Violation")
+    read_spec_enum("Visibility_Type", "Visibility_", "Visibility")
+    read_spec_enum("DPI_Spec_Type", "DPI_", "DPISpec")
+    read_spec_enum("Edge_Type", "Edge_", "Edge")
+    read_spec_enum("Base_Type", "Base_", "Base")
+    read_spec_enum("Lifetime_Type", "Life_", "Lifetime")
+    read_spec_enum("Join_Type", "Join_", "Join")
+    read_spec_enum("Udp_Symbol", "", "UdpSymbol")
+    read_spec_enum("Polarity_Type", "Polarity_", "Polarity")
+    read_spec_enum("Udp_Kind", "Udp_", "UdpKind")
+    read_spec_enum("Conv_Ops", "Convop_", "ConvOps")
+    read_spec_enum("Binary_Ops", "Binop_", "BinaryOps")
+    read_spec_enum("Unary_Ops", "Unop_", "UnaryOps")
+    print("pub type SysTfId = u32;")
+    do_verilog_subprg()
 
 
-def do_libghdl_names():
-    pat_name_first = re.compile(r"   Name_(\w+)\s+: constant Name_Id := (\d+);")
-    pat_name_def = re.compile(r"   Name_(\w+)\s+:\s+constant Name_Id :=\s+Name_(\w+)( \+ (\d+))?;")
-    dict = {}
-    lr = pnodes.linereader("../std_names.ads")
-    while True:
-        line = lr.get()
-        m = pat_name_first.match(line)
-        if m:
-            name_def = m.group(1)
-            val = int(m.group(2))
-            dict[name_def] = val
-            res = [(name_def, val)]
-            break
-    val_max = 1
-    while True:
-        line = lr.get()
-        if line == "end Std_Names;\n":
-            break
-        if line.endswith(":=\n"):
-            line = line.rstrip() + lr.get()
-        m = pat_name_def.match(line)
-        if m:
-            name_def = m.group(1)
-            name_ref = m.group(2)
-            val = m.group(4)
-            if not val:
-                val = 0
-            val_ref = dict.get(name_ref, None)
-            if not val_ref:
-                raise pnodes.ParseError(lr, f"name {name_ref} not found")
-            val = val_ref + int(val)
-            val_max = max(val_max, val)
-            dict[name_def] = val
-            res.append((name_def, val))
-    print_file_header(includeIntEnumUnique=False, includeBindToLibGHDL=False)
-    print(dedent("""
-
-        @export
-        class Name:
-        """), end=''
-    )
-
+def do_std_names():
+    res = pnodes.read_std_names()
+    print('#![allow(dead_code)]')
+    print('use crate::NameId;')
     for n, v in res:
-        # Avoid clash with Python names
-        if n in ["False", "True", "None"]:
-            n = "N" + n
-        print(f"    {n} = {v}")
+        print(f"pub const {n.upper()}: NameId = NameId({v});")
 
 
-def do_libghdl_tokens():
-    print_file_header(includeBindToLibGHDL=False)
-    toks = read_enum("vhdl-tokens.ads", "Token_Type", "Tok_")
-    print_enum("Tok", toks)
+def do_verilog_standard():
+    res = pnodes.read_any_names("verilog-standard.ads", "", "Node")
+    print('#![allow(dead_code)]')
+    for n, v in res:
+        print(f"pub const {n.upper()}: u32 = {v};")
 
 
 def do_errorout():
-    toks = read_enum(
+    print("#![allow(dead_code)]")
+    toks = pnodes.read_enum(
         "../errorout.ads",
         "Msgid_Type",
         "(Msgid|Warnid)_",
@@ -348,21 +354,19 @@ def do_errorout():
     print("")
     # Remove prefix, remove '_'
     pfx="Warnid_"
-    warn_toks = [t[len(pfx):].replace('_', '')
-                 for t in toks if t.startswith(pfx)]
-    print_enum("Warnid", warn_toks)
+    warn_toks = [t[len(pfx):] for t in toks if t.startswith(pfx)]
+    print_enum("Warnid", warn_toks, keep_underscore=False)
     print(f"pub const WARNID_USIZE: usize = {len(warn_toks)};")
 
 
 pnodes.actions.update(
     {
-        "class-kinds": do_class_kinds,
-        "nodes": do_nodes,
-        "libghdl-meta": do_libghdl_meta,
-        "libghdl-names": do_libghdl_names,
-        "libghdl-tokens": do_libghdl_tokens,
-        "libghdl-elocs": do_libghdl_elocations,
+        "vhdl-nodes": do_vhdl_nodes,
         "errorout": do_errorout,
+        "verilog-nodes": do_verilog_nodes,
+        "std_names": do_std_names,
+        "verilog-standard": do_verilog_standard,
+        "class-kinds": do_class_kinds,
     }
 )
 

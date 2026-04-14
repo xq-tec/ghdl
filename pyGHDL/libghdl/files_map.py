@@ -32,6 +32,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # ============================================================================
 
+from ctypes import POINTER, c_char, c_void_p, cast
+
 from pyTooling.Decorators import export
 
 from pyGHDL.libghdl._decorator import BindToLibGHDL
@@ -180,14 +182,18 @@ def Get_Directory_Name(File: SourceFileEntry) -> NameId:
 
 @export
 @BindToLibGHDL("files_map__get_file_buffer")
-def Get_File_Buffer(File: SourceFileEntry) -> bytes:
+def Get_File_Buffer_voidp(File: SourceFileEntry) -> c_void_p:
+    return 0  # pragma: no cover
+
+
+def Get_File_Buffer(File: SourceFileEntry) -> POINTER(c_char):
     """
     Return a buffer (access to the contents of the file) for a file entry.
 
     :param File: Source file to get the buffer from.
     :return:     Type: ``File_Buffer_Ptr``
     """
-    return 0  # pragma: no cover
+    return cast(Get_File_Buffer_voidp(File), POINTER(c_char))
 
 
 @export
@@ -238,7 +244,20 @@ def Get_Buffer_Length(File: SourceFileEntry) -> int:
     """
 
 
-# @export
+@export
+@BindToLibGHDL("files_map__find_source_file")
+def Find_Source_File(Directory: NameId, Name: NameId) -> SourceFileEntry:
+    """
+    Return an existing entry for a filename.
+
+    :param Directory: ``Null_Identifier`` for :obj:`DirectoryId` means current directory.
+    :param Name:      File name
+    :return:          Return ``No_Source_File_Entry``, if the file is not already open.
+    """
+    return 0
+
+
+@export
 @BindToLibGHDL("files_map__read_source_file")
 def Read_Source_File(Directory: NameId, Name: NameId) -> SourceFileEntry:
     """

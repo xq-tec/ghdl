@@ -69,6 +69,7 @@ package body Elab.Vhdl_Objtypes is
       end if;
 
       case L.Kind is
+         --  GCOV_EXCL_START (used only on types derived from unbounded types)
          when Type_Bit
            | Type_Logic =>
             return True;
@@ -76,6 +77,22 @@ package body Elab.Vhdl_Objtypes is
             return L.Drange = R.Drange;
          when Type_Float =>
             return L.Frange = R.Frange;
+         when Type_Access =>
+            return Are_Types_Equal (L.Acc_Acc, R.Acc_Acc);
+         when Type_File =>
+            return Are_Types_Equal (L.File_Typ, R.File_Typ);
+         when Type_Protected =>
+            return False;
+         when Type_Slice =>
+            return Are_Types_Equal (L.Slice_El, R.Slice_El);
+         when Type_Unbounded_Array
+            | Type_Unbounded_Vector =>
+            if L.Ulast /= R.Ulast then
+               return False;
+            end if;
+            --  Also check index ?
+            return Are_Types_Equal (L.Uarr_El, R.Uarr_El);
+         --  GCOV_EXCL_STOP
          when Type_Array
             | Type_Array_Unbounded
             | Type_Vector =>
@@ -86,15 +103,6 @@ package body Elab.Vhdl_Objtypes is
                return False;
             end if;
             return Are_Types_Equal (L.Arr_El, R.Arr_El);
-         when Type_Unbounded_Array
-            | Type_Unbounded_Vector =>
-            if L.Ulast /= R.Ulast then
-               return False;
-            end if;
-            --  Also check index ?
-            return Are_Types_Equal (L.Uarr_El, R.Uarr_El);
-         when Type_Slice =>
-            return Are_Types_Equal (L.Slice_El, R.Slice_El);
          when Type_Record
            | Type_Unbounded_Record =>
             if L.Rec.Len /= R.Rec.Len then
@@ -106,12 +114,6 @@ package body Elab.Vhdl_Objtypes is
                end if;
             end loop;
             return True;
-         when Type_Access =>
-            return Are_Types_Equal (L.Acc_Acc, R.Acc_Acc);
-         when Type_File =>
-            return Are_Types_Equal (L.File_Typ, R.File_Typ);
-         when Type_Protected =>
-            return False;
       end case;
    end Are_Types_Equal;
 
@@ -126,8 +128,7 @@ package body Elab.Vhdl_Objtypes is
             return True;
          when Type_Unbounded_Array =>
             return Arr.Ulast;
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Is_Last_Dimension;
 
@@ -140,6 +141,16 @@ package body Elab.Vhdl_Objtypes is
             return Rng.Left < Rng.Right;
       end case;
    end Is_Null_Range;
+
+   function Is_Null_Float_Range (Rng : Float_Range_Type) return Boolean is
+   begin
+      case Rng.Dir is
+         when Dir_To =>
+            return Rng.Left > Rng.Right;
+         when Dir_Downto =>
+            return Rng.Left < Rng.Right;
+      end case;
+   end Is_Null_Float_Range;
 
    function Is_Scalar_Subtype_Compatible (L, R : Type_Acc) return Boolean is
    begin
@@ -156,9 +167,12 @@ package body Elab.Vhdl_Objtypes is
             return In_Range (R.Drange, L.Drange.Left)
               and then In_Range (R.Drange, L.Drange.Right);
          when Type_Float =>
-            return L.Frange = R.Frange;
-         when others =>
-            raise Internal_Error;
+            if Is_Null_Float_Range (L.Frange) then
+               return True;
+            end if;
+            return In_Float_Range (R.Frange, L.Frange.Left)
+              and then In_Float_Range (R.Frange, L.Frange.Right);
+         when others => raise Internal_Error;
       end case;
    end Is_Scalar_Subtype_Compatible;
 
@@ -302,8 +316,7 @@ package body Elab.Vhdl_Objtypes is
                   Add_Size_Type (Typ.Rec.E (I).Typ, Sz, Align);
                end loop;
             end;
-         when Type_Slice =>
-            raise Internal_Error;
+         when Type_Slice => raise Internal_Error;
       end case;
    end Add_Size_Type;
 
@@ -371,8 +384,7 @@ package body Elab.Vhdl_Objtypes is
                Al := 3;
             when 4 =>
                Al := 2;
-            when others =>
-               raise Internal_Error;
+            when others => raise Internal_Error;
          end case;
       end if;
       return To_Type_Acc (Alloc (Current_Pool, (Kind => Type_Discrete,
@@ -397,8 +409,7 @@ package body Elab.Vhdl_Objtypes is
             Al := 3;
          when 4 =>
             Al := 2;
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
 
       return To_Type_Acc (Alloc (Current_Pool, (Kind => Type_Float,
@@ -574,8 +585,7 @@ package body Elab.Vhdl_Objtypes is
          when Type_Unbounded_Array
            | Type_Unbounded_Vector =>
             return Arr_Type.Uarr_El;
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Get_Array_Element;
 
@@ -586,10 +596,24 @@ package body Elab.Vhdl_Objtypes is
            | Type_Array_Unbounded
            | Type_Array =>
             return Typ.Abound;
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Get_Array_Bound;
+
+   function Get_Array_Element_Multidim (Typ : Type_Acc) return Type_Acc
+   is
+      Res : Type_Acc;
+      Prev : Type_Acc;
+   begin
+      Prev := Typ;
+      loop
+         Res := Get_Array_Element (Prev);
+         if Is_Last_Dimension (Prev) then
+            return Res;
+         end if;
+         Prev := Res;
+      end loop;
+   end Get_Array_Element_Multidim;
 
    function Get_Uarray_Index (Typ : Type_Acc) return Type_Acc is
    begin
@@ -597,8 +621,7 @@ package body Elab.Vhdl_Objtypes is
          when Type_Unbounded_Vector
            | Type_Unbounded_Array =>
             return Typ.Uarr_Idx;
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Get_Uarray_Index;
 
@@ -842,10 +865,12 @@ package body Elab.Vhdl_Objtypes is
 
    --  Compute size and alignment for bounds of TYP.
    procedure Update_Bounds_Size (Typ : Type_Acc;
+                                 Has_Signal : Boolean;
                                  Sz : in out Size_Type;
                                  Al : in out Palign_Type);
 
    procedure Update_Layout_Size (Typ : Type_Acc;
+                                 Has_Signal : Boolean;
                                  Sz : in out Size_Type;
                                  Al : in out Palign_Type) is
    begin
@@ -866,22 +891,20 @@ package body Elab.Vhdl_Objtypes is
                --  Layout of an array is sizes + bounds.
                B_Sz := 2 * Ghdl_Index_Sz;
                B_Al := Ghdl_Index_Al;
-               Update_Bounds_Size (Typ, B_Sz, B_Al);
+               Update_Bounds_Size (Typ, Has_Signal, B_Sz, B_Al);
                Sz := Align (Sz, B_Al);
                Sz := Sz + B_Sz;
                Al := Palign_Type'Max (Al, B_Al);
             end;
          when Type_Unbounded_Record =>
             --  Same as bounds.
-            Update_Bounds_Size (Typ, Sz, Al);
-         when Type_Slice
-           | Type_File
-           | Type_Protected =>
-            raise Internal_Error;
+            Update_Bounds_Size (Typ, Has_Signal, Sz, Al);
+         when Type_Slice | Type_File | Type_Protected => raise Internal_Error;
       end case;
    end Update_Layout_Size;
 
    procedure Update_Bounds_Size (Typ : Type_Acc;
+                                 Has_Signal : Boolean;
                                  Sz : in out Size_Type;
                                  Al : in out Palign_Type) is
    begin
@@ -893,7 +916,7 @@ package body Elab.Vhdl_Objtypes is
            | Type_Access =>
             null;
          when Type_Array_Unbounded =>
-            Update_Bounds_Size (Typ.Arr_El, Sz, Al);
+            Update_Bounds_Size (Typ.Arr_El, Has_Signal, Sz, Al);
          when Type_Unbounded_Array
            | Type_Unbounded_Vector =>
             declare
@@ -912,8 +935,7 @@ package body Elab.Vhdl_Objtypes is
                   when 8 =>
                      B_Sz := 17;
                      B_Al := 2;
-                  when others =>
-                     raise Internal_Error;
+                  when others => raise Internal_Error;
                end case;
                --  Add length field.
                Sz := Align (Sz, Ghdl_Index_Al);
@@ -927,10 +949,10 @@ package body Elab.Vhdl_Objtypes is
 
                if not Typ.Ulast then
                   --  Continue with next index.
-                  Update_Bounds_Size (Typ.Uarr_El, Sz, Al);
+                  Update_Bounds_Size (Typ.Uarr_El, Has_Signal, Sz, Al);
                else
                   --  Continue with the element.
-                  Update_Layout_Size (Typ.Uarr_El, Sz, Al);
+                  Update_Layout_Size (Typ.Uarr_El, Has_Signal, Sz, Al);
                end if;
 
             end;
@@ -947,9 +969,13 @@ package body Elab.Vhdl_Objtypes is
                      El : Rec_El_Type renames Typ.Rec.E (I);
                   begin
                      if not El.Typ.Is_Static then
-                        --  Add offset field (alignment is ok).
-                        B_Sz := B_Sz + Ghdl_Index_Sz;
-                        Update_Layout_Size (El.Typ, B_Sz, B_Al);
+                        --  Add offset fields (val and sig, alignment is ok).
+                        if Has_Signal then
+                           B_Sz := B_Sz + 2 * Ghdl_Index_Sz;
+                        else
+                           B_Sz := B_Sz + Ghdl_Index_Sz;
+                        end if;
+                        Update_Layout_Size (El.Typ, Has_Signal, B_Sz, B_Al);
                      end if;
                   end;
                end loop;
@@ -957,25 +983,25 @@ package body Elab.Vhdl_Objtypes is
                Sz := Sz + B_Sz;
                Al := Palign_Type'Max (Al, B_Al);
             end;
-         when Type_Slice
-           | Type_File
-           | Type_Protected =>
-            raise Internal_Error;
+         when Type_Slice | Type_File | Type_Protected => raise Internal_Error;
       end case;
    end Update_Bounds_Size;
 
-   function Compute_Bounds_Size (Typ : Type_Acc) return Size_Type
+   function Compute_Bounds_Size (Typ : Type_Acc; Has_Signal : Boolean)
+                                return Size_Type
    is
       Res : Size_Type;
       Al : Palign_Type;
    begin
       Res := 0;
       Al := 0;
-      Update_Bounds_Size (Typ, Res, Al);
+      Update_Bounds_Size (Typ, Has_Signal, Res, Al);
       return Res;
    end Compute_Bounds_Size;
 
-   function Create_Access_Type (Parent_Type : Type_Acc; Acc_Type : Type_Acc)
+   function Create_Access_Type (Parent_Type : Type_Acc;
+                                Acc_Type : Type_Acc;
+                                Has_Signal : Boolean)
                                return Type_Acc
    is
       subtype Access_Type_Type is Type_Type (Type_Access);
@@ -991,7 +1017,7 @@ package body Elab.Vhdl_Objtypes is
       else
          Type_Sz := Compute_Size_Type (Acc_Type);
          if Parent_Type = null then
-            Bnd_Sz := Compute_Bounds_Size (Acc_Type);
+            Bnd_Sz := Compute_Bounds_Size (Acc_Type, Has_Signal);
          else
             Bnd_Sz := Parent_Type.Acc_Bnd_Sz;
          end if;
@@ -1009,11 +1035,13 @@ package body Elab.Vhdl_Objtypes is
                                                 Acc_Bnd_Sz => Bnd_Sz)));
    end Create_Access_Type;
 
-   procedure Complete_Access_Type (Acc_Type : Type_Acc; Des_Typ : Type_Acc) is
+   procedure Complete_Access_Type (Acc_Type : Type_Acc;
+                                   Des_Typ : Type_Acc;
+                                   Has_Signal : Boolean) is
    begin
       Acc_Type.Acc_Acc := Des_Typ;
       Acc_Type.Acc_Type_Sz := Compute_Size_Type (Des_Typ);
-      Acc_Type.Acc_Bnd_Sz := Compute_Bounds_Size (Des_Typ);
+      Acc_Type.Acc_Bnd_Sz := Compute_Bounds_Size (Des_Typ, Has_Signal);
    end Complete_Access_Type;
 
    function Create_File_Type (File_Type : Type_Acc) return Type_Acc
@@ -1073,10 +1101,20 @@ package body Elab.Vhdl_Objtypes is
                end loop;
                return Iir_Index32 (Len);
             end;
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Get_Array_Flat_Length;
+
+   function Is_Linear_Type (Typ : Type_Acc) return Boolean is
+   begin
+      if Typ.Kind = Type_Vector then
+         return Typ.Arr_El.Kind = Type_Logic;
+      elsif Typ.Kind = Type_Array then
+         return Is_Linear_Type (Typ.Arr_El);
+      else
+         return False;
+      end if;
+   end Is_Linear_Type;
 
    function Get_Type_Width (Atype : Type_Acc) return Uns32 is
    begin
@@ -1092,8 +1130,7 @@ package body Elab.Vhdl_Objtypes is
             return T.Abound.Len;
          when Type_Slice =>
             return T.W;
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Get_Bound_Length;
 
@@ -1114,10 +1151,7 @@ package body Elab.Vhdl_Objtypes is
             if Get_Bound_Length (L) /= Get_Bound_Length (R) then
                return False;
             end if;
-            if L.Alast then
-               return True;
-            end if;
-            return Get_Bound_Length (L.Arr_El) = Get_Bound_Length (R.Arr_El);
+            return Is_Matching_Bounds (L.Arr_El, R.Arr_El);
          when Type_Array_Unbounded
             | Type_Unbounded_Array
             | Type_Unbounded_Vector
@@ -1128,9 +1162,7 @@ package body Elab.Vhdl_Objtypes is
             return True;
          when Type_Access =>
             return True;
-         when Type_File
-           |  Type_Protected =>
-            raise Internal_Error;
+         when Type_File | Type_Protected => raise Internal_Error;
       end case;
    end Is_Matching_Bounds;
 
@@ -1156,8 +1188,7 @@ package body Elab.Vhdl_Objtypes is
             return Int64 (Read_I32 (Mem));
          when 8 =>
             return Int64 (Read_I64 (Mem));
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Read_Discrete;
 
@@ -1175,8 +1206,7 @@ package body Elab.Vhdl_Objtypes is
             Write_I32 (Mem, Ghdl_I32 (Val));
          when 8 =>
             Write_I64 (Mem, Ghdl_I64 (Val));
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Write_Discrete;
 
@@ -1256,8 +1286,7 @@ package body Elab.Vhdl_Objtypes is
             Write_U32 (Res, Ghdl_U32 (To_Uns64 (Val) and 16#ffff_ffff#));
          when 8 =>
             Write_I64 (Res, Ghdl_I64 (Val));
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
       return (Vtype, Res);
    end Create_Memory_Discrete;
@@ -1335,8 +1364,7 @@ package body Elab.Vhdl_Objtypes is
          when Type_Access =>
             pragma Assert (L.Typ.Sz = 4);
             return Read_U32 (L.Mem) = Read_U32 (R.Mem);
-         when Type_Slice =>
-            raise Internal_Error;
+         when Type_Slice => raise Internal_Error;
          when Type_Unbounded_Vector
            | Type_Unbounded_Array
            | Type_Array_Unbounded
@@ -1350,9 +1378,9 @@ package body Elab.Vhdl_Objtypes is
    procedure Copy_Memory (Dest : Memory_Ptr; Src : Memory_Ptr; Sz : Size_Type)
    is
    begin
-      for I in 1 .. Sz loop
-         Dest (I - 1) := Src (I - 1);
-      end loop;
+      if Sz /= 0 then
+         Dest (0 .. Sz - 1) := Src (0 .. Sz - 1);
+      end if;
    end Copy_Memory;
 
    function Unshare (Src : Memtyp; Pool : Areapool_Acc) return Memtyp
@@ -1431,8 +1459,7 @@ package body Elab.Vhdl_Objtypes is
             end if;
          when Type_File =>
             Res.File_Typ := Unshare (T.File_Typ, Pool);
-         when Type_Protected =>
-            raise Internal_Error;
+         when Type_Protected => raise Internal_Error;
       end case;
       return Res;
    end Unshare;
@@ -1489,12 +1516,9 @@ package body Elab.Vhdl_Objtypes is
                                                       Global, Pool),
                                  Decl => Typ.Rec.E (I).Decl);
             end loop;
-         when Type_Access =>
-            raise Internal_Error;
-         when Type_File =>
-            raise Internal_Error;
-         when Type_Protected =>
-            raise Internal_Error;
+         when Type_Access => raise Internal_Error;
+         when Type_File => raise Internal_Error;
+         when Type_Protected => raise Internal_Error;
       end case;
       return Res;
    end Unshare_Type;
@@ -1550,8 +1574,7 @@ package body Elab.Vhdl_Objtypes is
             | Type_Discrete
             | Type_Float =>
             raise Internal_Error;
-         when Type_Slice =>
-            raise Internal_Error;
+         when Type_Slice => raise Internal_Error;
          when Type_Array
             | Type_Vector =>
             Save_Type (Typ.Arr_El, Res.Arr_El, Mem, Off, Mem_Sz);
@@ -1579,12 +1602,7 @@ package body Elab.Vhdl_Objtypes is
                              Mem, Off, Mem_Sz);
                end loop;
             end;
-         when Type_Access =>
-            raise Internal_Error;
-         when Type_File =>
-            raise Internal_Error;
-         when Type_Protected =>
-            raise Internal_Error;
+         when Type_Access | Type_File | Type_Protected => raise Internal_Error;
       end case;
    end Save_Type;
 

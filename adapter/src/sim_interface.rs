@@ -196,6 +196,7 @@ static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 #[unsafe(no_mangle)]
 extern "C" fn adapter_init_websocket(wait_for_gui: bool) -> *mut AdapterState {
     let rt = RUNTIME.get_or_init(|| {
+        // TODO should we use a single-threaded runtime for the WebSocket server?
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()

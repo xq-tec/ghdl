@@ -713,7 +713,8 @@ package body Verilog.Sem is
 
             while Inst_Conn /= Null_Node loop
                case Nkinds_Connection (Get_Kind (Inst_Conn)) is
-                  when N_Port_Connection =>
+                  when N_Port_Connection
+                    | N_Implicit_Connection =>
                      declare
                         Id : constant Name_Id := Get_Identifier (Inst_Conn);
                         pragma Assert (Id /= Null_Identifier);
@@ -738,16 +739,9 @@ package body Verilog.Sem is
                      end;
                   when N_Wildcard_Connection =>
                      null;
-                  when N_Implicit_Connection =>
-                     Port := Get_Port (Inst_Conn);
-                     pragma Assert (Port /= Null_Node);
-                     pragma Assert (Get_Parent (Port) = Def);
-                     pragma Assert (Get_Connected_Flag (Port));
-                     Assocs (Int32 (Get_Obj_Id (Port))) := Inst_Conn;
-                     Sem_Port_Connection (Port, Inst_Conn);
                   when N_Default_Connection =>
                      --  Not from user.
-                  raise Internal_Error;
+                     raise Internal_Error;
                end case;
                Last_Conn := Inst_Conn;
                Inst_Conn := Get_Chain (Inst_Conn);
@@ -1563,6 +1557,8 @@ package body Verilog.Sem is
    procedure Sem_Instance_Parameter_Value_Assignment (Inst : Node)
    is
       Module : constant Node := Get_Instance (Inst);
+      Is_Foreign : constant Boolean := Get_Kind (Module) = N_Foreign_Module;
+      Params : Node;
       Param_Decl : Node;
       Param_Item : Node;
       Param_Val : Node;
@@ -1619,13 +1615,18 @@ package body Verilog.Sem is
       else
          --  1800-2017 23.10.2.2 Parameter value assignment by name
          --  TODO.
+         Params := Get_Parameter_Port_Chain (Module);
          while Param_Val /= Null_Node loop
             --  First the parameter ID.
-            Param_Decl := Find_Name_In_Decls
-              (Get_Parameter_Port_Chain (Module), Param_Val);
-            if Param_Decl = Null_Node then
-               Param_Decl := Find_Name_In_Decls
-                 (Get_Items_Chain (Module), Param_Val);
+            if Is_Foreign then
+               --  Only parameter ports in foreign modules.
+               Param_Decl := Find_Name_In_Foreign_Decls (Params, Param_Val);
+            else
+               Param_Decl := Find_Name_In_Decls (Params, Param_Val);
+               if Param_Decl = Null_Node then
+                  Param_Decl := Find_Name_In_Decls
+                    (Get_Items_Chain (Module), Param_Val);
+               end if;
             end if;
 
             if Param_Decl = Null_Node then

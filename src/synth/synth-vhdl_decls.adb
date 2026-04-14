@@ -79,7 +79,7 @@ package body Synth.Vhdl_Decls is
       return Create_Value_Wire (Wid, Init.Typ, Instance_Pool);
    end Create_Var_Wire;
 
-   function Type_To_Param_Type (Atype : Node) return Param_Type
+   function Type_To_Param_Type (Atype : Node; Typ : Type_Acc) return Param_Type
    is
       use Vhdl.Std_Package;
       Btype : constant Node := Get_Base_Type (Atype);
@@ -93,7 +93,11 @@ package body Synth.Vhdl_Decls is
       else
          case Get_Kind (Btype) is
             when Iir_Kind_Integer_Type_Definition =>
-               return Param_Pval_Integer;
+               if Typ.Drange.Is_Signed then
+                  return Param_Pval_Signed;
+               else
+                  return Param_Pval_Unsigned;
+               end if;
             when Iir_Kind_Floating_Type_Definition =>
                return Param_Pval_Real;
             when others =>
@@ -223,6 +227,113 @@ package body Synth.Vhdl_Decls is
       Release_Expr_Pool (Marker);
    end Synth_Constant_Declaration;
 
+   --  Convert attribute declaration ATTR_DECL and value VAL from the
+   --  specification to netlist attribute ID, PTYPE, PV.
+   procedure Synth_Attribute_Value (Attr_Decl : Node;
+                                    Val : Valtyp;
+                                    Id : out Name_Id;
+                                    Ptype : out Param_Type;
+                                    Pv : out Pval) is
+   begin
+      --  Keep original case.
+      Id := Get_Source_Identifier (Attr_Decl);
+      Ptype := Type_To_Param_Type (Get_Type (Attr_Decl), Val.Typ);
+      Pv := Memtyp_To_Pval (Get_Memtyp (Val));
+   end Synth_Attribute_Value;
+
+   procedure Synth_Attribute_Inst
+     (Inst : Instance; Attr_Decl : Node; Val : Valtyp)
+   is
+      Id : Name_Id;
+      Ptype : Param_Type;
+      Pv    : Pval;
+   begin
+      Synth_Attribute_Value (Attr_Decl, Val, Id, Ptype, Pv);
+
+      Set_Instance_Attribute (Inst, Id, Ptype, Pv);
+   end Synth_Attribute_Inst;
+
+   procedure Synth_Attribute_Port (Syn_Inst : Synth_Instance_Acc;
+                                   Obj : Node;
+                                   Attr_Decl : Node;
+                                   Val : Valtyp)
+   is
+      Id : Name_Id;
+      V : Valtyp;
+      N : Net;
+      Ptype : Param_Type;
+      Pv    : Pval;
+      M : Module;
+      Inst : Instance;
+      Port : Port_Idx;
+      Inp, N_Inp : Input;
+   begin
+      Synth_Attribute_Value (Attr_Decl, Val, Id, Ptype, Pv);
+
+      V := Get_Value (Syn_Inst, Obj);
+      case V.Val.Kind is
+         when Value_Net =>
+            --  For an input
+            N := Get_Value_Net (V.Val);
+            Inst := Get_Net_Parent (N);
+            if Is_Self_Instance (Inst) then
+               --  This is really a port
+               Port := Get_Port_Idx (N);
+               M := Get_Module (Inst);
+               Set_Input_Port_Attribute (M, Port, Id, Ptype, Pv);
+            else
+               --  A net (because of --keep-hierarchy=no).
+               Synth_Attribute_Inst (Inst, Attr_Decl, Val);
+            end if;
+         when Value_Wire =>
+            --  For an output
+            N := Get_Wire_Gate (Get_Value_Wire (V.Val));
+            Inst := Get_Net_Parent (N);
+            if Get_Id (Inst) = Netlists.Gates.Id_Output then
+               --  This is really a port
+               --  Get last sink.
+               Inp := Get_First_Sink (N);
+               loop
+                  N_Inp := Get_Next_Sink (Inp);
+                  exit when N_Inp = No_Input;
+                  Inp := N_Inp;
+               end loop;
+               Inst := Get_Input_Parent (Inp);
+               pragma Assert (Is_Self_Instance (Inst));
+               Port := Get_Port_Idx (Inp);
+               M := Get_Module (Inst);
+               Set_Output_Port_Attribute (M, Port, Id, Ptype, Pv);
+            else
+               --  A net (--keep-hierarchy=no)
+               Synth_Attribute_Inst (Inst, Attr_Decl, Val);
+            end if;
+         when others => raise Internal_Error;
+      end case;
+   end Synth_Attribute_Port;
+
+   procedure Synth_Attribute_Net (Syn_Inst : Synth_Instance_Acc;
+                                  Obj : Node;
+                                  Attr_Decl  : Node;
+                                  Val        : Valtyp)
+   is
+      N     : Net;
+      Inst  : Instance;
+      V     : Valtyp;
+   begin
+      V := Get_Value (Syn_Inst, Obj);
+      case V.Val.Kind is
+         when Value_Wire =>
+            N := Get_Wire_Gate (Get_Value_Wire (V.Val));
+         when Value_Net
+            | Value_Const =>
+            N := Get_Net (Get_Build (Syn_Inst), V);
+         when others => raise Internal_Error;
+      end case;
+      Inst := Get_Net_Parent (N);
+
+      Synth_Attribute_Inst (Inst, Attr_Decl, Val);
+   end Synth_Attribute_Net;
+
    procedure Synth_Attribute_Object (Syn_Inst : Synth_Instance_Acc;
                                      Attr_Value : Node;
                                      Attr_Decl  : Node;
@@ -230,11 +341,6 @@ package body Synth.Vhdl_Decls is
    is
       Obj   : constant Node := Get_Designated_Entity (Attr_Value);
       Id    : constant Name_Id := Get_Identifier (Attr_Decl);
-      N     : Net;
-      Inst  : Instance;
-      V     : Valtyp;
-      Ptype : Param_Type;
-      Pv    : Pval;
    begin
       if Id = Std_Names.Name_Foreign then
          --  Not for synthesis.
@@ -244,20 +350,25 @@ package body Synth.Vhdl_Decls is
       case Get_Kind (Obj) is
          when Iir_Kind_Signal_Declaration
             | Iir_Kind_Variable_Declaration
-            | Iir_Kind_Interface_Signal_Declaration =>
-            V := Get_Value (Syn_Inst, Obj);
-            case V.Val.Kind is
-               when Value_Wire =>
-                  N := Get_Wire_Gate (Get_Value_Wire (V.Val));
-               when Value_Net =>
-                  N := Get_Value_Net (V.Val);
-               when others =>
-                  raise Internal_Error;
-            end case;
-            Inst := Get_Net_Parent (N);
+            | Iir_Kind_Constant_Declaration =>
+            Synth_Attribute_Net (Syn_Inst, Obj, Attr_Decl, Val);
+         when Iir_Kind_Interface_Signal_Declaration =>
+            if Get_Kind (Get_Parent (Obj)) = Iir_Kind_Entity_Declaration then
+               Synth_Attribute_Port (Syn_Inst, Obj, Attr_Decl, Val);
+            else
+               raise Internal_Error;  --  Is it possible ?
+               --  Synth_Attribute_Net (Syn_Inst, Obj, Attr_Decl, Val);
+            end if;
+         when Iir_Kind_Entity_Declaration =>
+            declare
+               Top : constant Module := Get_Instance_Module (Syn_Inst);
+               Inst : constant Instance := Get_Self_Instance (Top);
+            begin
+               Synth_Attribute_Inst (Inst, Attr_Decl, Val);
+            end;
          when Iir_Kind_Component_Instantiation_Statement =>
             --  TODO
-            return;
+            null;
          when others =>
             --  TODO: components ?
             --  TODO: Interface_Signal ?  But no instance for them.
@@ -266,13 +377,7 @@ package body Synth.Vhdl_Decls is
                +Attr_Value,
                "attribute %i for %n is not kept in the netlist",
                (+Attr_Decl, +Obj));
-            return;
       end case;
-
-      Ptype := Type_To_Param_Type (Get_Type (Attr_Decl));
-      Pv := Memtyp_To_Pval (Get_Memtyp (Val));
-
-      Set_Instance_Attribute (Inst, Id, Ptype, Pv);
    end Synth_Attribute_Object;
 
    procedure Synth_Attribute_Specification
@@ -307,6 +412,7 @@ package body Synth.Vhdl_Decls is
          --  4. Each new attribute instance is assigned the value of
          --     the expression.
          Val := Unshare (Val, Instance_Pool);
+         Val.Typ := Unshare (Val.Typ, Instance_Pool);
          Create_Object (Syn_Inst, Value, Val);
 
          Release_Expr_Pool (Marker);
@@ -444,13 +550,12 @@ package body Synth.Vhdl_Decls is
               | Iir_Kind_Package_Body
               | Iir_Kind_Function_Declaration
               | Iir_Kind_Procedure_Declaration =>
-               Elab.Vhdl_Decls.Elab_Declaration
-                 (Obj_Inst, Decl, True, Last_Type);
+               Elab.Vhdl_Decls.Elab_Declaration (Obj_Inst, Decl, Last_Type);
             when Iir_Kind_Function_Body
               | Iir_Kind_Procedure_Body =>
                null;
-            when others =>
-               Vhdl.Errors.Error_Kind ("create_protected_object", Decl);
+            when others => Vhdl.Errors.Error_Kind ("create_protected_object",
+                                                   Decl);
          end case;
          if Is_Error (Obj_Inst) then
             Set_Error (Inst);
@@ -571,7 +676,9 @@ package body Synth.Vhdl_Decls is
          return;
       end if;
 
-      if Init.Val = null then
+      --  Variables are always initialized during elaboration.
+      pragma Assert (Init.Val /= null);
+      if False and then Init.Val = null then
          Mark_Expr_Pool (Marker);
          Init := Create_Value_Default (Init.Typ);
          Init := Unshare (Init, Instance_Pool);
@@ -610,7 +717,7 @@ package body Synth.Vhdl_Decls is
      (Syn_Inst : Synth_Instance_Acc; Decl : Node)
    is
       Ctxt : constant Context_Acc := Get_Build (Syn_Inst);
-      Atype : constant Node := Get_Declaration_Type (Decl);
+      Atype : Node;
       Name : constant Node := Get_Name (Decl);
       Marker : Mark_Type;
       Off : Value_Offsets;
@@ -619,22 +726,16 @@ package body Synth.Vhdl_Decls is
       Base : Valtyp;
       Typ : Type_Acc;
    begin
-      --  Subtype indication may not be present.
-      if Atype /= Null_Node then
-         Synth_Subtype_Indication (Syn_Inst, Atype);
-         Obj_Typ := Get_Subtype_Object (Syn_Inst, Atype);
-      else
-         Obj_Typ := null;
-      end if;
-
       Mark_Expr_Pool (Marker);
 
       if Get_Kind (Name) in Iir_Kinds_External_Name then
+         Atype := Get_Declaration_Type (Name);
          Base := Elab.Vhdl_Expr.Exec_External_Name (Syn_Inst, Name);
          Off := No_Value_Offsets;
          Typ := Base.Typ;
       else
-         Vhdl_Stmts.Synth_Assignment_Prefix (Syn_Inst, Name, Base, Typ, Off);
+         Atype := Get_Declaration_Type (Decl);
+         Vhdl_Stmts.Synth_Object_Name (Syn_Inst, Name, Base, Typ, Off);
       end if;
 
       --  In case of error (in particular invalid external names)
@@ -648,12 +749,21 @@ package body Synth.Vhdl_Decls is
          --  Object is a net if it is not writable.  Extract the
          --  bits for the alias.
          Res := Create_Value_Net
-           (Build2_Extract (Ctxt,
-                            Get_Value_Net (Base.Val), Off.Net_Off, Typ.W),
+           (Build2_Extract
+              (Ctxt, Get_Value_Net (Base.Val), Off.Net_Off, Typ.W, +Decl),
             Typ);
       else
          Res := Create_Value_Alias (Base, Off, Typ, Expr_Pool'Access);
       end if;
+
+      --  Subtype indication may not be present.
+      if Atype /= Null_Node then
+         Synth_Subtype_Indication (Syn_Inst, Atype);
+         Obj_Typ := Get_Subtype_Object (Syn_Inst, Atype);
+      else
+         Obj_Typ := null;
+      end if;
+
       if Obj_Typ /= null
         and then Obj_Typ.Kind not in Type_Scalars
       then
@@ -668,6 +778,54 @@ package body Synth.Vhdl_Decls is
       Create_Object (Syn_Inst, Decl, Res);
    end Synth_Object_Alias_Declaration;
 
+   procedure Synth_Concurrent_External_Name
+     (Inst : Synth_Instance_Acc; Decl : Node; Name : Node)
+   is
+      Prev_Instance_Pool : constant Areapools.Areapool_Acc := Instance_Pool;
+      Marker : Mark_Type;
+
+      Prev : Valtyp;
+      Res : Valtyp;
+      Name_Typ : Type_Acc;
+   begin
+      Mark_Expr_Pool (Marker);
+      Instance_Pool := Global_Pool'Access;
+
+      Prev := Get_Value (Inst, Decl);
+
+      --  Resolve the external name.
+      Res := Elab.Vhdl_Expr.Exec_External_Name (Inst, Name);
+
+      if Res /= No_Valtyp then
+         --  Rewrite the external name as an alias.
+         Name_Typ := Prev.Typ;
+         case Res.Val.Kind is
+            when Value_Signal
+              | Value_Memory
+              | Value_Net =>
+               Prev.Val.all := (Kind => Value_Alias,
+                                A_Obj => Res.Val,
+                                A_Typ => Res.Typ,
+                                A_Off => No_Value_Offsets);
+            when others => raise Internal_Error;
+         end case;
+
+         --  Subtype conversion.
+         --  The type of the external name is Res.Typ, and the target type is
+         --  in Prev.Typ.  Need to do some gymnastic.
+         Prev.Typ := Res.Typ;
+         Prev := Elab.Vhdl_Expr.Exec_Subtype_Conversion
+           (Prev, Name_Typ, True, Name);
+--         Convert_Type_Width (Prev.Typ);
+         Prev.Typ := Unshare (Prev.Typ, Instance_Pool);
+
+         Mutate_Object (Inst, Decl, Prev);
+      end if;
+
+      Instance_Pool := Prev_Instance_Pool;
+      Release_Expr_Pool (Marker);
+   end Synth_Concurrent_External_Name;
+
    procedure Synth_Concurrent_Object_Alias_Declaration
      (Syn_Inst : Synth_Instance_Acc; Decl : Node)
    is
@@ -675,50 +833,62 @@ package body Synth.Vhdl_Decls is
       Val : Valtyp;
       Aval : Valtyp;
       Obj : Value_Acc;
+      Name : Node;
       Base : Node;
       Off : Uns32;
    begin
       Val := Get_Value (Syn_Inst, Decl);
       pragma Assert (Val.Val.Kind = Value_Alias);
       Obj := Val.Val.A_Obj;
-      if Obj.Kind = Value_Signal then
-         Mark_Expr_Pool (Marker);
-
-         --  A signal must have been changed to a wire or a net, but the
-         --  aliases have not been updated.  Update here.
-         Base := Decl;
-         loop
-            Base := Get_Base_Name (Get_Name (Base));
-            exit when Get_Kind (Base) /= Iir_Kind_Object_Alias_Declaration;
-         end loop;
-
-         Aval := Synth_Expression (Syn_Inst, Base);
-
-         Off := Val.Val.A_Off.Net_Off;
-
-         --  Handle alias of alias here.
-         if Aval.Val.Kind = Value_Alias then
-            Aval := (Aval.Val.A_Typ, Aval.Val.A_Obj);
-         end if;
-
-         if Aval.Val.Kind = Value_Net then
-            --  Object is a net if it is not writable.  Extract the
-            --  bits for the alias.
-            Aval := (Val.Typ,
-                     Create_Value_Net (Build2_Extract
-                                         (Get_Build (Syn_Inst),
-                                          Get_Value_Net (Aval.Val),
-                                          Off, Val.Typ.W),
-                                       Instance_Pool));
-            Val.Val.A_Off := (0, 0);
-         else
-            Aval := Unshare (Aval, Instance_Pool);
-         end if;
-         Val.Val.A_Obj := Aval.Val;
-         Release_Expr_Pool (Marker);
+      if Obj.Kind /= Value_Signal then
+         return;
       end if;
+
+      --  A signal must have been changed to a wire or a net, but the
+      --  aliases have not been updated.  Update here.
+      Name := Get_Name (Decl);
+      if Get_Kind (Name) in Iir_Kinds_External_Name then
+         Synth_Concurrent_External_Name (Syn_Inst, Decl, Name);
+         return;
+      end if;
+
+      --  Root of the alias (handle alias of alias).
+      loop
+         Base := Get_Base_Name (Name);
+         exit when Get_Kind (Base) /= Iir_Kind_Object_Alias_Declaration;
+         Name := Get_Name (Base);
+      end loop;
+
+      Mark_Expr_Pool (Marker);
+
+      Aval := Synth_Expression (Syn_Inst, Base);
+
+      Off := Val.Val.A_Off.Net_Off;
+
+      --  Handle alias of alias here.
+      if Aval.Val.Kind = Value_Alias then
+         Aval := (Aval.Val.A_Typ, Aval.Val.A_Obj);
+      end if;
+
+      if Aval.Val.Kind = Value_Net then
+         --  Object is a net if it is not writable.  Extract the
+         --  bits for the alias.
+         Aval := (Val.Typ,
+                  Create_Value_Net (Build2_Extract
+                                      (Get_Build (Syn_Inst),
+                                       Get_Value_Net (Aval.Val),
+                                       Off, Val.Typ.W, +Decl),
+                                      Instance_Pool));
+         Val.Val.A_Off := (0, 0);
+      else
+         Aval := Unshare (Aval, Instance_Pool);
+      end if;
+      Val.Val.A_Obj := Aval.Val;
+
+      Release_Expr_Pool (Marker);
    end Synth_Concurrent_Object_Alias_Declaration;
 
+   --  For declarations of subprograms or processes.
    procedure Synth_Declaration (Syn_Inst : Synth_Instance_Acc;
                                 Decl : Node;
                                 Is_Subprg : Boolean;
@@ -731,22 +901,8 @@ package body Synth.Vhdl_Decls is
       case Get_Kind (Decl) is
          when Iir_Kind_Variable_Declaration =>
             Synth_Variable_Declaration (Syn_Inst, Decl, Is_Subprg);
-         when Iir_Kind_Interface_Variable_Declaration =>
-            --  Ignore default value.
-            declare
-               Val : Valtyp;
-               Obj_Typ : Type_Acc;
-            begin
-               Obj_Typ := Get_Subtype_Object (Syn_Inst, Get_Type (Decl));
-               Val := Create_Var_Wire
-                 (Syn_Inst, Decl, Wire_Variable, (Obj_Typ, null));
-               Create_Object (Syn_Inst, Decl, Val);
-            end;
          when Iir_Kind_Constant_Declaration =>
             Synth_Constant_Declaration (Syn_Inst, Decl, Is_Subprg, Last_Type);
-         when Iir_Kind_Signal_Declaration =>
-            pragma Assert (not Is_Subprg);
-            Synth_Signal_Declaration (Syn_Inst, Decl);
          when Iir_Kind_Object_Alias_Declaration =>
             Synth_Object_Alias_Declaration (Syn_Inst, Decl);
          when Iir_Kind_Procedure_Declaration
@@ -790,8 +946,8 @@ package body Synth.Vhdl_Decls is
          when Iir_Kind_Configuration_Specification =>
             null;
          when Iir_Kind_Attribute_Implicit_Declaration =>
-            --  Not supported by synthesis.
-            null;
+            Elab.Vhdl_Decls.Elab_Attribute_Implicit_Declaration
+              (Syn_Inst, Decl);
          when Iir_Kind_Group_Template_Declaration
            | Iir_Kind_Group_Declaration =>
             null;
@@ -856,8 +1012,7 @@ package body Synth.Vhdl_Decls is
                Create_Object (Syn_Inst, Decl, Val);
             end;
 
-         when others =>
-            Vhdl.Errors.Error_Kind ("synth_declaration", Decl);
+         when others => Vhdl.Errors.Error_Kind ("synth_declaration", Decl);
       end case;
 
       pragma Assert (Areapools.Is_At_Mark (Expr_Pool, Marker));
@@ -928,9 +1083,7 @@ package body Synth.Vhdl_Decls is
             | Id_Iinout =>
             Drv := Get_Input_Net (Gate, 0);
             Def_Val := Get_Input_Net (Gate, 1);
-         when others =>
-            --  Todo: output ?
-            raise Internal_Error;
+         when others => raise Internal_Error; --  Todo: output ?
       end case;
       if Drv = No_Net then
          --  Undriven signals.
@@ -965,6 +1118,9 @@ package body Synth.Vhdl_Decls is
            | Iir_Kind_Interface_Variable_Declaration =>
             if not Get_Instance_Const (Syn_Inst) then
                Finalize_Signal (Syn_Inst, Decl);
+            else
+               --  TODO: finalize protected object
+               null;
             end if;
          when Iir_Kind_Constant_Declaration =>
             null;
@@ -1045,8 +1201,7 @@ package body Synth.Vhdl_Decls is
             null;
          when Iir_Kind_Suspend_State_Declaration =>
             null;
-         when others =>
-            Vhdl.Errors.Error_Kind ("finalize_declaration", Decl);
+         when others => Vhdl.Errors.Error_Kind ("finalize_declaration", Decl);
       end case;
    end Finalize_Declaration;
 
@@ -1076,8 +1231,11 @@ package body Synth.Vhdl_Decls is
          when Iir_Kind_Constant_Declaration
            | Iir_Kind_Function_Declaration
            | Iir_Kind_Function_Body
+           | Iir_Kind_Function_Instantiation_Declaration
            | Iir_Kind_Procedure_Declaration
            | Iir_Kind_Procedure_Body
+           | Iir_Kind_Procedure_Instantiation_Declaration
+           | Iir_Kind_Subprogram_Instantiation_Body
            | Iir_Kind_Type_Declaration
            | Iir_Kind_Protected_Type_Body
            | Iir_Kind_Anonymous_Type_Declaration
@@ -1100,8 +1258,8 @@ package body Synth.Vhdl_Decls is
          when Iir_Kind_Attribute_Implicit_Declaration =>
             --  Error will be printed when the attribute is used.
             null;
-         when others =>
-            Vhdl.Errors.Error_Kind ("synth_concurrent_declaration", Decl);
+         when others => Vhdl.Errors.Error_Kind ("synth_concurrent_declaration",
+                                                Decl);
       end case;
       pragma Assert (Is_Expr_Pool_Empty);
    end Synth_Concurrent_Declaration;

@@ -102,6 +102,12 @@ package Netlists.Builders is
                         Sel : Net;
                         Def : Net) return Net;
 
+   --  WD is the width of the output.
+   function Build_Bmux (Ctxt : Context_Acc;
+                        Wd : Width;
+                        Inp : Net;
+                        Idx : Net) return Net;
+
    --  Build: I0 & I1 [ & I2 [ & I3 ]]
    function Build_Concat2 (Ctxt : Context_Acc; I0, I1 : Net) return Net;
    function Build_Concat3 (Ctxt : Context_Acc; I0, I1, I2 : Net) return Net;
@@ -135,6 +141,7 @@ package Netlists.Builders is
      (Ctxt : Context_Acc; Mem : Net; V : Net; Idx : Net; En : Net; Off : Uns32)
      return Net;
 
+   --  W is the width of the output.
    function Build_Memidx
      (Ctxt : Context_Acc;
       I : Net; Step : Uns32; Max : Uns32; W : Width) return Net;
@@ -251,6 +258,7 @@ private
       M_Mux2 : Module;
       M_Mux4 : Module;
       M_Pmux : Module;
+      M_Bmux : Module;
       M_Nop : Module;
       M_Output : Module;
       M_Ioutput : Module;

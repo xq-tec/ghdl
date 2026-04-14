@@ -31,17 +31,12 @@ with Synth.Vhdl_Stmts; use Synth.Vhdl_Stmts;
 with Synth.Vhdl_Decls;
 
 package body Elab.Vhdl_Decls is
-   procedure Elab_Subprogram_Declaration
+
+   procedure Elab_Interface_Declaration
      (Syn_Inst : Synth_Instance_Acc; Subprg : Node)
    is
       Inter : Node;
-      Typ : Type_Acc;
    begin
-      if Is_Second_Subprogram_Specification (Subprg) then
-         --  Already handled.
-         return;
-      end if;
-
       Inter := Get_Interface_Declaration_Chain (Subprg);
       while Inter /= Null_Node loop
          if not Get_Is_Ref (Inter) then
@@ -49,7 +44,26 @@ package body Elab.Vhdl_Decls is
          end if;
          Inter := Get_Chain (Inter);
       end loop;
-      pragma Unreferenced (Typ);
+   end Elab_Interface_Declaration;
+
+   procedure Elab_Subprogram_Declaration
+     (Syn_Inst : Synth_Instance_Acc; Subprg : Node) is
+   begin
+      if Get_Implicit_Definition (Subprg) < Iir_Predefined_None then
+         --  Implicit operators directly use the type, not a subtype.
+         --  So there is no need to iterate over interfaces.
+         return;
+      end if;
+      if Is_Second_Subprogram_Specification (Subprg) then
+         --  Already handled (by the primary specification).
+         return;
+      end if;
+      if not Get_Use_Flag (Subprg) then
+         --  Not used.
+         return;
+      end if;
+
+      Elab_Interface_Declaration (Syn_Inst, Subprg);
    end Elab_Subprogram_Declaration;
 
    procedure Create_Signal (Syn_Inst : Synth_Instance_Acc;
@@ -97,8 +111,7 @@ package body Elab.Vhdl_Decls is
    end Elab_Signal_Declaration;
 
    procedure Elab_Variable_Declaration (Syn_Inst : Synth_Instance_Acc;
-                                        Decl : Node;
-                                        Force_Init : Boolean)
+                                        Decl : Node)
    is
       Def : constant Node := Get_Default_Value (Decl);
       Marker : Mark_Type;
@@ -123,18 +136,14 @@ package body Elab.Vhdl_Decls is
       else
          --  Always create shared variables, as they might be referenced
          --  during elaboration.
-         if (Force_Init or else Get_Shared_Flag (Decl)) then
-            if Obj_Typ.Kind /= Type_Protected then
-               Current_Pool := Instance_Pool;
-               Init := Create_Value_Default (Obj_Typ);
-               Current_Pool := Expr_Pool'Access;
-            else
-               Init := Synth.Vhdl_Decls.Create_Protected_Object
-                 (Syn_Inst, Decl, Obj_Typ);
-               Init := Unshare (Init, Instance_Pool);
-            end if;
+         if Obj_Typ.Kind /= Type_Protected then
+            Current_Pool := Instance_Pool;
+            Init := Create_Value_Default (Obj_Typ);
+            Current_Pool := Expr_Pool'Access;
          else
-            Init := (Typ => Obj_Typ, Val => null);
+            Init := Synth.Vhdl_Decls.Create_Protected_Object
+              (Syn_Inst, Decl, Obj_Typ);
+            Init := Unshare (Init, Instance_Pool);
          end if;
       end if;
       Release_Expr_Pool (Marker);
@@ -155,6 +164,57 @@ package body Elab.Vhdl_Decls is
       Create_Object (Syn_Inst, Decl, Res);
    end Elab_File_Declaration;
 
+   procedure Elab_External_Name (Syn_Inst : Synth_Instance_Acc; Decl : Node)
+   is
+      Obj_Typ : Type_Acc;
+      Res : Valtyp;
+   begin
+      Obj_Typ := Elab_Declaration_Type (Syn_Inst, Decl);
+
+      Res := Create_Value_Alias
+        (No_Valtyp, No_Value_Offsets, Obj_Typ, Instance_Pool);
+
+      --  For elaboration: Base, Offset and reshaped bounds.
+      Create_Object (Syn_Inst, Decl, Res);
+   end Elab_External_Name;
+
+   procedure Elab_Implicit_Signal_Declaration (Syn_Inst : Synth_Instance_Acc;
+                                               Decl : Node)
+   is
+      Obj_Typ : Type_Acc;
+   begin
+      case Get_Kind (Decl) is
+         when Iir_Kind_Delayed_Attribute =>
+            --  Extract the type from the prefix.
+            --  The type of the implicit signal may be a non-declared subtype
+            --  (eg: the prefix is an indexed array, or a record element)
+            declare
+               Pfx : constant Node := Get_Prefix (Decl);
+               Marker : Mark_Type;
+               Base : Valtyp;
+               Off : Value_Offsets;
+            begin
+               Mark_Expr_Pool (Marker);
+
+               if Get_Kind (Pfx) in Iir_Kinds_External_Name then
+                  Base := Exec_External_Name (Syn_Inst, Pfx);
+                  Obj_Typ := Base.Typ;
+               else
+                  Synth_Object_Name (Syn_Inst, Pfx, Base, Obj_Typ, Off);
+               end if;
+               Obj_Typ := Unshare (Obj_Typ, Instance_Pool);
+               Release_Expr_Pool (Marker);
+            end;
+         when Iir_Kinds_External_Name =>
+            Elab_External_Name (Syn_Inst, Decl);
+            return;
+         when others =>
+            Obj_Typ := Get_Subtype_Object (Syn_Inst, Get_Type (Decl));
+      end case;
+      Create_Signal (Syn_Inst, Decl, Obj_Typ, null);
+   end Elab_Implicit_Signal_Declaration;
+
+   --  GCOV_EXCL_START (AMS)
    procedure Elab_Free_Quantity_Declaration (Syn_Inst : Synth_Instance_Acc;
                                              Decl : Node)
    is
@@ -165,15 +225,6 @@ package body Elab.Vhdl_Decls is
       Res := Create_Value_Quantity (Obj_Typ, No_Quantity_Index, Instance_Pool);
       Create_Object (Syn_Inst, Decl, Res);
    end Elab_Free_Quantity_Declaration;
-
-   procedure Elab_Implicit_Signal_Declaration (Syn_Inst : Synth_Instance_Acc;
-                                               Decl : Node)
-   is
-      Obj_Typ : Type_Acc;
-   begin
-      Obj_Typ := Get_Subtype_Object (Syn_Inst, Get_Type (Decl));
-      Create_Signal (Syn_Inst, Decl, Obj_Typ, null);
-   end Elab_Implicit_Signal_Declaration;
 
    procedure Elab_Implicit_Quantity_Declaration (Syn_Inst : Synth_Instance_Acc;
                                                  Decl : Node)
@@ -207,6 +258,7 @@ package body Elab.Vhdl_Decls is
             Error_Kind ("elab_nature_definition", Def);
       end case;
    end Elab_Nature_Definition;
+   --  GCOV_EXCL_STOP
 
    procedure Elab_Attribute_Specification
      (Syn_Inst : Synth_Instance_Acc; Spec : Node)
@@ -242,7 +294,14 @@ package body Elab.Vhdl_Decls is
          --     the expression.
          Val := Unshare (Val, Instance_Pool);
          Val.Typ := Unshare (Val.Typ, Instance_Pool);
-         Create_Object (Syn_Inst, Value, Val);
+         if Is_Entity_Attribute (Value) then
+            if Get_Value (Root_Instance, Value) = No_Valtyp then
+               --  Set once, it's global and not in a specific order...
+               Create_Object_Force (Root_Instance, Value, Val);
+            end if;
+         else
+            Create_Object (Syn_Inst, Value, Val);
+         end if;
          Release_Expr_Pool (Marker);
 
          Value := Get_Spec_Chain (Value);
@@ -262,21 +321,24 @@ package body Elab.Vhdl_Decls is
    begin
       Mark_Expr_Pool (Marker);
 
-      if Get_Subtype_Indication (Decl) /= Null_Node then
-         Obj_Typ := Elab_Declaration_Type (Syn_Inst, Decl);
-      else
-         Obj_Typ := null;
-      end if;
-
       if Get_Kind (Name) in Iir_Kinds_External_Name then
+         --  Alias have no subtype indication, but the external name has one.
+         Obj_Typ := Elab_Declaration_Type (Syn_Inst, Name);
          Base := Exec_External_Name (Syn_Inst, Name);
          Typ := Base.Typ;
          Off := No_Value_Offsets;
       else
-         Synth_Assignment_Prefix (Syn_Inst, Name, Base, Typ, Off);
+         if Get_Subtype_Indication (Decl) /= Null_Node then
+            Obj_Typ := Elab_Declaration_Type (Syn_Inst, Decl);
+         else
+            Obj_Typ := null;
+         end if;
+         Synth_Object_Name (Syn_Inst, Name, Base, Typ, Off);
       end if;
-      if Base /= No_Valtyp then
+      if Base = No_Valtyp then
          --  In case of error (invalid name or invalid external name).
+         Set_Error (Syn_Inst);
+      else
          Res := Create_Value_Alias (Base, Off, Typ, Expr_Pool'Access);
          if Obj_Typ /= null and then Obj_Typ.Kind not in Type_Scalars then
             --  Reshape bounds.
@@ -289,30 +351,27 @@ package body Elab.Vhdl_Decls is
       Release_Expr_Pool (Marker);
    end Elab_Object_Alias_Declaration;
 
-   procedure Elab_External_Name (Syn_Inst : Synth_Instance_Acc; Decl : Node)
+   procedure Elab_Attribute_Implicit_Declaration
+     (Syn_Inst : Synth_Instance_Acc; Decl : Node)
    is
-      Obj_Typ : Type_Acc;
-      Res : Valtyp;
+      El : Node;
    begin
-      Obj_Typ := Elab_Declaration_Type (Syn_Inst, Decl);
-
-      Res := Create_Value_Alias
-        (No_Valtyp, No_Value_Offsets, Obj_Typ, Instance_Pool);
-
-      --  For elaboration: Base, Offset and reshaped bounds.
-      Create_Object (Syn_Inst, Decl, Res);
-   end Elab_External_Name;
+      El := Get_Attribute_Implicit_Chain (Decl);
+      while El /= Null_Node loop
+         Elab_Implicit_Signal_Declaration (Syn_Inst, El);
+         El := Get_Attr_Chain (El);
+      end loop;
+   end Elab_Attribute_Implicit_Declaration;
 
    procedure Elab_Declaration (Syn_Inst : Synth_Instance_Acc;
                                Decl : Node;
-                               Force_Init : Boolean;
                                Last_Type : in out Node)
    is
       use Synth.Vhdl_Decls;
    begin
       case Get_Kind (Decl) is
          when Iir_Kind_Variable_Declaration =>
-            Elab_Variable_Declaration (Syn_Inst, Decl, Force_Init);
+            Elab_Variable_Declaration (Syn_Inst, Decl);
          --  when Iir_Kind_Interface_Variable_Declaration =>
          --     --  Ignore default value.
          --     Create_Wire_Object (Syn_Inst, Wire_Variable, Decl);
@@ -326,8 +385,17 @@ package body Elab.Vhdl_Decls is
          when Iir_Kind_Procedure_Declaration
             | Iir_Kind_Function_Declaration =>
             Elab_Subprogram_Declaration (Syn_Inst, Decl);
+         when Iir_Kinds_Subprogram_Instantiation_Declaration =>
+            if Get_Use_Flag (Decl) then
+               Vhdl_Insts.Elab_Generics_Association
+                 (Syn_Inst, Syn_Inst,
+                  Get_Generic_Chain (Decl),
+                  Get_Generic_Map_Aspect_Chain (Decl));
+               Elab_Interface_Declaration (Syn_Inst, Decl);
+            end if;
          when Iir_Kind_Procedure_Body
-            | Iir_Kind_Function_Body =>
+            | Iir_Kind_Function_Body
+            | Iir_Kind_Subprogram_Instantiation_Body =>
             null;
          when Iir_Kind_Non_Object_Alias_Declaration =>
             null;
@@ -384,15 +452,9 @@ package body Elab.Vhdl_Decls is
          when Iir_Kind_Configuration_Specification =>
             null;
          when Iir_Kind_Attribute_Implicit_Declaration =>
-            declare
-               El : Node;
-            begin
-               El := Get_Attribute_Implicit_Chain (Decl);
-               while El /= Null_Node loop
-                  Elab_Declaration (Syn_Inst, El, Force_Init, Last_Type);
-                  El := Get_Attr_Chain (El);
-               end loop;
-            end;
+            Elab_Attribute_Implicit_Declaration (Syn_Inst, Decl);
+
+         --  GCOV_EXCL_START (AMS)
          when Iir_Kind_Nature_Declaration =>
             Elab_Nature_Definition (Syn_Inst, Get_Nature (Decl));
          when Iir_Kind_Free_Quantity_Declaration =>
@@ -405,28 +467,26 @@ package body Elab.Vhdl_Decls is
             Elab_Implicit_Quantity_Declaration (Syn_Inst, Decl);
          when Iir_Kind_Terminal_Declaration =>
             Elab_Terminal_Declaration (Syn_Inst, Decl);
+
          when Iir_Kinds_Signal_Attribute =>
-            Elab_Implicit_Signal_Declaration (Syn_Inst, Decl);
+            --  Handled by Attribute_Implicit_Declaration
+            raise Program_Error;
+         --  GCOV_EXCL_STOP
+
          when Iir_Kind_Disconnection_Specification =>
             null;
-
-         when Iir_Kinds_External_Name =>
-            Elab_External_Name (Syn_Inst, Decl);
 
          when Iir_Kind_Group_Template_Declaration
            | Iir_Kind_Group_Declaration =>
             null;
 
-         when others =>
-            Vhdl.Errors.Error_Kind ("elab_declaration", Decl);
+         when others => Vhdl.Errors.Error_Kind ("elab_declaration", Decl);
       end case;
 
       pragma Assert (Is_Expr_Pool_Empty);
    end Elab_Declaration;
 
-   procedure Elab_Declarations (Syn_Inst : Synth_Instance_Acc;
-                                Decls : Iir;
-                                Force_Init : Boolean := False)
+   procedure Elab_Declarations (Syn_Inst : Synth_Instance_Acc; Decls : Iir)
    is
       Decl : Node;
       Last_Type : Node;
@@ -434,77 +494,11 @@ package body Elab.Vhdl_Decls is
       Last_Type := Null_Node;
       Decl := Decls;
       while Is_Valid (Decl) loop
-         Elab_Declaration (Syn_Inst, Decl, Force_Init, Last_Type);
+         Elab_Declaration (Syn_Inst, Decl, Last_Type);
 
          exit when Is_Error (Syn_Inst);
 
          Decl := Get_Chain (Decl);
       end loop;
    end Elab_Declarations;
-
-   procedure Finalize_Declaration
-     (Syn_Inst : Synth_Instance_Acc; Decl : Node; Is_Subprg : Boolean)
-   is
-      pragma Unreferenced (Syn_Inst);
-   begin
-      case Get_Kind (Decl) is
-         when Iir_Kind_Variable_Declaration
-           | Iir_Kind_Interface_Variable_Declaration =>
-            null;
-         when Iir_Kind_Constant_Declaration =>
-            null;
-         when Iir_Kind_Signal_Declaration
-            | Iir_Kind_Interface_Signal_Declaration =>
-            pragma Assert (not Is_Subprg);
-            null;
-         when Iir_Kind_Object_Alias_Declaration =>
-            null;
-         when Iir_Kind_Procedure_Declaration
-           | Iir_Kind_Function_Declaration =>
-            null;
-         when Iir_Kind_Procedure_Body
-           | Iir_Kind_Function_Body =>
-            null;
-         when Iir_Kind_Non_Object_Alias_Declaration =>
-            null;
-         when Iir_Kind_Attribute_Declaration =>
-            null;
-         when Iir_Kind_Attribute_Specification =>
-            null;
-         when Iir_Kind_Type_Declaration =>
-            null;
-         when Iir_Kind_Anonymous_Type_Declaration =>
-            null;
-         when  Iir_Kind_Subtype_Declaration =>
-            null;
-         when Iir_Kind_Component_Declaration =>
-            null;
-         when Iir_Kind_File_Declaration =>
-            null;
-         when Iir_Kind_Configuration_Specification =>
-            null;
-         when Iir_Kind_Psl_Default_Clock =>
-            --  Ignored; directly used by PSL directives.
-            null;
-         when Iir_Kind_Attribute_Implicit_Declaration =>
-            --  Not supported by synthesis.
-            null;
-         when others =>
-            Vhdl.Errors.Error_Kind ("finalize_declaration", Decl);
-      end case;
-   end Finalize_Declaration;
-
-   procedure Finalize_Declarations (Syn_Inst : Synth_Instance_Acc;
-                                    Decls : Iir;
-                                    Is_Subprg : Boolean := False)
-   is
-      Decl : Iir;
-   begin
-      Decl := Decls;
-      while Is_Valid (Decl) loop
-         Finalize_Declaration (Syn_Inst, Decl, Is_Subprg);
-
-         Decl := Get_Chain (Decl);
-      end loop;
-   end Finalize_Declarations;
 end Elab.Vhdl_Decls;

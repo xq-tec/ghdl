@@ -19,6 +19,7 @@ with Str_Table;
 with Flags;
 with Errorout; use Errorout;
 with Libraries;
+
 with Vhdl.Errors; use Vhdl.Errors;
 with Vhdl.Std_Package;
 with Vhdl.Utils; use Vhdl.Utils;
@@ -27,7 +28,7 @@ with Vhdl.Sem_Scopes;
 with Vhdl.Sem_Lib; use Vhdl.Sem_Lib;
 with Vhdl.Canon;
 with Vhdl.Evaluation;
-with Vhdl.Scanner;
+with Vhdl.Chars;
 
 package body Vhdl.Configuration is
    procedure Add_Design_Concurrent_Stmts (Parent : Iir);
@@ -176,17 +177,17 @@ package body Vhdl.Configuration is
          begin
             Bod := Libraries.Find_Secondary_Unit (Unit, Null_Identifier);
             if Get_Need_Body (Lib_Unit) then
-               if not Flags.Flag_Elaborate_With_Outdated then
-                  --  LIB_UNIT requires a body.
-                  if Bod = Null_Iir then
-                     Error_Msg_Elab
-                       (Lib_Unit, "body of %n was never analyzed", +Lib_Unit);
-                  elsif Get_Date (Bod) < Get_Date (Unit) then
-                     --  Cannot use BOD as location, as the location may not
-                     --  exist.
-                     Error_Msg_Elab (Lib_Unit, "%n is outdated", +Bod);
-                     Bod := Null_Iir;
-                  end if;
+               --  LIB_UNIT requires a body.
+               if Bod = Null_Iir then
+                  Error_Msg_Elab
+                    (Lib_Unit, "body of %n was never analyzed", +Lib_Unit);
+               elsif not Flags.Flag_Elaborate_With_Outdated
+                 and then Get_Date (Bod) < Get_Date (Unit)
+               then
+                  --  Cannot use BOD as location, as the location may not
+                  --  exist.
+                  Error_Msg_Elab (Lib_Unit, "%n is outdated", +Bod);
+                  Bod := Null_Iir;
                end if;
             else
                if Bod /= Null_Iir
@@ -454,6 +455,7 @@ package body Vhdl.Configuration is
       while Assoc /= Null_Iir loop
          if Get_Kind (Assoc) = Iir_Kind_Association_Element_Open then
             Formal := Get_Association_Interface (Assoc, Inter);
+            --  So FORMAL is not associated.
             Err := Err or Check_Open_Port (Formal, Assoc);
             if Is_Warning_Enabled (Warnid_Binding)
               and then not Get_Artificial_Flag (Assoc)
@@ -489,6 +491,7 @@ package body Vhdl.Configuration is
          while Assoc /= Null_Iir loop
             if Get_Kind (Assoc) = Iir_Kind_Association_Element_Open then
                Formal := Get_Association_Interface (Assoc, Inter);
+               --  FORMAL is not associated.
                Set_Open_Flag (Formal, True);
                Err := True;
             end if;
@@ -512,9 +515,12 @@ package body Vhdl.Configuration is
                   end if;
                end if;
                if Actual /= Null_Iir
+                 and then Get_Default_Value (Actual) = Null_Iir
                  and then Get_Open_Flag (Actual)
                  and then Check_Open_Port (Formal, Null_Iir)
                then
+                  --  So FORMAL is associated to ACTUAL, which is not
+                  --  associated (and has no default value).
                   --  For a better message, find the location.
                   Assoc_1 := Inst_Assoc_Chain;
                   Inter_1 := Inst_Inter_Chain;
@@ -625,6 +631,72 @@ package body Vhdl.Configuration is
       end loop;
    end Add_Design_Block_Configuration;
 
+   function Configure_From_Configuration (Top_Unit : Iir) return Iir
+   is
+      use Libraries;
+   begin
+      --  Exclude std.standard
+      Set_Configuration_Mark_Flag (Vhdl.Std_Package.Std_Standard_Unit, True);
+      Set_Configuration_Done_Flag (Vhdl.Std_Package.Std_Standard_Unit, True);
+
+      Add_Design_Unit (Top_Unit, Command_Line_Location);
+      return Top_Unit;
+   end Configure_From_Configuration;
+
+   function Configure_From_Entity (Entity_Unit : Iir; Arch_Id : Name_Id)
+                                  return Iir
+   is
+      use Libraries;
+
+      Lib_Unit : Iir;
+      Unit : Iir;
+      Res : Iir;
+   begin
+      --  Use WORK as location (should use a command line location ?)
+      Load_Design_Unit (Entity_Unit, Command_Line_Location);
+      if Nbr_Errors /= 0 then
+         return Null_Iir;
+      end if;
+      Lib_Unit := Get_Library_Unit (Entity_Unit);
+
+      if Arch_Id /= Null_Identifier then
+         Unit := Find_Secondary_Unit (Entity_Unit, Arch_Id);
+         if Unit = Null_Iir then
+            Error_Msg_Elab ("cannot find architecture %i of %n",
+              (+Arch_Id, +Lib_Unit));
+            return Null_Iir;
+         end if;
+      else
+         declare
+            Arch_Unit : Iir_Architecture_Body;
+         begin
+            Arch_Unit := Get_Latest_Architecture (Lib_Unit);
+            if Arch_Unit = Null_Iir then
+               Error_Msg_Elab
+                 ("%n has no architecture in library %i",
+                 (+Lib_Unit, +Work_Library));
+               return Null_Iir;
+            end if;
+            Unit := Get_Design_Unit (Arch_Unit);
+         end;
+      end if;
+      Load_Design_Unit (Unit, Command_Line_Location);
+      if Nbr_Errors /= 0 then
+         return Null_Iir;
+      end if;
+      Lib_Unit := Get_Library_Unit (Unit);
+
+      Res := Get_Default_Configuration_Declaration (Lib_Unit);
+      if Res = Null_Iir then
+         Res := Vhdl.Canon.Create_Default_Configuration_Declaration (Lib_Unit);
+         Set_Default_Configuration_Declaration (Lib_Unit, Res);
+      end if;
+
+      pragma Assert (Is_Valid (Res));
+
+      return Configure_From_Configuration (Res);
+   end Configure_From_Entity;
+
    --  elaboration of a design hierarchy:
    --  creates a list of design unit.
    --
@@ -644,7 +716,6 @@ package body Vhdl.Configuration is
       Library : Iir;
       Unit : Iir_Design_Unit;
       Lib_Unit : Iir;
-      Top : Iir;
    begin
       if Library_Id /= Null_Identifier then
          Library := Get_Library (Library_Id, Command_Line_Location);
@@ -667,45 +738,7 @@ package body Vhdl.Configuration is
       Lib_Unit := Get_Library_Unit (Unit);
       case Get_Kind (Lib_Unit) is
          when Iir_Kind_Entity_Declaration =>
-            --  Use WORK as location (should use a command line location ?)
-            Load_Design_Unit (Unit, Command_Line_Location);
-            if Nbr_Errors /= 0 then
-               return Null_Iir;
-            end if;
-            Lib_Unit := Get_Library_Unit (Unit);
-            if Secondary_Id /= Null_Identifier then
-               Unit := Find_Secondary_Unit (Unit, Secondary_Id);
-               if Unit = Null_Iir then
-                  Error_Msg_Elab ("cannot find architecture %i of %n",
-                                  (+Secondary_Id, +Lib_Unit));
-                  return Null_Iir;
-               end if;
-            else
-               declare
-                  Arch_Unit : Iir_Architecture_Body;
-               begin
-                  Arch_Unit := Get_Latest_Architecture (Lib_Unit);
-                  if Arch_Unit = Null_Iir then
-                     Error_Msg_Elab
-                       ("%n has no architecture in library %i",
-                        (+Lib_Unit, +Work_Library));
-                     return Null_Iir;
-                  end if;
-                  Unit := Get_Design_Unit (Arch_Unit);
-               end;
-            end if;
-            Load_Design_Unit (Unit, Command_Line_Location);
-            if Nbr_Errors /= 0 then
-               return Null_Iir;
-            end if;
-            Lib_Unit := Get_Library_Unit (Unit);
-            pragma Assert
-              (Is_Null (Get_Default_Configuration_Declaration (Lib_Unit)));
-
-            Top := Vhdl.Canon.Create_Default_Configuration_Declaration
-              (Lib_Unit);
-            Set_Default_Configuration_Declaration (Lib_Unit, Top);
-            pragma Assert (Is_Valid (Top));
+            return Configure_From_Entity (Unit, Secondary_Id);
          when Iir_Kind_Configuration_Declaration =>
             if Secondary_Id /= Null_Identifier then
                Error_Msg_Elab
@@ -713,21 +746,14 @@ package body Vhdl.Configuration is
                   +Primary_Id);
                return Null_Iir;
             end if;
-            Top := Unit;
+            return Configure_From_Configuration (Unit);
          when Iir_Kind_Foreign_Module =>
-            Top := Unit;
+            return Configure_From_Configuration (Unit);
          when others =>
             Error_Msg_Elab ("%i is neither an entity nor a configuration",
                            +Primary_Id);
             return Null_Iir;
       end case;
-
-      --  Exclude std.standard
-      Set_Configuration_Mark_Flag (Vhdl.Std_Package.Std_Standard_Unit, True);
-      Set_Configuration_Done_Flag (Vhdl.Std_Package.Std_Standard_Unit, True);
-
-      Add_Design_Unit (Top, Command_Line_Location);
-      return Top;
    end Configure;
 
    procedure Add_Verification_Unit (Vunit : Iir)
@@ -869,7 +895,9 @@ package body Vhdl.Configuration is
             when Iir_Kind_Interface_Type_Declaration =>
                Error (El, "(%n is a type generic)", +El);
             when Iir_Kind_Interface_Package_Declaration =>
-               Error (El, "(%n is a package generic)", +El);
+               if Get_Generic_Map_Aspect_Chain (El) = Null_Iir then
+                  Error (El, "(%n is a package generic)", +El);
+               end if;
             when Iir_Kind_Interface_Terminal_Declaration =>
                null;
          end case;
@@ -879,10 +907,13 @@ package body Vhdl.Configuration is
       --  Check port.
       El := Get_Port_Chain (Entity);
       while El /= Null_Iir loop
-         if not Is_Fully_Constrained_Type (Get_Type (El))
-           and then Get_Default_Value (El) = Null_Iir
-         then
-            Error (El, "(%n is unconstrained and has no default value)", +El);
+         if not Is_Fully_Constrained_Type (Get_Type (El)) then
+            if Get_Kind (El) = Iir_Kind_Interface_View_Declaration
+              or else Get_Default_Value (El) = Null_Iir
+            then
+               Error
+                 (El, "(%n is unconstrained and has no default value)", +El);
+            end if;
          end if;
          El := Get_Chain (El);
       end loop;
@@ -1302,7 +1333,7 @@ package body Vhdl.Configuration is
             Set_Is_Ref (Get_Chain (Gen), False);
          end if;
       end if;
-      Set_Location (Res, No_Location);
+      Set_Location (Res, Libraries.Command_Line_Location);
       Set_Default_Value (Gen, Res);
    end Override_Generic;
 
@@ -1322,7 +1353,7 @@ package body Vhdl.Configuration is
                      Inter : Iir;
                      Err : Boolean;
                   begin
-                     Vhdl.Scanner.Convert_Identifier (Gen_Name, Err);
+                     Vhdl.Chars.Convert_Identifier (Gen_Name, Err);
                      if Err then
                         Error_Msg_Option
                           ("incorrect name in generic override option");
@@ -1347,7 +1378,7 @@ package body Vhdl.Configuration is
                      then
                         --  Could be a generic package, a generic type...
                         Error_Msg_Elab
-                          ("generic %n cannot be overriden (not a constant)",
+                          ("generic %n cannot be overridden (not a constant)",
                            +Gen_Id);
                      else
                         Override_Generic (Inter, Over.Value);

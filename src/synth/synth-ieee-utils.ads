@@ -19,8 +19,12 @@
 with Types; use Types;
 
 with Elab.Memtype; use Elab.Memtype;
+with Elab.Vhdl_Objtypes; use Elab.Vhdl_Objtypes;
+with Elab.Vhdl_Context; use Elab.Vhdl_Context;
 
 with Synth.Ieee.Std_Logic_1164; use Synth.Ieee.Std_Logic_1164;
+
+with Vhdl.Nodes; use Vhdl.Nodes;
 
 package Synth.Ieee.Utils is
    subtype Sl_01 is Std_Ulogic range '0' .. '1';
@@ -49,23 +53,20 @@ package Synth.Ieee.Utils is
    type Uns_To_01_Array is array (Uns64 range 0 .. 1) of Sl_X01;
    Uns_To_01 : constant Uns_To_01_Array := (0 => '0', 1 => '1');
 
-   procedure Fill (Res : Memory_Ptr; Len : Uns32; V : Std_Ulogic);
+   --  True if V has a non-logic value (U/X/Z/W/-).
+   function Has_X (V : Memtyp) return Boolean;
 
    --  Note: SRC = DST is allowed.
    procedure Neg_Vec (Src : Memory_Ptr; Dst : Memory_Ptr; Len : Uns32);
 
-   --  Note: SRC = DST is allowed.
-   procedure Abs_Vec (Src : Memory_Ptr; Dst : Memory_Ptr; Len : Uns32);
+   --  Function to create the result vector type (from LEN) to most numerical
+   --  operations.
+   function Create_Res_Type (Otyp : Type_Acc; Len : Uns32) return Type_Acc;
 
-   --  Multiplication.
-   --  Length of RES is LLEN + RLEN + 1 (if L_SIGN /= R_SIGN)
-   procedure Mul_Vec (L, R : Memory_Ptr;
-                      Llen, Rlen : Uns32;
-                      L_Sign, R_Sign : Boolean;
-                      Res : Memory_Ptr);
+   --  Function to create a null result.
+   function Null_Res (Arr_Typ : Type_Acc) return Memtyp;
 
-   --  Assume no X (they are considered as '0').
-   function Compare_Vec (L, R : Memory_Ptr;
-                         Llen, Rlen : Uns32;
-                         L_Sign, R_Sign : Boolean) return Order_Type;
+   procedure Report_Division_By_Zero (Inst : Synth_Instance_Acc;
+                                      Loc : Node;
+                                      Msg : String);
 end Synth.Ieee.Utils;

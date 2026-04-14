@@ -128,9 +128,14 @@ package body Trans.Chap7 is
       end if;
 
       --  Only aggregates are specially handled.
-      if not Is_Static_Construct (Expr)
-        or else Get_Kind (Expr) /= Iir_Kind_Aggregate
-      then
+      if Get_Kind (Expr) /= Iir_Kind_Aggregate then
+         if Get_Type_Staticness (Get_Type (Expr)) /= Locally then
+            --  Unbounded locally static expressions are not yet handled.
+            --  This concerns at least 'image.
+            return False;
+         end if;
+         return Is_Static_Construct (Expr);
+      elsif not Get_Aggregate_Expand_Flag (Expr) then
          return False;
       end if;
 
@@ -195,10 +200,10 @@ package body Trans.Chap7 is
                Index_Type : constant Iir :=
                  Get_Index_Type (Aggr_Type, Dim - 1);
                Index_Range : constant Iir := Eval_Static_Range (Index_Type);
-               Len : constant Int64 :=
+               Len : constant Uns64 :=
                  Eval_Discrete_Range_Length (Index_Range);
                Assocs : constant Iir := Get_Association_Choices_Chain (Aggr);
-               Vect : Iir_Array (0 .. Integer (Len - 1));
+               Vect : Iir_Array (0 .. Integer (Len) - 1);
             begin
                if Len = 0 then
                   --  Should be automatically handled, but fails with some
@@ -260,6 +265,7 @@ package body Trans.Chap7 is
                Assoc : Iir;
                El : Iir;
                Bel : Iir;
+               Etype : Iir;
             begin
                Start_Record_Aggr
                  (List, Get_Ortho_Type (Aggr_Type, Mode_Value));
@@ -274,9 +280,20 @@ package body Trans.Chap7 is
                      if Is_Static_Type (Get_Info (Get_Type (Bel))) = Static
                      then
                         El := Get_Associated_Expr (Assoc);
+                        Etype := Get_Type (El);
+                        if Get_Kind (Etype)
+                          in Iir_Kinds_Discrete_Type_Definition
+                        then
+                           --  If the type is discrete, there can be an
+                           --  implicit conversion.
+                           --  If the type is composite, the type of the
+                           --  expression should be kept in case of unbounded
+                           --  element type (we don't want the unbounded
+                           --  representation).
+                           Etype := Get_Type (Bel);
+                        end if;
                         New_Record_Aggr_El
-                          (List,
-                           Translate_Static_Expression (El, Get_Type (El)));
+                          (List, Translate_Static_Expression (El, Etype));
                      end if;
                      Assoc := Get_Chain (Assoc);
                   end loop;
@@ -324,9 +341,7 @@ package body Trans.Chap7 is
       Chap3.Translate_Anonymous_Subtype_Definition (Lit_Type, False);
       Arr_Type := Get_Ortho_Type (Lit_Type, Mode_Value);
 
-      Start_Array_Aggr
-        (List, Arr_Type,
-         Unsigned_32 (Chap3.Get_Static_Array_Length (Lit_Type)));
+      Start_Array_Aggr (List, Arr_Type, Unsigned_32 (Get_String_Length (Str)));
 
       Translate_Static_String_Literal8_Inner (List, Str, Element_Type);
 
@@ -642,6 +657,9 @@ package body Trans.Chap7 is
          when Iir_Kinds_Denoting_Name =>
             return Translate_Static_Expression
               (Get_Named_Entity (Expr), Res_Type);
+         when Iir_Kind_Constant_Declaration =>
+            return Translate_Static_Expression
+              (Get_Default_Value (Expr), Res_Type);
          when others =>
             Error_Kind ("translate_static_expression", Expr);
       end case;
@@ -1558,7 +1576,7 @@ package body Trans.Chap7 is
       Info       : constant Type_Info_Acc := Get_Info (Expr_Type);
       Is_Unbounded_El : constant Boolean :=
         not Is_Fully_Constrained_Type (El_Type);
-      Static_Length : Int64 := 0;
+      Static_Length : Uns64 := 0;
       Nbr_Dyn_Expr : Natural := 0;
 
       --  Call handlers for each leaf of LEFT CONCAT_IMP RIGHT.
@@ -2300,14 +2318,17 @@ package body Trans.Chap7 is
                                 return O_Enode
    is
       Val_Type : constant Iir := Get_Base_Type (Res_Type);
-      Res      : O_Dnode;
+      Res      : Mnode;
+      Str_Len  : Mnode;
       Assoc    : O_Assoc_List;
    begin
-      Res := Create_Temp (Std_String_Node);
+      Str_Len := Dv2M (Create_Temp (Ghdl_Str_Len_Type_Node),
+        null, Mode_Value,
+        Ghdl_Str_Len_Type_Node,
+        Ghdl_Str_Len_Ptr_Node);
       Create_Temp_Stack2_Mark;
       Start_Association (Assoc, Subprg);
-      New_Association (Assoc,
-                       New_Address (New_Obj (Res), Std_String_Ptr_Node));
+      New_Association (Assoc, M2Addr (Str_Len));
       New_Association (Assoc, Val);
       if Arg2 /= O_Enode_Null then
          New_Association (Assoc, Arg2);
@@ -2316,9 +2337,9 @@ package body Trans.Chap7 is
          end if;
       end if;
       New_Procedure_Call (Assoc);
+      Res := Chap14.Create_String_From_Str_Len (Str_Len);
       return M2E (Translate_Implicit_Array_Conversion
-                  (Dv2M (Res, Get_Info (Val_Type), Mode_Value),
-                   Val_Type, Res_Type, Loc));
+                  (Res, Val_Type, Res_Type, Loc));
    end Translate_To_String;
 
    function Translate_Bv_To_String (Subprg   : O_Dnode;
@@ -3185,10 +3206,36 @@ package body Trans.Chap7 is
                New_Convert_Ov (Left_Tree, Ghdl_Real_Type),
                New_Convert_Ov (Right_Tree, Ghdl_I32_Type));
          when Iir_Predefined_Real_To_String_Format =>
-            return Translate_To_String
-              (Ghdl_To_String_F64_Format, Res_Type, Expr,
-               New_Convert_Ov (Left_Tree, Ghdl_Real_Type),
-               Right_Tree);
+            declare
+               Str_Tinfo : constant Type_Info_Acc :=
+                 Get_Info (String_Type_Definition);
+               Str_Len : Mnode;
+               Strp : Mnode;
+            begin
+               Str_Len := Dv2M (Create_Temp (Ghdl_Str_Len_Type_Node),
+                 null, Mode_Value,
+                 Ghdl_Str_Len_Type_Node,
+                 Ghdl_Str_Len_Ptr_Node);
+               Strp := Dp2M
+                 (Create_Temp_Init (Std_String_Ptr_Node, Right_Tree),
+                  Str_Tinfo, Mode_Value);
+               New_Assign_Stmt
+                 (New_Selected_Element (M2Lv (Str_Len),
+                                        Ghdl_Str_Len_Type_Str_Field),
+                  New_Convert_Ov (M2Addr (Chap3.Get_Composite_Base (Strp)),
+                                  Char_Ptr_Type));
+               New_Assign_Stmt
+                 (New_Selected_Element (M2Lv (Str_Len),
+                                        Ghdl_Str_Len_Type_Len_Field),
+                  M2E (Chap3.Range_To_Length
+                       (Chap3.Bounds_To_Range
+                        (Chap3.Get_Composite_Bounds (Strp),
+                         String_Type_Definition, 1))));
+               return Translate_To_String
+                 (Ghdl_To_String_F64_Format, Res_Type, Expr,
+                  New_Convert_Ov (Left_Tree, Ghdl_Real_Type),
+                  M2Addr (Str_Len));
+            end;
          when Iir_Predefined_Physical_To_String =>
             declare
                Conv   : O_Tnode;
@@ -3453,7 +3500,7 @@ package body Trans.Chap7 is
          Inc_Var (Var_Index);
       end Do_Assign_El;
 
-      procedure Do_Assign_Vec (Assoc : Iir; Expr : Iir; Assoc_Len : out Int64)
+      procedure Do_Assign_Vec (Assoc : Iir; Expr : Iir; Assoc_Len : out Uns64)
       is
          Dest : Mnode;
          Src : Mnode;
@@ -3508,7 +3555,7 @@ package body Trans.Chap7 is
                            New_Obj_Value (Var_Index), El_Len));
       end Do_Assign_Vec;
 
-      procedure Do_Assign (Assoc : Iir; Expr : Iir; Assoc_Len : out Int64) is
+      procedure Do_Assign (Assoc : Iir; Expr : Iir; Assoc_Len : out Uns64) is
       begin
          if Final then
             if Get_Element_Type_Flag (Assoc) then
@@ -3528,7 +3575,7 @@ package body Trans.Chap7 is
       is
          P  : Natural;
          El : Iir;
-         Assoc_Len : Int64;
+         Assoc_Len : Uns64;
       begin
          --  First, assign positionnal association.
          --  FIXME: count the number of positionnal association and generate
@@ -3599,7 +3646,7 @@ package body Trans.Chap7 is
       procedure Translate_Array_Aggregate_Gen_Named
       is
          El : Iir;
-         Assoc_Len : Int64;
+         Assoc_Len : Uns64;
       begin
          El := Get_Association_Choices_Chain (Aggr);
 
@@ -3780,8 +3827,9 @@ package body Trans.Chap7 is
    is
       El_List  : constant Iir_Flist :=
         Get_Elements_Declaration_List (Target_Type);
-      El_Index : Natural;
       Nbr_El   : constant Natural := Get_Nbr_Elements (El_List);
+      Aggr_El_List : constant Iir_Flist :=
+        Get_Elements_Declaration_List (Get_Type (Aggr));
 
       --  Record which elements of the record have been set.  The 'others'
       --  clause applies to all elements not already set.
@@ -3795,12 +3843,18 @@ package body Trans.Chap7 is
       Targ    : Mnode;
 
       --  Set an elements.
-      procedure Set_El (El : Iir_Element_Declaration)
+      procedure Set_El (El_Index : Natural)
       is
+         El : constant Iir := Get_Nth_Element (El_List, El_Index);
+         Aggr_El : constant Iir := Get_Nth_Element (Aggr_El_List, El_Index);
          Info : constant Ortho_Info_Acc := Get_Info (Assoc);
          El_Type : constant Iir := Get_Type (El);
          Dest : Mnode;
       begin
+         if Get_Info (Aggr_El) = null then
+            Set_Info (Aggr_El, Get_Info (El));
+         end if;
+
          Dest := Chap6.Translate_Selected_Element (Targ, El);
          if Info /= null then
             --  The expression was already evaluated to compute the bounds.
@@ -3814,6 +3868,7 @@ package body Trans.Chap7 is
       end Set_El;
 
       N_El_Expr : Iir;
+      El_Index : Natural;
    begin
       Open_Temp;
       Targ := Stabilize (Target);
@@ -3822,7 +3877,7 @@ package body Trans.Chap7 is
       Assoc := Get_Association_Choices_Chain (Aggr);
       while Assoc /= Null_Iir loop
          --  Get the associated expression, possibly from the first choice
-         --  in a lidt of choices.
+         --  in a list of choices.
          N_El_Expr := Get_Associated_Expr (Assoc);
          if N_El_Expr /= Null_Iir then
             El_Expr := N_El_Expr;
@@ -3830,18 +3885,18 @@ package body Trans.Chap7 is
 
          case Get_Kind (Assoc) is
             when Iir_Kind_Choice_By_None =>
-               Set_El (Get_Nth_Element (El_List, El_Index));
+               Set_El (El_Index);
                El_Index := El_Index + 1;
             when Iir_Kind_Choice_By_Name =>
                El_Index := Natural
                  (Get_Element_Position
                     (Get_Named_Entity (Get_Choice_Name (Assoc))));
-               Set_El (Get_Nth_Element (El_List, El_Index));
+               Set_El (El_Index);
                El_Index := Natural'Last;
             when Iir_Kind_Choice_By_Others =>
                for J in Set_Array'Range loop
                   if not Set_Array (J) then
-                     Set_El (Get_Nth_Element (El_List, J));
+                     Set_El (J);
                   end if;
                end loop;
             when others =>
@@ -4070,7 +4125,7 @@ package body Trans.Chap7 is
    is
       Aggr_Type : constant Iir := Get_Base_Type (Get_Type (Aggr));
       Assoc : Iir;
-      Static_Len : Int64;
+      Static_Len : Uns64;
       Var_Len : O_Dnode;
       Expr_Type : Iir;
       Range_Type : Iir;
@@ -4287,10 +4342,12 @@ package body Trans.Chap7 is
    procedure Translate_Record_Aggregate_Bounds
      (Bounds : Mnode; Aggr : Iir; Mode : Object_Kind_Type)
    is
-      Stable_Bounds : Mnode;
       Aggr_Type : constant Iir := Get_Type (Aggr);
       Base_El_List : constant Iir_Flist :=
         Get_Elements_Declaration_List (Get_Base_Type (Aggr_Type));
+
+      Stable_Bounds : Mnode;
+      Sub_Bounds : Mnode;
 
       Pos : Natural;
       Base_El : Iir;
@@ -4318,11 +4375,8 @@ package body Trans.Chap7 is
             when Iir_Kind_Choice_By_None =>
                null;
             when Iir_Kind_Choice_By_Name =>
-               pragma Assert
-                 (Get_Element_Position
-                    (Get_Named_Entity
-                       (Get_Choice_Name (Assoc))) = Iir_Index32 (Pos));
-               null;
+               Pos := Natural (Get_Element_Position
+                               (Get_Named_Entity (Get_Choice_Name (Assoc))));
          end case;
          Base_El := Get_Nth_Element (Base_El_List, Pos);
          Base_El_Type := Get_Type (Base_El);
@@ -4338,10 +4392,10 @@ package body Trans.Chap7 is
             else
                if Get_Kind (Expr) = Iir_Kind_Aggregate then
                   --  Just translate bounds.
-                  Translate_Aggregate_Sub_Bounds
-                    (Chap3.Record_Bounds_To_Element_Bounds (Stable_Bounds,
-                                                            Base_El),
-                     Expr, Mode);
+                  Sub_Bounds := Chap3.Record_Bounds_To_Element_Bounds
+                    (Stable_Bounds, Base_El);
+                  Stabilize (Sub_Bounds);
+                  Translate_Aggregate_Sub_Bounds (Sub_Bounds, Expr, Mode);
                else
                   --  Eval expr
                   Val := Translate_Expression (Expr);
@@ -4904,9 +4958,9 @@ package body Trans.Chap7 is
      (Sig : Mnode; Sig_Type : Iir; Val : Mnode)
          renames Translate_Signal_Assign_Driving;
 
-   function Translate_Overflow_Literal (Expr : Iir) return O_Enode
+   function Translate_Overflow_Literal (Expr : Iir; Expr_Type : Iir)
+                                       return O_Enode
    is
-      Expr_Type : constant Iir := Get_Type (Expr);
       Tinfo : Type_Info_Acc;
       Otype : O_Tnode;
       L     : O_Dnode;
@@ -5045,7 +5099,7 @@ package body Trans.Chap7 is
                when Constraint_Error =>
                   Warning_Msg_Elab (Warnid_Runtime_Error, Expr,
                                     "physical literal out of range");
-                  return Translate_Overflow_Literal (Expr);
+                  return Translate_Overflow_Literal (Expr, Expr_Type);
             end;
 
          when Iir_Kind_String_Literal8
@@ -5064,7 +5118,7 @@ package body Trans.Chap7 is
             return New_Lit (Translate_Null_Literal (Expr, Res_Type));
 
          when Iir_Kind_Overflow_Literal =>
-            return Translate_Overflow_Literal (Expr);
+            return Translate_Overflow_Literal (Expr, Res_Type);
 
          when Iir_Kind_Parenthesis_Expression =>
             return Translate_Expression (Get_Expression (Expr), Rtype);

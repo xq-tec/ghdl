@@ -33,6 +33,7 @@
 from typing import List
 
 from pyTooling.Decorators import export
+from pyTooling.Warning import WarningCollector
 
 from pyVHDLModel.Name import Name
 from pyVHDLModel.Symbol import Symbol
@@ -46,13 +47,13 @@ from pyGHDL.libghdl.vhdl.tokens import Tok
 from pyGHDL.dom import DOMMixin, Position, DOMException, Expression
 from pyGHDL.dom._Utils import GetNameOfNode, GetIirKindOfNode, GetDocumentationOfNode
 from pyGHDL.dom._Translate import GetName, GetExpressionFromNode
-from pyGHDL.dom.Names import SimpleName
+from pyGHDL.dom.Name import SimpleName
 from pyGHDL.dom.Symbol import SimpleSubtypeSymbol
 
 
 @export
 class Attribute(VHDLModel_Attribute, DOMMixin):
-    def __init__(self, node: Iir, identifier: str, subtype: Symbol, documentation: str = None):
+    def __init__(self, node: Iir, identifier: str, subtype: Symbol, documentation: str = None) -> None:
         super().__init__(identifier, subtype, documentation)
         DOMMixin.__init__(self, node)
 
@@ -102,7 +103,7 @@ class AttributeSpecification(VHDLModel_AttributeSpecification, DOMMixin):
         entityClass: EntityClass,
         expression: Expression,
         documentation: str = None,
-    ):
+    ) -> None:
         super().__init__(identifiers, attribute, entityClass, expression, documentation)
         DOMMixin.__init__(self, node)
 
@@ -119,7 +120,7 @@ class AttributeSpecification(VHDLModel_AttributeSpecification, DOMMixin):
             if nameKind == nodes.Iir_Kind.Simple_Name:
                 names.append(SimpleName(name, GetNameOfNode(name)))
             elif nameKind == nodes.Iir_Kind.Signature:
-                print("[NOT IMPLEMENTED] Signature name in attribute specifications.")
+                WarningCollector.Raise(NotImplementedError("Signature name in attribute specifications."))
             else:
                 position = Position.parse(name)
                 raise DOMException(

@@ -26,12 +26,12 @@ with Grt.Vhdl_Types; use Grt.Vhdl_Types;
 with Grt.Rtis; use Grt.Rtis;
 
 package Grt.Names is
-   procedure Ghdl_Get_Path_Name (Res : Std_String_Ptr;
+   procedure Ghdl_Get_Path_Name (Res : Std_String_Any_Ptr;
                                  Ctxt : Ghdl_Rti_Access;
                                  Base : Address;
                                  Name : Ghdl_Str_Len_Ptr);
 
-   procedure Ghdl_Get_Instance_Name (Res : Std_String_Ptr;
+   procedure Ghdl_Get_Instance_Name (Res : Std_String_Any_Ptr;
                                      Ctxt : Ghdl_Rti_Access;
                                      Base : Address;
                                      Name : Ghdl_Str_Len_Ptr);

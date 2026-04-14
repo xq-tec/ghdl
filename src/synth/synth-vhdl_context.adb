@@ -23,7 +23,7 @@ with Types_Utils; use Types_Utils;
 with Netlists.Folds; use Netlists.Folds;
 
 with Synth.Vhdl_Expr; use Synth.Vhdl_Expr;
-with Netlists.Locations;
+with Netlists.Locations; use Netlists.Locations;
 
 package body Synth.Vhdl_Context is
    package Extra_Tables is new Tables
@@ -48,16 +48,15 @@ package body Synth.Vhdl_Context is
       Extra_Tables.Table (Id) := Extra;
    end Set_Extra;
 
-   procedure Make_Base_Instance (Base : Base_Instance_Acc) is
+   procedure Set_Base_Instance (Base : Base_Instance_Acc) is
    begin
       Set_Extra (Root_Instance, (Base => Base, Name => No_Sname));
-   end Make_Base_Instance;
+   end Set_Base_Instance;
 
-   procedure Free_Base_Instance is
+   procedure Free_Extra is
    begin
-      --  TODO: really free.
-      null;
-   end Free_Base_Instance;
+      Extra_Tables.Init;
+   end Free_Extra;
 
    function Get_Instance_Extra (Inst : Synth_Instance_Acc)
                                return Extra_Vhdl_Instance_Type is
@@ -99,12 +98,6 @@ package body Synth.Vhdl_Context is
                                 Base : Base_Instance_Acc) is
    begin
       Extra_Tables.Table (Get_Instance_Id (Inst)).Base := Base;
-   end Set_Instance_Base;
-
-   procedure Set_Instance_Base (Inst : Synth_Instance_Acc;
-                                Base : Synth_Instance_Acc) is
-   begin
-      Set_Instance_Base (Inst, Get_Instance_Extra (Base).Base);
    end Set_Instance_Base;
 
    procedure Free_Instance (Synth_Inst : in out Synth_Instance_Acc) is
@@ -165,25 +158,6 @@ package body Synth.Vhdl_Context is
 
       return Base.Builder;
    end Get_Build;
-
-   procedure Create_Wire_Object (Syn_Inst : Synth_Instance_Acc;
-                                 Kind : Wire_Kind;
-                                 Obj : Node)
-   is
-      Obj_Type : constant Node := Get_Type (Obj);
-      Otyp : constant Type_Acc := Get_Subtype_Object (Syn_Inst, Obj_Type);
-      Val : Valtyp;
-      Wid : Wire_Id;
-   begin
-      if Kind = Wire_None then
-         Wid := No_Wire_Id;
-      else
-         Wid := Alloc_Wire (Kind, (Obj, Otyp));
-      end if;
-      Val := Create_Value_Wire (Wid, Otyp, Current_Pool);
-
-      Create_Object (Syn_Inst, Obj, Val);
-   end Create_Wire_Object;
 
    --  Set Is_0 to True iff VEC is 000...
    --  Set Is_X to True iff VEC is XXX...
@@ -439,8 +413,8 @@ package body Synth.Vhdl_Context is
                else
                   Res := Get_Net (Ctxt, (Val.Typ, Val.Val.A_Obj));
                end if;
-               return Build2_Extract
-                 (Ctxt, Res, Val.Val.A_Off.Net_Off, Val.Typ.W);
+               return Build2_Extract (Ctxt, Res, Val.Val.A_Off.Net_Off,
+                 Val.Typ.W, Get_Location (Get_Net_Parent (Res)));
             end;
          when Value_Const =>
             declare
@@ -450,8 +424,8 @@ package body Synth.Vhdl_Context is
                if N = No_Net then
                   N := Get_Net (Ctxt, (Val.Typ, Val.Val.C_Val));
                   Val.Val.C_Net := To_Uns32 (N);
-                  Locations.Set_Location (Get_Net_Parent (N),
-                                          Get_Location (Val.Val.C_Loc));
+                  Set_Location (Get_Net_Parent (N),
+                                Get_Location (Val.Val.C_Loc));
                end if;
                return N;
             end;

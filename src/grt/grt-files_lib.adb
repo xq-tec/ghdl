@@ -27,6 +27,7 @@ with Grt.Errors_Exec; use Grt.Errors_Exec;
 with Grt.Stdio; use Grt.Stdio;
 with Grt.C; use Grt.C;
 with Grt.Options;
+with Grt.Vhdl_Types_Utils; use Grt.Vhdl_Types_Utils;
 
 package body Grt.Files_Lib is
    --  The end of lines
@@ -157,10 +158,11 @@ package body Grt.Files_Lib is
 
    function File_Open (File : Ghdl_File_Index;
                        Mode : Ghdl_I32;
-                       Str : Std_String_Ptr)
+                       Str : Std_String_Any_Ptr)
      return Ghdl_I32
    is
-      Name : String (1 .. Integer (Str.Bounds.Dim_1.Length) + 1);
+      Name : String (1 .. Natural (Get_Std_String_Len (Str)) + 1);
+      Str_Base : constant Std_String_Basep := Get_Std_String_Base (Str);
       Str_Mode : String (1 .. 3);
       F : C_Files;
       Sig : Ghdl_C_String;
@@ -175,8 +177,8 @@ package body Grt.Files_Lib is
       end if;
 
       --  Copy file name and convert it to a C string (NUL terminated).
-      for I in 1 .. Str.Bounds.Dim_1.Length loop
-         Name (Natural (I)) := Str.Base (I - 1);
+      for I in Name'Range loop
+         Name (I) := Str_Base (Ghdl_Index_Type (I - 1));
       end loop;
       Name (Name'Last) := NUL;
 
@@ -266,19 +268,19 @@ package body Grt.Files_Lib is
       return Open_Ok;
    end File_Open;
 
-   procedure Error_Open (Str : Std_String_Ptr)
+   procedure Error_Open (Str : Std_String_Any_Ptr)
    is
       Bt : Backtrace_Addrs;
    begin
       Save_Backtrace (Bt, 2);
       Error_S ("cannot open file """);
-      Diag_C_Std (Str.Base (0 .. Str.Bounds.Dim_1.Length - 1));
+      Diag_C (Get_Std_String_Base (Str), Get_Std_String_Len (Str));
       Diag_C ('"');
       Error_E_Call_Stack (Bt);
    end Error_Open;
 
    procedure Ghdl_Text_File_Open
-     (File : Ghdl_File_Index; Mode : Ghdl_I32; Str : Std_String_Ptr)
+     (File : Ghdl_File_Index; Mode : Ghdl_I32; Str : Std_String_Any_Ptr)
    is
       Res : Ghdl_I32;
    begin
@@ -292,7 +294,7 @@ package body Grt.Files_Lib is
    end Ghdl_Text_File_Open;
 
    procedure Ghdl_File_Open
-     (File : Ghdl_File_Index; Mode : Ghdl_I32; Str : Std_String_Ptr)
+     (File : Ghdl_File_Index; Mode : Ghdl_I32; Str : Std_String_Any_Ptr)
    is
       Res : Ghdl_I32;
    begin
@@ -306,7 +308,7 @@ package body Grt.Files_Lib is
    end Ghdl_File_Open;
 
    function Ghdl_Text_File_Open_Status
-     (File : Ghdl_File_Index; Mode : Ghdl_I32; Str : Std_String_Ptr)
+     (File : Ghdl_File_Index; Mode : Ghdl_I32; Str : Std_String_Any_Ptr)
      return Ghdl_I32
    is
    begin
@@ -315,7 +317,7 @@ package body Grt.Files_Lib is
    end Ghdl_Text_File_Open_Status;
 
    function Ghdl_File_Open_Status
-     (File : Ghdl_File_Index; Mode : Ghdl_I32; Str : Std_String_Ptr)
+     (File : Ghdl_File_Index; Mode : Ghdl_I32; Str : Std_String_Any_Ptr)
      return Ghdl_I32
    is
    begin
@@ -323,7 +325,7 @@ package body Grt.Files_Lib is
       return File_Open (File, Mode, Str);
    end Ghdl_File_Open_Status;
 
-   procedure Ghdl_Text_Write (File : Ghdl_File_Index; Str : Std_String_Ptr)
+   procedure Ghdl_Text_Write (File : Ghdl_File_Index; Str : Std_String_Any_Ptr)
    is
       Res : C_Files;
       Len : size_t;
@@ -332,12 +334,12 @@ package body Grt.Files_Lib is
       Res := Get_File (File);
       Check_Write (File, True);
 
-      Len := size_t (Str.Bounds.Dim_1.Length);
+      Len := size_t (Get_Std_String_Len (Str));
       if Len = 0 then
          return;
       end if;
 
-      R := fwrite (Str.Base (0)'Address, Len, 1, Res);
+      R := fwrite (Get_Std_String_Base (Str)(0)'Address, Len, 1, Res);
       if R /= 1 then
          Error ("text_write failed");
       end if;
@@ -382,10 +384,10 @@ package body Grt.Files_Lib is
       end if;
    end Ghdl_Read_Scalar;
 
-   function Ghdl_Text_Read_Length (File : Ghdl_File_Index;
-                                   Str : Std_String_Ptr)
-     return Std_Integer
+   function Ghdl_Text_Read_Length
+     (File : Ghdl_File_Index; Str : Std_String_Any_Ptr) return Ghdl_Index_Type
    is
+      Str_Base : constant Std_String_Basep := Get_Std_String_Base (Str);
       Stream : C_Files;
       C : int;
       Len : Ghdl_Index_Type;
@@ -393,42 +395,41 @@ package body Grt.Files_Lib is
       Stream := Get_File (File);
       Check_Read (File, True);
 
-      Len := Str.Bounds.Dim_1.Length;
+      Len := Get_Std_String_Len (Str);
       --  Read until EOL (or EOF).
       --  Store as much as possible.
       for I in Ghdl_Index_Type loop
          C := fgetc (Stream);
          if C < 0 then
             Error_Call_Stack ("read: end of file reached", 1);
-            return Std_Integer (I);
+            return I;
          end if;
          if I < Len then
-            Str.Base (I) := Character'Val (C);
+            Str_Base (I) := Character'Val (C);
          end if;
          --  End of line is '\n' or LF or character # 10.
          if C = 10 then
-            return Std_Integer (I + 1);
+            return I + 1;
          end if;
       end loop;
       return 0;
    end Ghdl_Text_Read_Length;
 
-   procedure Ghdl_Untruncated_Text_Read
-     (File : Ghdl_File_Index; Str : Std_String_Ptr; Len : Std_Integer_Acc)
+   function Untruncated_Text_Read (File : Ghdl_File_Index;
+                                   Base : Std_String_Basep;
+                                   Maxlen : Ghdl_Index_Type)
+                                  return Ghdl_Index_Type
    is
       Stream : C_Files;
-      Max_Len : int;
       C : int;
       L : Ghdl_Index_Type;
    begin
       Stream := Get_File (File);
       Check_Read (File, True);
 
-      Max_Len := int (Str.Bounds.Dim_1.Length);
-
       --  Read at most LEN characters, stop at EOL.
       L := 0;
-      for I in 1 .. Max_Len loop
+      for I in 1 .. int (Maxlen) loop
          C := fgetc (Stream);
          exit when C < 0;
          --  Be nice with DOS files: handle CR/CR+LF/LF.
@@ -443,12 +444,27 @@ package body Grt.Files_Lib is
             end if;
             C := C_LF;
          end if;
-         Str.Base (L) := Character'Val (C);
+         Base (L) := Character'Val (C);
          L := L + 1;
          exit when C = C_LF;
       end loop;
 
-      Len.all := Std_Integer (L);
+      return L;
+   end Untruncated_Text_Read;
+
+   procedure Ghdl_Untruncated_Text_Read (File : Ghdl_File_Index;
+                                         Str : Std_String_Any_Ptr;
+                                         Len : Std_Integer_Any_Acc)
+   is
+      Res : Ghdl_Index_Type;
+   begin
+      Res := Untruncated_Text_Read
+        (File, Get_Std_String_Base (Str), Get_Std_String_Len (Str));
+      if Options.Flag_Integer_64 then
+         To_Std_Integer_64_Acc (Len).all := Std_Integer_64 (Res);
+      else
+         To_Std_Integer_32_Acc (Len).all := Std_Integer_32 (Res);
+      end if;
    end Ghdl_Untruncated_Text_Read;
 
    procedure File_Close (File : Ghdl_File_Index; Is_Text : Boolean)

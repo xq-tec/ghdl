@@ -23,7 +23,6 @@ package Netlists.Disp_Vhdl is
    procedure Disp_Architecture_Statements (M : Module);
 
    procedure Put_Type (W : Width);
-   procedure Put_Name (N : Sname);
 
    procedure Disp_Vhdl (M : Module; Is_Top : Boolean);
 end Netlists.Disp_Vhdl;

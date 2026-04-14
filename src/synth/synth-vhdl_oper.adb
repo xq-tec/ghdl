@@ -20,15 +20,14 @@ with Types; use Types;
 with Types_Utils; use Types_Utils;
 with Mutils;
 
+with Grt.Types; use Grt.Types;
+
 with Vhdl.Ieee.Std_Logic_1164; use Vhdl.Ieee.Std_Logic_1164;
 with Vhdl.Errors; use Vhdl.Errors;
 with Vhdl.Utils; use Vhdl.Utils;
 
 with Areapools;
 
-with Netlists; use Netlists;
-with Netlists.Gates; use Netlists.Gates;
-with Netlists.Builders; use Netlists.Builders;
 with Netlists.Folds; use Netlists.Folds;
 with Netlists.Utils;
 
@@ -106,13 +105,10 @@ package body Synth.Vhdl_Oper is
       Zx : Uns32;
       N : Net;
    begin
-      if Is_Static (Expr.Val) then
-         return Create_Value_Discrete
-           (Boolean'Pos (Read_Discrete (Cst) = Read_Discrete (Expr)),
-            Boolean_Type);
-      end if;
+      --  EXPR cannot be static, otherwise vhdl_eval would have been used.
+      pragma Assert (not Is_Static (Expr.Val));
 
-      To_Logic (Read_Discrete (Cst), Cst.Typ, Val, Zx);
+      To_Logic (Ghdl_U8 (Read_Discrete (Cst)), Cst.Typ, Val, Zx);
       if Zx /= 0 then
          --  Equal unknown -> return X
          N := Build_Const_UL32 (Ctxt, 0, 1, 1);
@@ -156,11 +152,9 @@ package body Synth.Vhdl_Oper is
          when Type_Slice =>
             return Create_Vec_Type_By_Length (Res.W, Res.Slice_El);
 
-         when Type_Unbounded_Vector =>
-            raise Internal_Error;
+         when Type_Unbounded_Vector => raise Internal_Error;
 
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Create_Res_Bound;
 
@@ -178,7 +172,7 @@ package body Synth.Vhdl_Oper is
    --  Return No_Net if CST has incorrect value.
    function Synth_Match (Ctxt : Context_Acc;
                          Cst : Valtyp;
-                         Oper : Valtyp;
+                         Sel : Net;
                          Expr : Node;
                          Op : Compare_Module_Id := Id_Eq) return Net
    is
@@ -223,8 +217,7 @@ package body Synth.Vhdl_Oper is
             when Std_Logic_D_Pos =>
                B := 0;
                M := 0;
-            when others =>
-               raise Internal_Error;
+            when others => raise Internal_Error;
          end case;
          Mask (Woff) := Mask (Woff) or Shift_Left (M, Boff);
          Vals (Woff) := Vals (Woff) or Shift_Left (B, Boff);
@@ -242,7 +235,7 @@ package body Synth.Vhdl_Oper is
       Nm := Build2_Const_Vec (Ctxt, Wd, Mask.all);
       Set_Location (Nm, Expr);
       Unchecked_Deallocate (Mask);
-      Res := Build_Dyadic (Ctxt, Id_And, Get_Net (Ctxt, Oper), Nm);
+      Res := Build_Dyadic (Ctxt, Id_And, Sel, Nm);
       Set_Location (Res, Expr);
       Res := Build_Compare (Ctxt, Op, Res, Nv);
       Set_Location (Res, Expr);
@@ -447,9 +440,8 @@ package body Synth.Vhdl_Oper is
       L_Net : Net;
       Res : Net;
    begin
-      if Len = 0 then
-         return Create_Value_Int (-1, Res_Typ);
-      end if;
+      --  If len = 0, this is a static operation.
+      pragma Assert (Len > 0);
 
       --  The intermediate result is computed using the least number of bits,
       --  which must represent all positive values in the bounds using a
@@ -488,7 +480,7 @@ package body Synth.Vhdl_Oper is
                end if;
             end if;
             Sel := Build2_Compare (Ctxt, Id_Eq,
-                                   Build2_Extract (Ctxt, L_Net, Pos, 1),
+                                   Build2_Extract (Ctxt, L_Net, Pos, 1, +Expr),
                                    R_Net);
             Set_Location (Sel, Expr);
             Res := Build_Mux2 (Ctxt, Sel, Res, Build2_Const_Int (Ctxt, V, W));
@@ -629,7 +621,8 @@ package body Synth.Vhdl_Oper is
                N := Build2_Compare (Ctxt, Id, Ln, Rn);
             elsif L.Typ.W < R.Typ.W then
                --  Truncate right.
-               Rn := Build_Extract (Ctxt, Rn, R.Typ.W - L.Typ.W, L.Typ.W);
+               Rn := Build2_Extract
+                 (Ctxt, Rn, R.Typ.W - L.Typ.W, L.Typ.W, +Expr);
                --  Because it has been truncated, it cannot be equal.
                if Id = Id_Ule then
                   N := Build2_Compare (Ctxt, Id_Ult, Ln, Rn);
@@ -900,17 +893,9 @@ package body Synth.Vhdl_Oper is
          Set_Location (Edge, Expr);
          return Create_Value_Net (Edge, Res_Typ);
       end Synth_Negedge;
-
-      function Error_Unhandled return Valtyp is
-      begin
-         Error_Msg_Synth
-           (Get_Caller_Instance (Syn_Inst), Expr,
-            "unhandled dyn operation: "
-              & Iir_Predefined_Functions'Image (Def));
-         return No_Valtyp;
-      end Error_Unhandled;
    begin
       case Def is
+         --  GCOV_EXCL_START (not called)
          when Iir_Predefined_Error
             | Iir_Predefined_None =>
             --  Should not happen.
@@ -918,7 +903,42 @@ package body Synth.Vhdl_Oper is
 
          when Iir_Predefined_Boolean_Rising_Edge
            | Iir_Predefined_Boolean_Falling_Edge =>
-            return Error_Unhandled;
+            raise Internal_Error;
+
+         when Iir_Predefined_Bit_And
+           | Iir_Predefined_Boolean_And =>
+            --  Short circuit.
+            raise Internal_Error;
+
+         when Iir_Predefined_Now_Function
+            | Iir_Predefined_Real_Now_Function
+            | Iir_Predefined_Frequency_Function
+            | Iir_Predefined_Std_Env_Resolution_Limit
+            | Iir_Predefined_Std_Env_Stop
+            | Iir_Predefined_Std_Env_Stop_Status
+            | Iir_Predefined_Std_Env_Finish
+            | Iir_Predefined_Std_Env_Finish_Status
+            | Iir_Predefined_Read
+            | Iir_Predefined_Write
+            | Iir_Predefined_Read_Length
+            | Iir_Predefined_Flush
+            | Iir_Predefined_File_Open_Status
+            | Iir_Predefined_File_Open
+            | Iir_Predefined_File_Close
+            | Iir_Predefined_Foreign_Untruncated_Text_Read
+            | Iir_Predefined_Foreign_Textio_Read_Real
+            | Iir_Predefined_Foreign_Textio_Write_Real =>
+            --  Procedures or functions without arguments.
+            raise Internal_Error;
+
+         when Iir_Predefined_Access_Equality
+            | Iir_Predefined_Access_Inequality
+            | Iir_Predefined_Deallocate =>
+            Error_Msg_Synth
+              (Syn_Inst, Expr, "non-constant access operations not supported");
+            return No_Valtyp;
+         --  GCOV_EXCL_STOP
+
          when Iir_Predefined_Bit_Rising_Edge =>
             if Hook_Bit_Rising_Edge /= null then
                return Create_Value_Memtyp
@@ -949,7 +969,8 @@ package body Synth.Vhdl_Oper is
          when Iir_Predefined_Boolean_Not
            | Iir_Predefined_Bit_Not =>
             return Synth_Bit_Monadic (Id_Not);
-         when Iir_Predefined_Ieee_1164_Vector_Not
+         when Iir_Predefined_TF_Array_Not
+            | Iir_Predefined_Ieee_1164_Vector_Not
             | Iir_Predefined_Ieee_Numeric_Std_Not_Uns
             | Iir_Predefined_Ieee_Numeric_Std_Not_Sgn =>
             return Synth_Vec_Monadic (Id_Not);
@@ -1017,10 +1038,6 @@ package body Synth.Vhdl_Oper is
                return Create_Value_Net (N, L.Typ);
             end;
 
-         when Iir_Predefined_Bit_And
-           | Iir_Predefined_Boolean_And =>
-            --  Short circuit.
-            raise Internal_Error;
          when Iir_Predefined_Ieee_1164_Scalar_And =>
             return Synth_Bit_Dyadic (Id_And);
          when Iir_Predefined_Bit_Xor
@@ -1194,7 +1211,7 @@ package body Synth.Vhdl_Oper is
                   Error_Msg_Synth
                     (Syn_Inst, Expr,
                      "operands of ?= don't have the same size");
-                  return Create_Value_Discrete (0, Bit_Type);
+                  return Create_Value_Discrete (0, Logic_Type);
                end if;
 
                if Is_Static (L.Val) then
@@ -1208,7 +1225,7 @@ package body Synth.Vhdl_Oper is
                   --  but the result is std_logic - so still useful.
                   return Synth_Compare (Id_Eq, Logic_Type);
                end if;
-               Res := Synth_Match (Ctxt, Cst, Oper, Expr);
+               Res := Synth_Match (Ctxt, Cst, Get_Net (Ctxt, Oper), Expr);
                if Res = No_Net then
                   return Create_Value_Discrete (Std_Logic_X_Pos, Res_Typ);
                else
@@ -1223,7 +1240,7 @@ package body Synth.Vhdl_Oper is
                if L.Typ.W /= R.Typ.W then
                   Error_Msg_Synth (Syn_Inst, Expr,
                                    "operands of ?/= don't have the same size");
-                  return Create_Value_Discrete (1, Bit_Type);
+                  return Create_Value_Discrete (1, Logic_Type);
                end if;
 
                if Is_Static (L.Val) then
@@ -1235,7 +1252,8 @@ package body Synth.Vhdl_Oper is
                else
                   return Synth_Compare (Id_Ne, Logic_Type);
                end if;
-               Res := Synth_Match (Ctxt, Cst, Oper, Expr, Id_Ne);
+               Res := Synth_Match
+                 (Ctxt, Cst, Get_Net (Ctxt, Oper), Expr, Id_Ne);
                if Res = No_Net then
                   return Create_Value_Discrete (Std_Logic_X_Pos, Res_Typ);
                else
@@ -1269,7 +1287,10 @@ package body Synth.Vhdl_Oper is
                Result_Typ : Type_Acc;
                N : Net;
             begin
-               Check_Matching_Bounds (Syn_Inst, Le_Typ, R.Typ, Expr);
+               if not Check_Matching_Bounds (Syn_Inst, Le_Typ, R.Typ, Expr)
+               then
+                  return No_Valtyp;
+               end if;
                N := Build2_Concat2 (Ctxt, Ln, Get_Net (Ctxt, R));
                Set_Location (N, Expr);
                Bnd := Create_Bounds_From_Length
@@ -1292,7 +1313,10 @@ package body Synth.Vhdl_Oper is
                Result_Typ : Type_Acc;
                N : Net;
             begin
-               Check_Matching_Bounds (Syn_Inst, L.Typ, Re_Typ, Expr);
+               if not Check_Matching_Bounds (Syn_Inst, L.Typ, Re_Typ, Expr)
+               then
+                  return No_Valtyp;
+               end if;
                N := Build2_Concat2 (Ctxt, Get_Net (Ctxt, L), Rn);
                Set_Location (N, Expr);
                Bnd := Create_Bounds_From_Length
@@ -1313,7 +1337,9 @@ package body Synth.Vhdl_Oper is
                Bnd : Bound_Type;
                Result_Typ : Type_Acc;
             begin
-               Check_Matching_Bounds (Syn_Inst, L.Typ, R.Typ, Expr);
+               if not Check_Matching_Bounds (Syn_Inst, L.Typ, R.Typ, Expr) then
+                  return No_Valtyp;
+               end if;
                N := Build2_Concat2
                  (Ctxt, Get_Net (Ctxt, L), Get_Net (Ctxt, R));
                Set_Location (N, Expr);
@@ -1336,7 +1362,10 @@ package body Synth.Vhdl_Oper is
                Result_Typ : Type_Acc;
                N : Net;
             begin
-               Check_Matching_Bounds (Syn_Inst, Le_Typ, Re_Typ, Expr);
+               if not Check_Matching_Bounds (Syn_Inst, Le_Typ, Re_Typ, Expr)
+               then
+                  return No_Valtyp;
+               end if;
                N := Build2_Concat2 (Ctxt, Ln, Rn);
                Set_Location (N, Expr);
                Bnd := Create_Bounds_From_Length
@@ -1365,6 +1394,7 @@ package body Synth.Vhdl_Oper is
                declare
                   use Mutils;
                   Rint : constant Int64 := Get_Static_Discrete (R);
+                  Loc : constant Location_Type := Get_Location (Expr);
                   Log_R : Natural;
                   N : Net;
                begin
@@ -1372,9 +1402,8 @@ package body Synth.Vhdl_Oper is
                      Log_R := Clog2 (Uns64 (Rint));
                      pragma Assert (Log_R <= Natural (L.Typ.W));
                      N := Get_Net (Ctxt, L);
-                     N := Build2_Extract (Ctxt, N, 0, Width (Log_R));
-                     N := Build2_Uresize
-                       (Ctxt, N, L.Typ.W, Get_Location (Expr));
+                     N := Build2_Extract (Ctxt, N, 0, Width (Log_R), Loc);
+                     N := Build2_Uresize (Ctxt, N, L.Typ.W, Loc);
                      return Create_Value_Net (N, Res_Typ);
                   end if;
                end;
@@ -1445,13 +1474,6 @@ package body Synth.Vhdl_Oper is
                "non-constant floating point operation not supported");
             return No_Valtyp;
 
-         when Iir_Predefined_Access_Equality
-            | Iir_Predefined_Access_Inequality
-            | Iir_Predefined_Deallocate =>
-            Error_Msg_Synth
-              (Syn_Inst, Expr, "non-constant access operations not supported");
-            return No_Valtyp;
-
          when Iir_Predefined_Enum_To_String
             | Iir_Predefined_Integer_To_String
             | Iir_Predefined_Floating_To_String
@@ -1463,32 +1485,14 @@ package body Synth.Vhdl_Oper is
               (Syn_Inst, Expr, "to_string is not supported");
             return No_Valtyp;
 
-         when Iir_Predefined_Now_Function
-            | Iir_Predefined_Real_Now_Function
-            | Iir_Predefined_Frequency_Function
-            | Iir_Predefined_Std_Env_Resolution_Limit
-            | Iir_Predefined_Std_Env_Stop
-            | Iir_Predefined_Std_Env_Stop_Status
-            | Iir_Predefined_Std_Env_Finish
-            | Iir_Predefined_Std_Env_Finish_Status
-            | Iir_Predefined_Read
-            | Iir_Predefined_Write
-            | Iir_Predefined_Read_Length
-            | Iir_Predefined_Flush
-            | Iir_Predefined_File_Open_Status
-            | Iir_Predefined_File_Open
-            | Iir_Predefined_File_Close
-            | Iir_Predefined_Foreign_Untruncated_Text_Read
-            | Iir_Predefined_Foreign_Textio_Read_Real
-            | Iir_Predefined_Foreign_Textio_Write_Real =>
-            Error_Msg_Synth
-              (Syn_Inst, Expr, "call to %i is not supported", (1 => +Imp));
-            return No_Valtyp;
-
          when Iir_Predefined_Ieee_Numeric_Std_Add_Uns_Uns
             | Iir_Predefined_Ieee_Numeric_Std_Add_Uns_Log
             | Iir_Predefined_Ieee_Numeric_Std_Add_Sgn_Log
             | Iir_Predefined_Ieee_Numeric_Std_Add_Log_Sgn
+            | Iir_Predefined_Ieee_Numeric_Bit_Add_Uns_Uns
+            | Iir_Predefined_Ieee_Numeric_Bit_Add_Uns_Bit
+            | Iir_Predefined_Ieee_Numeric_Bit_Add_Sgn_Bit
+            | Iir_Predefined_Ieee_Numeric_Bit_Add_Bit_Sgn
             | Iir_Predefined_Ieee_Numeric_Std_Unsigned_Add_Slv_Slv
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Add_Slv_Log
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Add_Log_Slv
@@ -1508,6 +1512,7 @@ package body Synth.Vhdl_Oper is
             --  "+" (Unsigned, Unsigned)
             return Synth_Dyadic_Uns_Uns (Ctxt, Id_Add, L, R, Expr);
          when Iir_Predefined_Ieee_Numeric_Std_Add_Uns_Nat
+            | Iir_Predefined_Ieee_Numeric_Bit_Add_Uns_Nat
             | Iir_Predefined_Ieee_Numeric_Std_Unsigned_Add_Slv_Nat =>
             --  "+" (Unsigned, Natural)
             return Synth_Dyadic_Uns_Nat (Ctxt, Id_Add, L, R, Expr);
@@ -1517,6 +1522,7 @@ package body Synth.Vhdl_Oper is
             --  "+" (Unsigned, Integer)
             return Synth_Dyadic_Sgn_Int (Ctxt, Id_Add, L, R, Expr);
          when Iir_Predefined_Ieee_Numeric_Std_Add_Nat_Uns
+            | Iir_Predefined_Ieee_Numeric_Bit_Add_Nat_Uns
             | Iir_Predefined_Ieee_Numeric_Std_Unsigned_Add_Nat_Slv
             | Iir_Predefined_Ieee_Std_Logic_Arith_Add_Int_Uns_Uns
             | Iir_Predefined_Ieee_Std_Logic_Arith_Add_Int_Uns_Slv
@@ -1524,18 +1530,21 @@ package body Synth.Vhdl_Oper is
             --  "+" (Natural, Unsigned)
             return Synth_Dyadic_Nat_Uns (Ctxt, Id_Add, L, R, Expr);
          when Iir_Predefined_Ieee_Numeric_Std_Add_Sgn_Int
+            | Iir_Predefined_Ieee_Numeric_Bit_Add_Sgn_Int
             | Iir_Predefined_Ieee_Std_Logic_Signed_Add_Slv_Int
             | Iir_Predefined_Ieee_Std_Logic_Arith_Add_Sgn_Int_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Arith_Add_Sgn_Int_Slv =>
             --  "+" (Signed, Integer)
             return Synth_Dyadic_Sgn_Int (Ctxt, Id_Add, L, R, Expr);
          when Iir_Predefined_Ieee_Numeric_Std_Add_Int_Sgn
+            | Iir_Predefined_Ieee_Numeric_Bit_Add_Int_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Arith_Add_Int_Sgn_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Arith_Add_Int_Sgn_Slv
             | Iir_Predefined_Ieee_Std_Logic_Signed_Add_Int_Slv =>
             --  "+" (Integer, Signed)
             return Synth_Dyadic_Int_Sgn (Ctxt, Id_Add, L, R, Expr);
          when Iir_Predefined_Ieee_Numeric_Std_Add_Sgn_Sgn
+            | Iir_Predefined_Ieee_Numeric_Bit_Add_Sgn_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Arith_Add_Sgn_Sgn_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Arith_Add_Sgn_Sgn_Slv
             | Iir_Predefined_Ieee_Std_Logic_Signed_Add_Slv_Slv =>
@@ -2013,9 +2022,6 @@ package body Synth.Vhdl_Oper is
                Res := Elab.Vhdl_Files.Endfile (Syn_Inst, L.Val.File, Expr);
                return Create_Value_Memtyp
                  (Create_Memory_U8 (Boolean'Pos (Res), Boolean_Type));
-            exception
-               when Elab.Vhdl_Files.File_Execution_Error =>
-                  return No_Valtyp;
             end;
 
          when Iir_Predefined_Integer_Minimum =>
@@ -2230,7 +2236,7 @@ package body Synth.Vhdl_Oper is
                   return Create_Value_Discrete (0, Boolean_Type);
                end if;
                Strip_Const (Cst);
-               Res := Synth_Match (Ctxt, Cst, Oper, Expr);
+               Res := Synth_Match (Ctxt, Cst, Get_Net (Ctxt, Oper), Expr);
                if Res = No_Net then
                   return Create_Value_Discrete (0, Boolean_Type);
                else
@@ -2245,8 +2251,14 @@ package body Synth.Vhdl_Oper is
             | Iir_Predefined_Ieee_Numeric_Std_Find_Rightmost_Uns =>
             return Synth_Find_Bit (Syn_Inst, L, R, Res_Typ, False, Expr);
 
+         --  GCOV_EXCL_START (not called)
          when others =>
-            return Error_Unhandled;
+            Error_Msg_Synth
+              (Get_Caller_Instance (Syn_Inst), Expr,
+              "unhandled dyn operation: "
+              & Iir_Predefined_Functions'Image (Def));
+            return No_Valtyp;
+         --  GCOV_EXCL_STOP
       end case;
    end Synth_Dynamic_Predefined_Call;
 
@@ -2364,6 +2376,7 @@ package body Synth.Vhdl_Oper is
       Oper_Type : constant Node := Get_Type (Inter_Chain);
       Oper_Typ : constant Type_Acc := Get_Subtype_Object (Syn_Inst, Oper_Type);
       Operand : Valtyp;
+      Res : Memtyp;
    begin
       Operand := Synth_Expression_With_Type (Syn_Inst, Operand_Expr, Oper_Typ);
       if Operand = No_Valtyp then
@@ -2374,10 +2387,15 @@ package body Synth.Vhdl_Oper is
       Strip_Const (Operand);
 
       if Is_Static_Val (Operand.Val) then
-         return Create_Value_Memtyp
-           (Eval_Static_Predefined_Function_Call
-              (Syn_Inst, Get_Value_Memtyp (Operand), Null_Memtyp,
-               null, Expr));
+         Res := Eval_Static_Predefined_Function_Call
+           (Syn_Inst, Get_Value_Memtyp (Operand), Null_Memtyp, null, Expr);
+         if Res = Null_Memtyp then
+            --  In case of serious error (function not handled)
+            --  GCOV_EXCL_START (never called)
+            return No_Valtyp;
+            --  GCOV_EXCL_STOP
+         end if;
+         return Create_Value_Memtyp (Res);
       else
          return Synth_Dynamic_Predefined_Call
            (Syn_Inst, Imp, Operand, No_Valtyp, Expr);

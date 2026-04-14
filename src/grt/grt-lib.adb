@@ -23,11 +23,13 @@
 
 with Grt.Errors; use Grt.Errors;
 with Grt.Errors_Exec; use Grt.Errors_Exec;
-with Grt.Severity;
 with Grt.Options; use Grt.Options;
 with Grt.Fcvt;
 with Grt.Backtraces;
 with Grt.Arith;
+with Grt.Severity; use Grt.Severity;
+with Grt.Asserts; use Grt.Asserts;
+with Grt.Vhdl_Types_Utils; use Grt.Vhdl_Types_Utils;
 
 package body Grt.Lib is
    --procedure Memcpy (Dst : Address; Src : Address; Size : Size_T);
@@ -44,13 +46,12 @@ package body Grt.Lib is
    end Ghdl_Memcpy;
 
    procedure Do_Report (Msg : String;
-                        Str : Std_String_Ptr;
+                        Base : Std_String_Basep;
+                        Len : Ghdl_Index_Type;
                         Default_Str : String;
-                        Severity : Integer;
+                        Severity : Severity_Level;
                         Loc : Ghdl_Location_Ptr)
    is
-      use Grt.Severity;
-      Level : constant Integer := Severity mod 256;
       Bt : Backtrace_Addrs;
    begin
       Report_S;
@@ -64,7 +65,7 @@ package body Grt.Lib is
       Diag_C (":(");
       Diag_C (Msg);
       Diag_C (" ");
-      case Level is
+      case Severity is
          when Note_Severity =>
             Diag_C ("note");
          when Warning_Severity =>
@@ -73,22 +74,20 @@ package body Grt.Lib is
             Diag_C ("error");
          when Failure_Severity =>
             Diag_C ("failure");
-         when others =>
-            Diag_C ("???");
       end case;
       Diag_C ("): ");
-      if Str /= null then
-         Diag_C (Str);
+      if Base /= null then
+         Diag_C (Base, Len);
       else
          Diag_C (Default_Str);
       end if;
       Report_E;
-      if Level >= Grt.Options.Severity_Level then
+      if Severity >= Grt.Options.Severity_Stop_Level then
          Save_Backtrace (Bt, 2);
          Error_S (Msg);
          Diag_C (" failed");
          Error_E_Call_Stack (Bt);
-      elsif Level >= Grt.Options.Backtrace_Severity then
+      elsif Severity >= Grt.Options.Backtrace_Severity then
          Save_Backtrace (Bt, 2);
          Grt.Backtraces.Put_Err_Backtrace (Bt);
       end if;
@@ -100,56 +99,71 @@ package body Grt.Lib is
         or else (Policy = Disable_Asserts_At_Time_0 and Current_Time = 0);
    end Is_Assert_Disabled;
 
-   procedure Ghdl_Assert_Failed
-     (Str : Std_String_Ptr; Severity : Integer; Loc : Ghdl_Location_Ptr) is
+   procedure Ghdl_Assert_Failed (Base : Std_String_Basep;
+                                 Len : Ghdl_Index_Type;
+                                 Severity : Ghdl_E8;
+                                 Loc : Ghdl_Location_Ptr) is
    begin
       if Is_Assert_Disabled (Asserts_Policy) then
          return;
       end if;
-      Do_Report ("assertion", Str, "Assertion violation", Severity, Loc);
+      Inc_Assert_Count (Severity);
+      Do_Report ("assertion", Base, Len, "Assertion violation", Severity, Loc);
    end Ghdl_Assert_Failed;
 
-   procedure Ghdl_Ieee_Assert_Failed
-     (Str : Std_String_Ptr; Severity : Integer; Loc : Ghdl_Location_Ptr) is
+   procedure Ghdl_Ieee_Assert_Failed (Base : Std_String_Basep;
+                                      Len : Ghdl_Index_Type;
+                                      Severity : Ghdl_E8;
+                                      Loc : Ghdl_Location_Ptr) is
    begin
       if Is_Assert_Disabled (Ieee_Asserts) then
          return;
       end if;
-      Do_Report ("assertion", Str, "Assertion violation", Severity, Loc);
+      Inc_Assert_Count (Severity);
+      Do_Report ("assertion", Base, Len, "Assertion violation", Severity, Loc);
    end Ghdl_Ieee_Assert_Failed;
 
-   procedure Ghdl_Psl_Assert_Failed
-     (Str : Std_String_Ptr; Severity : Integer; Loc : Ghdl_Location_Ptr) is
+   procedure Ghdl_Psl_Assert_Failed (Base : Std_String_Basep;
+                                     Len : Ghdl_Index_Type;
+                                     Severity : Ghdl_E8;
+                                     Loc : Ghdl_Location_Ptr) is
    begin
-      Do_Report ("psl assertion", Str, "Assertion violation", Severity, Loc);
+      Do_Report
+        ("psl assertion", Base, Len, "Assertion violation", Severity, Loc);
    end Ghdl_Psl_Assert_Failed;
 
    procedure Ghdl_Psl_Assume_Failed (Loc : Ghdl_Location_Ptr) is
    begin
-      Do_Report ("psl assumption", null, "Assumption violation",
+      Do_Report ("psl assumption", null, 0, "Assumption violation",
                  Grt.Severity.Error_Severity, Loc);
    end Ghdl_Psl_Assume_Failed;
 
-   procedure Ghdl_Psl_Cover
-     (Str : Std_String_Ptr; Severity : Integer; Loc : Ghdl_Location_Ptr) is
+   procedure Ghdl_Psl_Cover (Base : Std_String_Basep;
+                             Len : Ghdl_Index_Type;
+                             Severity : Ghdl_E8;
+                             Loc : Ghdl_Location_Ptr) is
    begin
-      Do_Report ("psl cover", Str, "sequence covered", Severity, Loc);
+      Do_Report ("psl cover", Base, Len, "sequence covered", Severity, Loc);
    end Ghdl_Psl_Cover;
 
-   procedure Ghdl_Psl_Cover_Failed
-     (Str : Std_String_Ptr; Severity : Integer; Loc : Ghdl_Location_Ptr) is
+   procedure Ghdl_Psl_Cover_Failed (Base : Std_String_Basep;
+                                    Len : Ghdl_Index_Type;
+                                    Severity : Ghdl_E8;
+                                    Loc : Ghdl_Location_Ptr) is
    begin
       if Flag_Psl_Report_Uncovered then
          Do_Report ("psl cover failure",
-                    Str, "sequence not covered", Severity, Loc);
+                    Base, Len, "sequence not covered", Severity, Loc);
       end if;
    end Ghdl_Psl_Cover_Failed;
 
-   procedure Ghdl_Report (Str : Std_String_Ptr;
-                          Severity : Integer;
-                          Loc      : Ghdl_Location_Ptr) is
+   procedure Ghdl_Report (Base : Std_String_Basep;
+                          Len : Ghdl_Index_Type;
+                          Severity : Ghdl_E8;
+                          Loc : Ghdl_Location_Ptr) is
    begin
-      Do_Report ("report", Str, "Assertion violation", Severity, Loc);
+      Inc_Assert_Count (Severity);
+      Do_Report ("report", Base, Len, "Assertion violation", Severity, Loc);
    end Ghdl_Report;
 
    procedure Ghdl_Program_Error (Filename : Ghdl_C_String;
@@ -214,23 +228,28 @@ package body Grt.Lib is
       Error_E_Call_Stack (Bt);
    end Ghdl_Access_Check_Failed;
 
-   procedure Diag_C_Range (Rng : Std_Integer_Range_Ptr) is
+   procedure Diag_C_Dir (Dir : Ghdl_Dir_Type) is
    begin
-      Diag_C (Rng.Left);
-      case Rng.Dir is
+      case Dir is
          when Dir_Downto =>
             Diag_C (" downto ");
          when Dir_To =>
             Diag_C (" to ");
       end case;
-      Diag_C (Rng.Right);
-   end Diag_C_Range;
+   end Diag_C_Dir;
 
-   procedure Ghdl_Integer_Index_Check_Failed
+   procedure Diag_C_Range_32 (Rng : Std_Integer_32_Range_Ptr) is
+   begin
+      Diag_C (Rng.Left);
+      Diag_C_Dir (Rng.Dir);
+      Diag_C (Rng.Right);
+   end Diag_C_Range_32;
+
+   procedure Ghdl_Integer_32_Index_Check_Failed
      (Filename : Ghdl_C_String;
       Line     : Ghdl_I32;
-      Val      : Std_Integer;
-      Rng      : Std_Integer_Range_Ptr)
+      Val      : Std_Integer_32;
+      Rng      : Std_Integer_32_Range_Ptr)
    is
       Bt : Backtrace_Addrs;
    begin
@@ -238,37 +257,88 @@ package body Grt.Lib is
       Error_S ("index (");
       Diag_C (Val);
       Diag_C (") out of bounds (");
-      Diag_C_Range (Rng);
+      Diag_C_Range_32 (Rng);
       Diag_C (") at ");
       Diag_C (Filename);
       Diag_C (":");
       Diag_C (Line);
       Error_E_Call_Stack (Bt);
-   end Ghdl_Integer_Index_Check_Failed;
+   end Ghdl_Integer_32_Index_Check_Failed;
 
-   function Ghdl_I32_Exp (V : Ghdl_I32; E : Std_Integer) return Ghdl_I32
+   procedure Diag_C_Range_64 (Rng : Std_Integer_64_Range_Ptr) is
+   begin
+      Diag_C (Rng.Left);
+      Diag_C_Dir (Rng.Dir);
+      Diag_C (Rng.Right);
+   end Diag_C_Range_64;
+
+   procedure Ghdl_Integer_64_Index_Check_Failed
+     (Filename : Ghdl_C_String;
+      Line     : Ghdl_I32;
+      Val      : Std_Integer_64;
+      Rng      : Std_Integer_64_Range_Ptr)
+   is
+      Bt : Backtrace_Addrs;
+   begin
+      Save_Backtrace (Bt, 1);
+      Error_S ("index (");
+      Diag_C (Val);
+      Diag_C (") out of bounds (");
+      Diag_C_Range_64 (Rng);
+      Diag_C (") at ");
+      Diag_C (Filename);
+      Diag_C (":");
+      Diag_C (Line);
+      Error_E_Call_Stack (Bt);
+   end Ghdl_Integer_64_Index_Check_Failed;
+
+   function Ghdl_I32_Exp_32 (V : Ghdl_I32; E : Std_Integer_32) return Ghdl_I32
    is
       Res : Ghdl_I32;
       Ovf : Boolean;
    begin
-      Grt.Arith.Exp_I32 (V, E, Res, Ovf);
+      Grt.Arith.Exp_I32 (V, Ghdl_I64 (E), Res, Ovf);
       if Ovf then
          Error ("overflow in exponentiation");
       end if;
       return Res;
-   end Ghdl_I32_Exp;
+   end Ghdl_I32_Exp_32;
 
-   function Ghdl_I64_Exp (V : Ghdl_I64; E : Std_Integer) return Ghdl_I64
+   function Ghdl_I32_Exp_64 (V : Ghdl_I32; E : Std_Integer_64) return Ghdl_I32
+   is
+      Res : Ghdl_I32;
+      Ovf : Boolean;
+   begin
+      Grt.Arith.Exp_I32 (V, Ghdl_I64 (E), Res, Ovf);
+      if Ovf then
+         Error ("overflow in exponentiation");
+      end if;
+      return Res;
+   end Ghdl_I32_Exp_64;
+
+   function Ghdl_I64_Exp_32 (V : Ghdl_I64; E : Std_Integer_32) return Ghdl_I64
    is
       Res : Ghdl_I64;
       Ovf : Boolean;
    begin
-      Grt.Arith.Exp_I64 (V, E, Res, Ovf);
+      Grt.Arith.Exp_I64 (V, Ghdl_I64 (E), Res, Ovf);
       if Ovf then
          Error ("overflow in exponentiation");
       end if;
       return Res;
-   end Ghdl_I64_Exp;
+   end Ghdl_I64_Exp_32;
+
+   function Ghdl_I64_Exp_64 (V : Ghdl_I64; E : Std_Integer_64) return Ghdl_I64
+   is
+      Res : Ghdl_I64;
+      Ovf : Boolean;
+   begin
+      Grt.Arith.Exp_I64 (V, Ghdl_I64 (E), Res, Ovf);
+      if Ovf then
+         Error ("overflow in exponentiation");
+      end if;
+      return Res;
+   end Ghdl_I64_Exp_64;
 
    function Ghdl_I32_Div (L, R : Ghdl_I32) return Ghdl_I32
    is
@@ -360,10 +430,10 @@ package body Grt.Lib is
       C_Free (Ptr);
    end Ghdl_Free_Mem;
 
-   function Ghdl_Real_Exp (X : Ghdl_Real; Exp : Ghdl_I32)
+   function Ghdl_Real_Exp_64 (X : Ghdl_Real; Exp : Ghdl_I64)
      return Ghdl_Real
    is
-      R : Ghdl_I32;
+      R : Ghdl_I64;
       Res : Ghdl_Real;
       P : Ghdl_Real;
    begin
@@ -396,35 +466,43 @@ package body Grt.Lib is
          end if;
          return 1.0 / Res;
       end if;
-   end Ghdl_Real_Exp;
+   end Ghdl_Real_Exp_64;
 
-   function Textio_Read_Real (Str : Std_String_Ptr) return Ghdl_F64
+   function Ghdl_Real_Exp_32 (X : Ghdl_Real; Exp : Ghdl_I32)
+                             return Ghdl_Real is
+   begin
+      return Ghdl_Real_Exp_64 (X, Ghdl_I64 (Exp));
+   end Ghdl_Real_Exp_32;
+
+   function Textio_Read_Real (Str : Std_String_Any_Ptr) return Ghdl_F64
    is
-      Len : Natural;
+      Base : constant Std_String_Basep := Get_Std_String_Base (Str);
+      Len : constant Natural := Natural (Get_Std_String_Len (Str));
       Valid : Boolean;
       Res : Ghdl_F64;
    begin
-      Len := Natural (Str.Bounds.Dim_1.Length);
-      Grt.Fcvt.From_String (To_Ghdl_C_String (To_Address (Str.Base)), Len,
+      Grt.Fcvt.From_String (To_Ghdl_C_String (To_Address (Base)), Len,
                             Res, Valid);
       pragma Assert (Valid);
       return Res;
    end Textio_Read_Real;
 
-   procedure Textio_Write_Real (Str : Std_String_Ptr;
-                                Len : Std_Integer_Acc;
+   procedure Textio_Write_Real (Str : Std_String_Any_Ptr;
+                                Len : Ghdl_I32_Acc;
                                 V : Ghdl_F64;
-                                Ndigits : Std_Integer)
+                                Ndigits : Ghdl_I32)
    is
+      Str_Len : constant Ghdl_Index_Type := Get_Std_String_Len (Str);
+      Str_Base : constant Std_String_Basep := Get_Std_String_Base (Str);
       --  FIXME: avoid that copy.
-      S : String (1 .. Natural (Str.Bounds.Dim_1.Length));
+      S : String (1 .. Natural (Str_Len));
       Last : Natural;
    begin
       Grt.Fcvt.Format_Digits (S, Last, V, Natural (Ndigits));
-      Len.all := Std_Integer (Last);
       for I in 1 .. Last loop
-         Str.Base (Ghdl_Index_Type (I - 1)) := S (I);
+         Str_Base (Ghdl_Index_Type (I - 1)) := S (I);
       end loop;
+      Len.all := Ghdl_I32 (Last);
    end Textio_Write_Real;
 
    function Ghdl_Get_Resolution_Limit return Std_Time is
@@ -433,7 +511,7 @@ package body Grt.Lib is
    end Ghdl_Get_Resolution_Limit;
 
    procedure Ghdl_Control_Simulation
-     (Stop : Ghdl_B1; Has_Status : Ghdl_B1; Status : Std_Integer) is
+     (Stop : Ghdl_B1; Has_Status : Ghdl_B1; Status : Ghdl_I32) is
    begin
       Report_S;
       --  Report_C (Grt.Options.Progname);
@@ -447,7 +525,7 @@ package body Grt.Lib is
       Diag_C_Now;
       if Has_Status then
          Diag_C (" with status ");
-         Diag_C (Integer (Status));
+         Diag_C (Status);
       end if;
       Report_E;
       if Has_Status then
@@ -455,5 +533,4 @@ package body Grt.Lib is
       end if;
       Exit_Simulation;
    end Ghdl_Control_Simulation;
-
 end Grt.Lib;

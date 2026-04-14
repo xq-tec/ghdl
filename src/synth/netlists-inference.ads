@@ -25,8 +25,7 @@ package Netlists.Inference is
    --  Walk the And-net N, and extract clock (posedge/negedge) if found.
    --  ENABLE is N without the clock.
    --  If not found, CLK and ENABLE are set to No_Net.
-   procedure Extract_Clock
-     (Ctxt : Context_Acc; N : Net; Clk : out Net; Enable : out Net);
+   procedure Extract_Clock (N : Net; Clk : out Net; Enable : out Net);
 
    --  To be called when there is an assignment to a signal/output of VAL and
    --  the previous value is PREV_VAL (an Id_Signal or Id_Output).
@@ -46,4 +45,10 @@ package Netlists.Inference is
                            Val : Net;
                            En_Gate : Net;
                            Loc : Location_Type) return Net;
+
+   --  Infere a tri-state buffer.
+   --  Replace VAL <= sel ? inp : 'Z'  with VAL <= tri(sel, inp)
+   function Infere_Tri (Ctxt : Context_Acc; Val : Net) return Net;
+
+   procedure Infere_Pass (Ctxt : Context_Acc; M : Module);
 end Netlists.Inference;

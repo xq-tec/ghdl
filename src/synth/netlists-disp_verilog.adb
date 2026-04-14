@@ -24,7 +24,7 @@ with Netlists.Utils; use Netlists.Utils;
 with Netlists.Iterators; use Netlists.Iterators;
 with Netlists.Gates; use Netlists.Gates;
 with Netlists.Locations;
-with Netlists.Dump; use Netlists.Dump;
+with Netlists.Disp_Common; use Netlists.Disp_Common;
 
 package body Netlists.Disp_Verilog is
    Flag_Merge_Lit : constant Boolean := True;
@@ -43,107 +43,17 @@ package body Netlists.Disp_Verilog is
       end if;
    end Put_Type;
 
-   procedure Put_Name_Version (N : Sname) is
-   begin
-      Wr_Uns32 (Get_Sname_Version (N));
-   end Put_Name_Version;
-
-   procedure Put_Name_1 (N : Sname)
-   is
-      Prefix : Sname;
-   begin
-      --  Do not crash on No_Name.
-      if N = No_Sname then
-         Wr ("*nil*");
-         return;
-      end if;
-
-      Prefix := Get_Sname_Prefix (N);
-      if Prefix /= No_Sname then
-         Put_Name_1 (Prefix);
-         Wr ("_");
-      end if;
-
-      case Get_Sname_Kind (N) is
-         when Sname_User =>
-            Put_Id (Get_Sname_Suffix (N));
-         when Sname_Artificial =>
-            Put_Id (Get_Sname_Suffix (N));
-         when Sname_Version =>
-            Wr ("n");
-            Put_Name_Version (N);
-      end case;
-   end Put_Name_1;
-
    procedure Put_Name (N : Sname) is
    begin
-      --  Do not crash on No_Name.
-      if N = No_Sname then
-         Wr ("*nil*");
-         return;
-      end if;
-
-      if Get_Sname_Kind (N) = Sname_User
-        and then Get_Sname_Prefix (N) = No_Sname
-      then
-         Put_Id (Get_Sname_Suffix (N));
-      else
-         Put_Name_1 (N);
-      end if;
+      Disp_Common.Put_Name (N, Language_Verilog);
    end Put_Name;
-
-   procedure Put_Interface_Name (N : Sname) is
-   begin
-      --  Do not crash on No_Name.
-      if N = No_Sname then
-         Wr ("*nil*");
-         return;
-      end if;
-
-      --  Interface names are not versionned.
-      if Get_Sname_Kind (N) in Sname_User .. Sname_Artificial  then
-         Put_Name (N);
-      else
-         Wr ("*err*");
-      end if;
-   end Put_Interface_Name;
 
    procedure Disp_Net_Name (N : Net) is
    begin
-      if N = No_Net then
-         Wr ("<unassigned>");
-         return;
-      end if;
-
-      declare
-         Inst : constant Instance := Get_Net_Parent (N);
-         Idx : constant Port_Idx := Get_Port_Idx (N);
-         M : Module;
-         Inst_Name : Sname;
-         Port_Name : Sname;
-      begin
-         if Is_Self_Instance (Inst) then
-            --  For ports of the current module, simply use the port name.
-            Put_Name (Get_Input_Desc (Get_Module (Inst), Idx).Name);
-         else
-            Inst_Name := Get_Instance_Name (Inst);
-            Put_Name (Inst_Name);
-            M := Get_Module (Inst);
-            case Get_Id (M) is
-               when Id_Signal
-                 | Id_Isignal =>
-                  --  No suffix for signals (it's 'o').
-                  null;
-               when others =>
-                  Port_Name := Get_Output_Desc (M, Idx).Name;
-                  Wr ("_");
-                  Put_Interface_Name (Port_Name);
-            end case;
-         end if;
-      end;
+      Disp_Common.Disp_Net_Name (N, Language_Verilog);
    end Disp_Net_Name;
 
-   procedure Disp_Pval (Pv : Pval)
+   procedure Disp_Pval_Vector (Pv : Pval)
    is
       Pvlen : constant Uns32 := Get_Pval_Length (Pv);
    begin
@@ -155,38 +65,7 @@ package body Netlists.Disp_Verilog is
          Wr ("'b");
          Disp_Pval_Binary_Digits (Pv);
       end if;
-   end Disp_Pval;
-
-   procedure Disp_Pval_String (Pv : Pval)
-   is
-      Len : constant Uns32 := Get_Pval_Length (Pv);
-      V : Logic_32;
-      Woff : Uns32;
-      Boff : Natural;
-   begin
-      pragma Assert (Len mod 8 = 0);
-      if Len = 0 then
-         Wr ('"');
-         Wr ('"');
-      else
-         Woff := (Len - 1) / 32;
-         Boff := Natural ((Len - 1) - Woff * 32);
-         Wr ('"');
-         V := Read_Pval (Pv, Woff);
-         loop
-            Wr (Character'Val (Shift_Right (V.Val, Boff - 7) and 16#ff#));
-            if Boff = 7 then
-               exit when Woff = 0;
-               Boff := 31;
-               Woff := Woff - 1;
-               V := Read_Pval (Pv, Woff);
-            else
-               Boff := Boff - 8;
-            end if;
-         end loop;
-         Wr ('"');
-      end if;
-   end Disp_Pval_String;
+   end Disp_Pval_Vector;
 
    --  If DRV drives a single Id_Nop return the output of the Nop gate.
    --  This gate is used to simple rename the output.
@@ -206,139 +85,40 @@ package body Netlists.Disp_Verilog is
       end if;
 
       Parent := Get_Input_Parent (Inp);
-      if Get_Id (Parent) = Id_Nop then
-         return Get_Output (Parent, 0);
-      else
-         return No_Net;
-      end if;
+      case Get_Id (Parent) is
+         when Id_Nop
+           | Id_Signal =>
+            return Get_Output (Parent, 0);
+         when others =>
+            return No_Net;
+      end case;
    end Is_Nop_Drv;
 
-   procedure Disp_Instance_Gate (Inst : Instance)
+   --  Return True iff the driver for INP is the output of a user defined
+   --  module which only drives INP
+   function Has_Single_User_Driver (Inp : Input) return Boolean
    is
-      Imod : constant Module := Get_Module (Inst);
-      Idx : Port_Idx;
-      Drv : Net;
-      Max_Idx : Port_Idx;
-      Name : Sname;
-      First : Boolean;
-      Param : Param_Desc;
-      Desc : Port_Desc;
+      O : constant Net := Get_Driver (Inp);
+      Inst : Instance;
    begin
-      Wr ("  ");
-
-      --  Gate name
-      Name := Get_Module_Name (Imod);
-      if Get_Id (Imod) < Id_User_None then
-         Wr (" gate_");
-         pragma Assert (Get_Sname_Kind (Name) = Sname_Artificial
-                          and then Get_Sname_Prefix (Name) = No_Sname);
-         Put_Id (Get_Sname_Suffix (Name));
-      else
-         Put_Name (Name);
+      if O = No_Net then
+         return False;
       end if;
-
-      if Get_Nbr_Params (Imod) /= 0 then
-         Wr_Line (" #(");
-         for P in 1 .. Get_Nbr_Params (Inst) loop
-            Param := Get_Param_Desc (Imod, P - 1);
-            if P > 1 then
-               Wr_Line (",");
-            end if;
-            Wr ("    .");
-            Put_Interface_Name (Param.Name);
-            Wr ("(");
-            case Param.Typ is
-               when Param_Uns32 =>
-                  Wr_Uns32 (Get_Param_Uns32 (Inst, P - 1));
-               when Param_Pval_String =>
-                  Disp_Pval_String (Get_Param_Pval (Inst, P - 1));
-               when Param_Pval_Vector
-                 | Param_Pval_Integer
-                 | Param_Pval_Real
-                 | Param_Pval_Time_Ps
-                 | Param_Pval_Boolean =>
-                  Disp_Pval (Get_Param_Pval (Inst, P - 1));
-               when Param_Invalid =>
-                  Wr ("*invalid*");
-            end case;
-            Wr (")");
-         end loop;
-         Wr_Line (")");
-         Wr ("    ");
-      else
-         Wr (" ");
+      if Get_First_Sink (O) /= Inp
+        or else Get_Next_Sink (Inp) /= No_Input
+      then
+         --  Not a single driver.
+         return False;
       end if;
-
-      --  Instance name
-      Name := Get_Instance_Name (Inst);
-      if Get_Sname_Kind (Name) = Sname_Version then
-         Wr ("inst_");
-         Put_Name_Version (Name);
-      else
-         Put_Name (Name);
+      Inst := Get_Net_Parent (O);
+      if Is_Self_Instance (Inst) then
+         return False;
       end if;
-      Wr_Line (" (");
-
-      First := True;
-      --  Inputs
-      Idx := 0;
-      Max_Idx := Get_Nbr_Inputs (Imod);
-      for I of Inputs (Inst) loop
-         Drv := Get_Driver (I);
-         if Flag_Null_Wires or else Get_Width (Drv) /= 0 then
-            if First then
-               First := False;
-            else
-               Wr_Line (",");
-            end if;
-            Wr ("    ");
-            if Idx < Max_Idx then
-               Wr (".");
-               Put_Interface_Name (Get_Input_Desc (Imod, Idx).Name);
-               Wr ("(");
-            end if;
-            Disp_Net_Name (Get_Driver (I));
-            if Idx < Max_Idx then
-               Wr (")");
-            end if;
-         end if;
-         Idx := Idx + 1;
-      end loop;
-      --  Outputs
-      Idx := 0;
-      for O of Outputs_Iterate (Inst) loop
-         Desc := Get_Output_Desc (Imod, Idx);
-         Idx := Idx + 1;
-         if Flag_Null_Wires or else Desc.W /= 0 then
-            if First then
-               First := False;
-            else
-               Wr_Line (",");
-            end if;
-            Wr ("    .");
-            Put_Interface_Name (Desc.Name);
-            Wr ("(");
-            declare
-               I : Input;
-               Nop : Net;
-            begin
-               I := Get_First_Sink (O);
-               if I /= No_Input then
-                  --  Output is connected.
-                  Nop := Is_Nop_Drv (O);
-                  if Nop /= No_Net then
-                     --  Output has been renamed.
-                     Disp_Net_Name (Nop);
-                  else
-                     Disp_Net_Name (O);
-                  end if;
-               end if;
-            end;
-            Wr (")");
-         end if;
-      end loop;
-      Wr_Line (");");
-   end Disp_Instance_Gate;
+      if Get_Id (Inst) < Id_User_None then
+         return False;
+      end if;
+      return True;
+   end Has_Single_User_Driver;
 
    procedure Disp_Binary_Lit (Va : Uns32; Zx : Uns32; Wd : Width) is
    begin
@@ -417,10 +197,140 @@ package body Netlists.Disp_Verilog is
             Disp_Const_Log (Inst);
          when Id_Extract =>
             Disp_Extract (Inst);
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Disp_Constant_Inline;
+
+   procedure Disp_Instance_Gate (Inst : Instance)
+   is
+      Imod : constant Module := Get_Module (Inst);
+      Idx : Port_Idx;
+      Drv : Net;
+      Max_Idx : Port_Idx;
+      Name : Sname;
+      First : Boolean;
+      Param : Param_Desc;
+      Desc : Port_Desc;
+      Drv_Inst : Instance;
+   begin
+      Wr ("  ");
+
+      --  Gate name
+      Name := Get_Module_Name (Imod);
+      if Get_Id (Imod) < Id_User_None then
+         Wr (" gate_");
+         pragma Assert (Get_Sname_Kind (Name) = Sname_System);
+         Put_Id (Get_Sname_Suffix (Name));
+      else
+         Put_Name (Name);
+      end if;
+
+      if Get_Nbr_Params (Imod) /= 0 then
+         Wr_Line (" #(");
+         for P in 1 .. Get_Nbr_Params (Inst) loop
+            Param := Get_Param_Desc (Imod, P - 1);
+            if P > 1 then
+               Wr_Line (",");
+            end if;
+            Wr ("    .");
+            Put_Interface_Name (Param.Name, Language_Vhdl);
+            Wr ("(");
+            case Param.Typ is
+               when Param_Uns32 =>
+                  Wr_Uns32 (Get_Param_Uns32 (Inst, P - 1));
+               when Param_Pval_String =>
+                  Disp_Pval_String (Get_Param_Pval (Inst, P - 1));
+               when Param_Pval_Vector
+                 | Param_Pval_Time_Ps
+                 | Param_Pval_Boolean =>
+                  Disp_Pval_Vector (Get_Param_Pval (Inst, P - 1));
+               when Param_Pval_Signed =>
+                  Disp_Pval_Signed (Get_Param_Pval (Inst, P - 1));
+               when Param_Pval_Unsigned =>
+                  Disp_Pval_Unsigned (Get_Param_Pval (Inst, P - 1));
+               when Param_Pval_Real =>
+                  Disp_Pval_Fp64 (Get_Param_Pval (Inst, P - 1));
+               when Param_Invalid =>
+                  Wr ("*invalid*");
+            end case;
+            Wr (")");
+         end loop;
+         Wr_Line (")");
+         Wr ("    ");
+      else
+         Wr (" ");
+      end if;
+
+      --  Instance name
+      Put_Instance_Name (Get_Instance_Name (Inst), Language_Verilog);
+      Wr_Line (" (");
+
+      First := True;
+      --  Inputs
+      Idx := 0;
+      Max_Idx := Get_Nbr_Inputs (Imod);
+      for I of Inputs (Inst) loop
+         Drv := Get_Driver (I);
+         if Flag_Null_Wires or else Get_Width (Drv) /= 0 then
+            if First then
+               First := False;
+            else
+               Wr_Line (",");
+            end if;
+            Wr ("    ");
+            if Idx < Max_Idx then
+               Wr (".");
+               Put_Interface_Name
+                 (Get_Input_Desc (Imod, Idx).Name, Language_Verilog);
+               Wr ("(");
+            end if;
+            Drv_Inst := Get_Net_Parent (Drv);
+            if Get_Id (Drv_Inst) in Constant_Module_Id then
+               Disp_Constant_Inline (Drv_Inst);
+            else
+               Disp_Net_Name (Drv);
+            end if;
+            if Idx < Max_Idx then
+               Wr (")");
+            end if;
+         end if;
+         Idx := Idx + 1;
+      end loop;
+      --  Outputs
+      Idx := 0;
+      for O of Outputs_Iterate (Inst) loop
+         Desc := Get_Output_Desc (Imod, Idx);
+         Idx := Idx + 1;
+         if Flag_Null_Wires or else Desc.W /= 0 then
+            if First then
+               First := False;
+            else
+               Wr_Line (",");
+            end if;
+            Wr ("    .");
+            Put_Interface_Name (Desc.Name, Language_Verilog);
+            Wr ("(");
+            declare
+               I : Input;
+               Nop : Net;
+            begin
+               I := Get_First_Sink (O);
+               if I /= No_Input then
+                  --  Output is connected.
+                  Nop := Is_Nop_Drv (O);
+                  if Nop /= No_Net then
+                     --  Output has been renamed.
+                     Disp_Net_Name (Nop);
+                  else
+                     Disp_Net_Name (O);
+                  end if;
+               end if;
+            end;
+            Wr (")");
+         end if;
+      end loop;
+      Wr_Line (");");
+   end Disp_Instance_Gate;
 
    procedure Disp_Const_Bit (Inst : Instance; Off : Uns32)
    is
@@ -458,8 +368,7 @@ package body Netlists.Disp_Verilog is
          when Id_Const_X =>
             Zx := 1;
             Val := 1;
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
       Wr (Bchar (Zx * 2 + Val));
    end Disp_Const_Bit;
@@ -493,24 +402,6 @@ package body Netlists.Disp_Verilog is
       Wr_Line ("    end");
    end Disp_Memory_Init;
 
-   function Need_Name (Inst : Instance) return Boolean
-   is
-      Id : constant Module_Id := Get_Id (Inst);
-   begin
-      case Id is
-         when Id_Extract
-           | Id_Dyn_Extract
-           | Id_Dyn_Insert
-           | Id_Utrunc
-           | Id_Strunc =>
-            return True;
-         when Id_User_None .. Module_Id'Last =>
-            return True;
-         when others =>
-            return False;
-      end case;
-   end Need_Name;
-
    --  Return True if constant INST is connected to an instance that needs
    --  a name.  In that case, a signal will be created and driven.
    function Need_Signal (Inst : Instance) return Boolean
@@ -532,39 +423,8 @@ package body Netlists.Disp_Verilog is
       return False;
    end Need_Signal;
 
-   --  Return TRUE if edge INST (posedge or negedge) is used outside clock
-   --  inputs.
-   function Need_Edge (Inst : Instance) return Boolean
-   is
-      I : Input;
-      Parent : Instance;
-   begin
-      I := Get_First_Sink (Get_Output (Inst, 0));
-      while I /= No_Input loop
-         Parent := Get_Input_Parent (I);
-         case Get_Id (Parent) is
-            when Id_Dff
-              | Id_Adff
-              | Id_Idff
-              | Id_Iadff =>
-               if I /= Get_Input (Parent, 0) then
-                  return True;
-               end if;
-            when Id_Mem_Rd_Sync
-              | Id_Mem_Wr_Sync =>
-               if I /= Get_Input (Parent, 2) then
-                  return True;
-               end if;
-            when others =>
-               return True;
-         end case;
-         I := Get_Next_Sink (I);
-      end loop;
-      return False;
-   end Need_Edge;
-
    type Conv_Type is
-     (Conv_None, Conv_Unsigned, Conv_Signed, Conv_Edge, Conv_Clock);
+     (Conv_None, Conv_Unsigned, Conv_Signed, Conv_Edge, Conv_Const);
 
    procedure Disp_Net_Expr (N : Net; Inst : Instance; Conv : Conv_Type)
    is
@@ -581,7 +441,8 @@ package body Netlists.Disp_Verilog is
         and then not Need_Name (Inst)
       then
          case Conv is
-            when Conv_None =>
+            when Conv_None
+              | Conv_Const =>
                Disp_Constant_Inline (Net_Inst);
             when Conv_Unsigned =>
                Wr ("$unsigned(");
@@ -591,10 +452,7 @@ package body Netlists.Disp_Verilog is
                Wr ("$signed(");
                Disp_Constant_Inline (Net_Inst);
                Wr (")");
-            when Conv_Edge
-              | Conv_Clock =>
-               --  Not expected: a constant is not an edge.
-               raise Internal_Error;
+            when Conv_Edge => raise Internal_Error; --  Not expected
          end case;
       else
          case Conv is
@@ -608,8 +466,8 @@ package body Netlists.Disp_Verilog is
                      Wr ("negedge ");
                end case;
                Disp_Net_Name (Get_Input_Net (Net_Inst, 0));
-            when Conv_Clock =>
-               Disp_Net_Name (Get_Input_Net (Net_Inst, 0));
+            when Conv_Const =>
+               Disp_Constant_Inline (Net_Inst);
             when Conv_Unsigned =>
                Wr ("$unsigned(");
                Disp_Net_Name (N);
@@ -629,7 +487,7 @@ package body Netlists.Disp_Verilog is
 
    --  Template:
    --  \[C]AN
-   --   C: conversion  u: unsigned, s: signed, f: force logic
+   --   C: conversion  u: unsigned, s: signed, f: force logic, C: const
    --   A: argument    o: output, i: input, n: value, p: parameter, l: label
    --   N: argument number (0-9)
    procedure Disp_Template
@@ -659,8 +517,8 @@ package body Netlists.Disp_Verilog is
                when 'e' =>
                   Conv := Conv_Edge;
                   I := I + 1;
-               when 'c' =>
-                  Conv := Conv_Clock;
+               when 'C' =>
+                  Conv := Conv_Const;
                   I := I + 1;
                when others =>
                   Conv := Conv_None;
@@ -685,16 +543,13 @@ package body Netlists.Disp_Verilog is
                         Wr_Uns32 (V);
                      when Conv_Signed =>
                         Wr_Int32 (To_Int32 (V));
-                     when Conv_Edge
-                       | Conv_Clock =>
-                        raise Internal_Error;
+                     when Conv_Edge | Conv_Const => raise Internal_Error;
                   end case;
                when 'l' =>
                   pragma Assert (Idx = 0);
                   pragma Assert (Conv = Conv_None);
                   Put_Name (Get_Instance_Name (Inst));
-               when others =>
-                  raise Internal_Error;
+               when others => raise Internal_Error;
             end case;
 
             I := I + 2;
@@ -742,7 +597,7 @@ package body Netlists.Disp_Verilog is
                when Param_Pval_String =>
                   Disp_Pval_String (Val);
                when others =>
-                  Disp_Pval (Val);
+                  Disp_Pval_Vector (Val);
             end case;
             Attr := Get_Attribute_Next (Attr);
             exit when Attr = No_Attribute;
@@ -788,8 +643,7 @@ package body Netlists.Disp_Verilog is
             when Id_Memory
               | Id_Memory_Init =>
                exit;
-            when others =>
-               raise Internal_Error;
+            when others => raise Internal_Error;
          end case;
          Port := Get_Output (Port_Inst, 0);
       end loop;
@@ -852,8 +706,7 @@ package body Netlists.Disp_Verilog is
             when Id_Memory
               | Id_Memory_Init =>
                exit;
-            when others =>
-               raise Internal_Error;
+            when others => raise Internal_Error;
          end case;
          Port := Get_Output (Port_Inst, 0);
       end loop;
@@ -900,13 +753,13 @@ package body Netlists.Disp_Verilog is
             Col : Natural;
          begin
             Files_Map.Location_To_Position (Loc, File, Line, Col);
-            Wr ("  /* ");
+            Wr ("  /*# ");
             Put_Id (File);
             Wr (':');
             Wr_Uns32 (Uns32 (Line));
             Wr (':');
             Wr_Uns32 (Uns32 (Col));
-            Wr ("  */");
+            Wr (" */");
             Wr_Line;
          end;
       end if;
@@ -945,7 +798,7 @@ package body Netlists.Disp_Verilog is
                                  "    \o0 = \i0; // (isignal)" & NL, Inst);
                end if;
                Disp_Template ("  initial" & NL &
-                              "    \o0 = \i1;" & NL, Inst);
+                              "    \o0 = \Ci1;" & NL, Inst);
             end;
          when Id_Port =>
             Disp_Template ("  \o0 <= \i0; -- (port)" & NL, Inst);
@@ -968,29 +821,11 @@ package body Netlists.Disp_Verilog is
             declare
                Step : constant Uns32 := Get_Param_Uns32 (Inst, 0);
             begin
-               Disp_Template
-                 ("  assign \o0 = \i0 * \p0;" & NL, Inst, (0 => Step));
+               Disp_Template ("  assign \o0 = \i0 * \p0; // memidx" & NL,
+                              Inst, (0 => Step));
             end;
          when Id_Addidx =>
-            declare
-               W0 : constant Width := Get_Width (Get_Input_Net (Inst, 0));
-               W1 : constant Width := Get_Width (Get_Input_Net (Inst, 1));
-            begin
-               if W0 > W1 then
-                  Disp_Template
-                    ("  \o0 <= std_logic_vector (\ui0 + resize(\ui1, \n0));"
-                       & NL, Inst, (0 => W0));
-               elsif W0 < W1 then
-                  Disp_Template
-                    ("  \o0 <= std_logic_vector (resize (\ui0, \n0) + \ui1);"
-                       & NL, Inst, (0 => W1));
-               else
-                  pragma Assert (W0 = W1);
-                  Disp_Template
-                    ("  \o0 <= std_logic_vector (\ui0 + \ui1);"
-                       & NL, Inst);
-               end if;
-            end;
+            Disp_Template ("  \o0 <= \i0 + \i1; // addidx " & NL, Inst);
          when Id_Dyn_Extract =>
             declare
                O : constant Net := Get_Output (Inst, 0);
@@ -998,7 +833,7 @@ package body Netlists.Disp_Verilog is
                Off : constant Uns32 := Get_Param_Uns32 (Inst, 0);
             begin
                Disp_Template
-                 ("  assign \o0 = \i0[\i1 + \n0 -: \n1]; //(dyn_extract)" & NL,
+                 ("  assign \o0 = \i0[\i1 + \n0 +: \n1]; // dyn_extract" & NL,
                   Inst, (0 => Off, 1 => Wd));
             end;
          when Id_Dyn_Insert
@@ -1008,15 +843,14 @@ package body Netlists.Disp_Verilog is
                --  P0: offset
                Iw : constant Width := Get_Width (Get_Input_Net (Inst, 1));
             begin
-               Wr ("  always @* begin // (dyn_insert)" & NL);
+               Wr ("  always @* begin // dyn_insert" & NL);
                Disp_Template ("    \o0 = \i0;" & NL, Inst);
                if Id = Id_Dyn_Insert_En then
                   --  TODO: fix indentation.
                   Disp_Template ("    if (\i3)" & NL, Inst);
                end if;
                Disp_Template
-                 ("    \o0 [\i2 + \p0 -: \n0] = \i1;" & NL,
-                  Inst, (0 => Iw - 1));
+                 ("    \o0 [\i2 + \p0 +: \n0] = \i1;" & NL, Inst, (0 => Iw));
                Disp_Template ("  end" & NL, Inst);
             end;
          when Id_Const_UB32
@@ -1041,7 +875,7 @@ package body Netlists.Disp_Verilog is
                              "    \o0 <= \i1;" & NL, Inst);
             if Id = Id_Idff then
                Disp_Template ("  initial" & NL &
-                              "    \o0 = \i2;" & NL, Inst);
+                              "    \o0 = \Ci2;" & NL, Inst);
             end if;
          when Id_Dlatch =>
             Disp_Template ("  always @(\i1)" & NL &
@@ -1058,6 +892,15 @@ package body Netlists.Disp_Verilog is
                            "    endcase" & NL, Inst);
          when Id_Pmux =>
             Disp_Pmux (Inst);
+         when Id_Bmux =>
+            declare
+               O : constant Net := Get_Output (Inst, 0);
+               Wd : constant Width := Get_Width (O);
+            begin
+               Disp_Template
+                 ("  assign \o0 = \i0[\i1 * \n0 +: \n0]; //(Bmux)" & NL,
+                  Inst, (0 => Wd));
+            end;
          when Id_Add =>
             Disp_Template ("  assign \o0 = \i0 + \i1;" & NL, Inst);
          when Id_Sub =>
@@ -1066,13 +909,13 @@ package body Netlists.Disp_Verilog is
             Disp_Template ("  assign \o0 = (\i0 < \i1) ? \i0 : \i1;" & NL,
                            Inst);
          when Id_Smin =>
-            Disp_Template ("  \o0 <= \i0 when \si0 < \si1 else \i1;" & NL,
+            Disp_Template ("  assign \o0 = (\si0 < \si1) ? \i0 : \i1;" & NL,
                            Inst);
          when Id_Umax =>
             Disp_Template ("  assign \o0 = (\i0 > \i1) ? \i0 : \i1;" & NL,
                            Inst);
          when Id_Smax =>
-            Disp_Template ("  \o0 <= \i0 when \si0 > \si1 else \i1;" & NL,
+            Disp_Template ("  assign \o0 = (\si0 > \si1) ? \i0 : \i1;" & NL,
                            Inst);
          when Id_Umul =>
             Disp_Template ("  assign \o0 = \i0 * \i1; // umul" & NL, Inst);
@@ -1172,7 +1015,7 @@ package body Netlists.Disp_Verilog is
                pragma Assert (Ow > Iw);
                Disp_Template ("  assign \o0 = {", Inst);
                Wr_Uns32 (Ow - Iw);
-               Disp_Template ("'b0, \i0};  //  uext" & NL, Inst);
+               Disp_Template ("'b0, \i0};  // uext" & NL, Inst);
             end;
          when Id_Sextend =>
             declare
@@ -1222,9 +1065,9 @@ package body Netlists.Disp_Verilog is
                Inst);
          when Id_Resolver =>
             Disp_Template
-              ("  assign \o0 = \i0; \\(resolver)" & NL, Inst);
+              ("  assign \o0 = \i0; // resolver" & NL, Inst);
             Disp_Template
-              ("  assign \o0 = \i1; \\(resolver)" & NL, Inst);
+              ("  assign \o0 = \i1; // resolver" & NL, Inst);
          when others =>
             Disp_Instance_Gate (Inst);
       end case;
@@ -1235,6 +1078,8 @@ package body Netlists.Disp_Verilog is
    procedure Disp_Module_Output (Inst : Instance; Id : Module_Id; O : Net)
    is
       W : constant Width := Get_Width (O);
+      type Output_Kind is (K_Reg, K_Wire, K_Localparam);
+      K : Output_Kind;
    begin
       if W = 0 and not Flag_Null_Wires then
          return;
@@ -1247,22 +1092,34 @@ package body Netlists.Disp_Verilog is
            | Id_Dlatch
            | Id_Isignal =>
             --  As expected
-            Wr ("  reg ");
+            K := K_Reg;
          when Id_Mux4
            | Id_Pmux
            | Id_Dyn_Insert
            | Id_Dyn_Insert_En =>
             --  Implemented by a process
-            Wr ("  reg ");
+            K := K_Reg;
          when Constant_Module_Id =>
-            Wr ("  localparam ");
+            K := K_Localparam;
          when Id_User_None .. Module_Id'Last =>
             if Is_Nop_Drv (O) /= No_Net then
                return;
             end if;
-            Wr ("  wire ");
+            K := K_Wire;
          when others =>
-            Wr ("  wire ");
+            K := K_Wire;
+      end case;
+      Wr ("  ");
+      if Has_Instance_Attribute (Inst) then
+         Disp_Attributes (Get_Instance_First_Attribute (Inst));
+      end if;
+      case K is
+         when K_Reg =>
+            Wr ("reg ");
+         when K_Wire =>
+            Wr ("wire ");
+         when K_Localparam =>
+            Wr ("localparam ");
       end case;
       Put_Type (W);
       Disp_Net_Name (O);
@@ -1332,8 +1189,10 @@ package body Netlists.Disp_Verilog is
                            | Id_Concatn
                            | Id_Extract =>
                            null;
-                        when others =>
-                           raise Internal_Error;
+                        when Id_Nop =>
+                           --  Used for renaming
+                           null;
+                        when others => raise Internal_Error;
                      end case;
                   end if;
 
@@ -1384,6 +1243,10 @@ package body Netlists.Disp_Verilog is
             when Id_Nop =>
                --  Inserted by netlists.rename to avoid escaping.
                null;
+            when Id_Signal =>
+               if not Has_Single_User_Driver (Get_Input (Inst, 0)) then
+                  Disp_Instance_Inline (Inst);
+               end if;
             when others =>
                Disp_Instance_Inline (Inst);
          end case;
@@ -1424,20 +1287,43 @@ package body Netlists.Disp_Verilog is
 
    procedure Disp_Module_Ports (M : Module)
    is
+      Nbr_Inputs : constant Port_Nbr := Get_Nbr_Inputs (M);
+      Nbr_Outputs : constant Port_Nbr := Get_Nbr_Outputs (M);
+      Inp_Idx, Out_Idx : Port_Idx;
       First : Boolean;
-      Desc : Port_Desc;
+      Desc_In, Desc_Out : Port_Desc;
       Attr : Attribute;
+      Is_Out : Boolean;
    begin
       First := True;
-      for I in 1 .. Get_Nbr_Inputs (M) loop
-         Desc := Get_Input_Desc (M, I - 1);
-         Attr := Get_Input_Port_First_Attribute (M, I - 1);
-         Disp_Module_Port (Desc, Attr, First);
-      end loop;
-      for I in 1 .. Get_Nbr_Outputs (M) loop
-         Desc := Get_Output_Desc (M, I - 1);
-         Attr := Get_Output_Port_First_Attribute (M, I - 1);
-         Disp_Module_Port (Desc, Attr, First);
+      Inp_Idx := 0;
+      Out_Idx := 0;
+      loop
+         exit when Inp_Idx = Nbr_Inputs and Out_Idx = Nbr_Outputs;
+         if Inp_Idx = Nbr_Inputs then
+            --  No more inputs
+            Is_Out := True;
+         elsif Out_Idx = Nbr_Outputs then
+            --  No more outputs
+            Is_Out := False;
+         else
+            --  Both inputs and outputs.
+            Desc_In := Get_Input_Desc (M, Inp_Idx);
+            Desc_Out := Get_Output_Desc (M, Out_Idx);
+            Is_Out := Desc_Out.Order < Desc_In.Order;
+         end if;
+
+         if Is_Out then
+            Desc_Out := Get_Output_Desc (M, Out_Idx);
+            Attr := Get_Output_Port_First_Attribute (M, Out_Idx);
+            Disp_Module_Port (Desc_Out, Attr, First);
+            Out_Idx := Out_Idx + 1;
+         else
+            Desc_In := Get_Input_Desc (M, Inp_Idx);
+            Attr := Get_Input_Port_First_Attribute (M, Inp_Idx);
+            Disp_Module_Port (Desc_In, Attr, First);
+            Inp_Idx := Inp_Idx + 1;
+         end if;
       end loop;
       if not First then
          Wr (")");
@@ -1473,6 +1359,10 @@ package body Netlists.Disp_Verilog is
       if Self_Inst = No_Instance then
          --  Blackbox
          return;
+      end if;
+
+      if Has_Instance_Attribute (Self_Inst) then
+         Disp_Attributes (Get_Instance_First_Attribute (Self_Inst));
       end if;
 
       --  Module id and name.

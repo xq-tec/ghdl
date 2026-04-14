@@ -881,6 +881,87 @@ def do_meta_body():
             print(l)
 
 
+def read_enum(filename, type_name, prefix, g=lambda m: m.group(1)):
+    """Read an enumeration declaration :param type_name:
+    from :param filename:."""
+    pat_decl = re.compile(r"   type {0} is$".format(type_name))
+    pat_enum = re.compile(r"      {0}(\w+),?( *-- .*)?$".format(prefix))
+    pat_comment = re.compile(r" *-- .*$")
+    lr = linereader(filename)
+    while not pat_decl.match(lr.get()):
+        pass
+    line = lr.get()
+    if line != "     (\n":
+        raise ParseError(lr, f"{filename}:{lr.lineno}: missing open parenthesis")
+    toks = []
+    while True:
+        line = lr.get()
+        if line == "     );\n":
+            break
+        m = pat_enum.match(line)
+        if m:
+            toks.append(g(m))
+        elif pat_comment.match(line):
+            pass
+        elif line == "\n":
+            pass
+        else:
+            print(line, file=sys.stderr)
+            raise ParseError(
+                lr,
+                f"{filename}:{ lr.lineno}: incorrect line in enum {type_name}"
+            )
+    return toks
+
+
+def read_any_names(filename, prefix, type):
+    pat_name_first = re.compile(
+        r"   {pfx}(\w+)\s+: constant {type} := (\d+);".format(
+            pfx=prefix, type=type))
+    pat_name_def = re.compile(
+        r"   {pfx}(\w+)\s+:\s+constant {type} :=\s+{pfx}(\w+)( \+ (\d+))?;".format(
+            pfx=prefix, type=type))
+    dict = {}
+    res = []
+    lr = linereader(filename)
+    val_max = 1
+    while True:
+        line = lr.get()
+        if line.startswith("end"):
+            break
+        if line.endswith(":=\n"):
+            line = line.rstrip() + lr.get()
+
+        m = pat_name_first.match(line)
+        if m:
+            name_def = m.group(1)
+            val = int(m.group(2))
+            dict[name_def] = val
+            res.append((name_def, val))
+            val_max = max(val_max, val)
+            continue
+
+        m = pat_name_def.match(line)
+        if m:
+            name_def = m.group(1)
+            name_ref = m.group(2)
+            val = m.group(4)
+            if not val:
+                val = 0
+            val_ref = dict.get(name_ref, None)
+            if not val_ref:
+                raise ParseError(lr, f"name {name_ref} not found")
+            val = val_ref + int(val)
+            val_max = max(val_max, val)
+            dict[name_def] = val
+            res.append((name_def, val))
+    return res
+
+
+def read_std_names():
+    return read_any_names("../std_names.ads", "Name_", "Name_Id")
+
+
 actions = {
     "disp-nodes": do_disp_nodes,
     "disp-kinds": do_disp_kinds,
@@ -987,12 +1068,12 @@ def main():
 
     except ParseError as e:
         print(e, file=sys.stderr)
-        print("in {0}:{1}:{2}".format(e.lr.filename, e.lr.lineno, e.lr.l), file=sys.stderr)
+        print(f"in {e.lr.filename}:{e.lr.lineno}:{e.lr.l}", file=sys.stderr)
         sys.exit(1)
 
     f = actions.get(args.action, None)
     if not f:
-        print("Action {0} is unknown".format(args.action), file=sys.stderr)
+        print(f"Action {args.action} is unknown", file=sys.stderr)
         sys.exit(1)
     f()
 

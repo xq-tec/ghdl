@@ -180,8 +180,8 @@ package Types is
      (
       Language_Unknown,
       Language_Vhdl,
-      Language_Psl,
-      Language_Verilog
+      Language_Verilog,
+      Language_Psl
      );
 
    Runtime_Error : exception;

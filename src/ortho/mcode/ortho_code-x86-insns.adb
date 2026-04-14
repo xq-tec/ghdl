@@ -2137,6 +2137,11 @@ package body Ortho_Code.X86.Insns is
                           | Mode_U16 =>
                            --  Zero extend.
                            null;
+                        when Mode_I64 =>
+                           if not Flags.M64 then
+                              --  Work on registers.
+                              Reg_Op := R_AnyPair;
+                           end if;
                         when others =>
                            Error_Gen_Insn (Stmt, O_Mode);
                      end case;

@@ -26,7 +26,8 @@ with Netlists; use Netlists;
 
 package Synth.Vhdl_Decls is
    --  Return the Param_Type for ATYPE.
-   function Type_To_Param_Type (Atype : Node) return Param_Type;
+   function Type_To_Param_Type (Atype : Node; Typ : Type_Acc)
+                               return Param_Type;
 
    --  Convert MT to a Pval.
    function Memtyp_To_Pval (Mt : Memtyp) return Pval;
@@ -77,4 +78,9 @@ package Synth.Vhdl_Decls is
                                             Top_Level : Boolean);
    procedure Synth_Concurrent_Package_Instantiation
      (Parent_Inst : Synth_Instance_Acc; Pkg : Node; Top_Level : Boolean);
+
+   --  Re-compute external name NAME and update DECL.
+   procedure Synth_Concurrent_External_Name
+     (Inst : Synth_Instance_Acc; Decl : Node; Name : Node);
+
 end Synth.Vhdl_Decls;

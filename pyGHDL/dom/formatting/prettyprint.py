@@ -65,7 +65,7 @@ from pyGHDL.dom.DesignUnit import (
     UseClause,
     PackageInstantiation,
 )
-from pyGHDL.dom.Symbol import SimpleSubtypeSymbol, ConstrainedCompositeSubtypeSymbol
+from pyGHDL.dom.Symbol import SimpleSubtypeSymbol, ConstrainedArraySubtypeSymbol
 from pyGHDL.dom.Type import (
     IntegerType,
     Subtype,
@@ -102,7 +102,7 @@ class PrettyPrintException(GHDLBaseException):
 class PrettyPrint:
     # _buffer: StringBuffer
     #
-    # def __init__(self):
+    # def __init__(self) -> None:
     #     self._buffer = []
 
     def CleanupDocumentationBlocks(self, documentationContent: str, level: int = 0):
@@ -229,7 +229,7 @@ class PrettyPrint:
             f"{prefix}  Position: {architecture.Position.Line}:{architecture.Position.Column}\n"
             f"{prefix}  Documentation: {documentationFirstLine}"
         )
-        buffer.append(f"{prefix}  Entity: {architecture.Entity.Identifier}")
+        buffer.append(f"{prefix}  Entity: {architecture.Entity.Name.Identifier}")
         buffer.append(f"{prefix}  Declared:")
         for item in architecture.DeclaredItems:
             for line in self.formatDeclaredItems(item, level + 2):
@@ -445,14 +445,14 @@ class PrettyPrint:
 
     def formatSubtypeIndication(self, subtypeIndication, entity: str, name: str) -> str:
         if isinstance(subtypeIndication, SimpleSubtypeSymbol):
-            return f"{subtypeIndication.Identifier}"
-        elif isinstance(subtypeIndication, ConstrainedCompositeSubtypeSymbol):
+            return f"{subtypeIndication.Name.Identifier}"
+        elif isinstance(subtypeIndication, ConstrainedArraySubtypeSymbol):
             constraints = []
             # FIXME: disabled due to problems with symbols
             # for constraint in subtypeIndication.Constraints:
             #     constraints.append(str(constraint))
 
-            return f"{subtypeIndication.Identifier}({', '.join(constraints)})"
+            return f"{subtypeIndication.Name.Identifier}({', '.join(constraints)})"
         else:
             raise PrettyPrintException(
                 f"Unhandled subtype kind '{subtypeIndication.__class__.__name__}' for {entity} '{name}'."

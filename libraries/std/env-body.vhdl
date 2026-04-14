@@ -16,21 +16,23 @@
 --  along with this program.  If not, see <gnu.org/licenses>.
 
 package body Env is
+  type int32 is range -2**31 to 2**31 - 1;
+
   procedure control_simulation (Is_Stop : Boolean;
                                 Has_Status : Boolean;
-                                Status : Integer);
+                                Status : int32);
   attribute foreign of control_simulation : procedure is "GHDL intrinsic";
 
   procedure control_simulation (Is_Stop : Boolean;
                                 Has_Status : Boolean;
-                                Status : Integer) is
+                                Status : int32) is
   begin
     assert false report "must not be called" severity failure;
   end control_simulation;
 
   procedure Stop (Status : Integer) is
   begin
-    control_simulation (True, True, Status);
+    control_simulation (True, True, int32 (Status));
   end Stop;
 
   procedure Stop is
@@ -40,7 +42,7 @@ package body Env is
 
   procedure Finish (status : integer) is
   begin
-    control_simulation (False, True, Status);
+    control_simulation (False, True, int32 (Status));
   end Finish;
 
   procedure Finish is
@@ -60,4 +62,44 @@ package body Env is
   begin
     return Get_Resolution_Limit;
   end Resolution_Limit;
+
+--START-V19
+  function Get_Assert_Count (Level : Severity_Level) return Natural;
+  attribute foreign of Get_Assert_Count : function is "GHDL intrinsic";
+
+  function Get_Assert_Count (Level : Severity_Level) return Natural is
+  begin
+    assert false report "must not be called" severity failure;
+    return 0;
+  end Get_Assert_Count;
+
+  procedure Clear_Assert_Count;
+  attribute foreign of Clear_Assert_Count : procedure is "GHDL intrinsic";
+
+  procedure Clear_Assert_Count is
+  begin
+    assert false report "must not be called" severity failure;
+  end Clear_Assert_Count;
+
+  -- VHDL Assert Count
+  impure function GetVhdlAssertCount return natural
+  is
+    variable Res : Natural;
+  begin
+    for I in Warning to Error loop
+      Res := Res + Get_Assert_Count (I);
+    end loop;
+    return Res;
+  end GetVhdlAssertCount;
+
+  impure function GetVhdlAssertCount (Level : SEVERITY_LEVEL ) return natural is
+  begin
+    return Get_Assert_Count (Level);
+  end GetVhdlAssertCount;
+
+  procedure ClearVhdlAssert is
+  begin
+    Clear_Assert_Count;
+  end ClearVhdlAssert;
+--END-V19
 end package body Env;

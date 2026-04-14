@@ -25,7 +25,6 @@ with Elab.Vhdl_Values; use Elab.Vhdl_Values;
 with Elab.Vhdl_Objtypes;
 with Elab.Vhdl_Heap;
 with Elab.Vhdl_Files; use Elab.Vhdl_Files;
-with Elab.Debugger;
 
 with Synth.Errors; use Synth.Errors;
 
@@ -110,12 +109,12 @@ package body Synth.Vhdl_Static_Proc is
             end if;
          when Iir_Predefined_Foreign_Textio_Write_Real =>
             Synth_Textio_Write_Real (Syn_Inst, Imp);
+
+         --  GCOV_EXCL_START (never called)
          when others =>
             Error_Msg_Synth
               (Syn_Inst, Loc, "call to implicit %n is not supported", +Imp);
+         --  GCOV_EXCL_STOP
       end case;
-   exception
-      when File_Execution_Error =>
-         Elab.Debugger.Debug_Error (Syn_Inst, Loc);
    end Synth_Static_Procedure;
 end Synth.Vhdl_Static_Proc;

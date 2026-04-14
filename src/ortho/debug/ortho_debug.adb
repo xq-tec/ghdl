@@ -264,9 +264,9 @@ package body Ortho_Debug is
       --  Is it needed ?
       if T1.Kind = ON_Array_Subtype and then T2.Kind = ON_Array_Subtype
         and then T1.Arr_Base = T2.Arr_Base
-        and then T1.Arr_El_Type = T2.Arr_El_Type
         and then T1.Length.all = T2.Length.all
       then
+         Check_Type (T1.Arr_El_Type, T2.Arr_El_Type);
          return;
       end if;
       if T1.Kind = ON_Record_Subtype and then T2.Kind = ON_Record_Subtype
@@ -1270,16 +1270,25 @@ package body Ortho_Debug is
       return Res;
    end New_Convert;
 
-   function New_Unchecked_Address (Lvalue : O_Lnode; Atype : O_Tnode)
-     return O_Enode
-   is
-      subtype O_Enode_Address is O_Enode_Type (OE_Unchecked_Address);
+   procedure Check_Address (Lvalue : O_Lnode; Atype : O_Tnode) is
    begin
       Check_Ref (Lvalue);
       if Atype.Kind /= ON_Access_Type then
          --  An address is of type access.
          raise Type_Error;
       end if;
+      if Lvalue.Kind = OL_Obj and then Lvalue.Obj.Kind = ON_Interface_Decl then
+         --  Cannot take the address of an interface.
+         raise Syntax_Error;
+      end if;
+   end Check_Address;
+
+   function New_Unchecked_Address (Lvalue : O_Lnode; Atype : O_Tnode)
+     return O_Enode
+   is
+      subtype O_Enode_Address is O_Enode_Type (OE_Unchecked_Address);
+   begin
+      Check_Address (Lvalue, Atype);
       return new O_Enode_Address'(Kind => OE_Unchecked_Address,
                                   Rtype => Atype,
                                   Ref => False,
@@ -1290,11 +1299,7 @@ package body Ortho_Debug is
    is
       subtype O_Enode_Address is O_Enode_Type (OE_Address);
    begin
-      Check_Ref (Lvalue);
-      if Atype.Kind /= ON_Access_Type then
-         --  An address is of type access.
-         raise Type_Error;
-      end if;
+      Check_Address (Lvalue, Atype);
       Check_Type (Get_Base_Type (Lvalue.Rtype), Get_Base_Type (Atype.D_Type));
       return new O_Enode_Address'(Kind => OE_Address,
                                   Rtype => Atype,

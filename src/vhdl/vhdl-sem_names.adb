@@ -311,7 +311,9 @@ package body Vhdl.Sem_Names is
               | Iir_Kind_Enumeration_Literal =>
                null;
             when Iir_Kind_Interface_Function_Declaration
-              | Iir_Kind_Interface_Procedure_Declaration =>
+              | Iir_Kind_Interface_Procedure_Declaration
+              | Iir_Kind_Function_Instantiation_Declaration
+              | Iir_Kind_Procedure_Instantiation_Declaration =>
                null;
             when Iir_Kinds_Denoting_Name =>
                null;
@@ -386,7 +388,7 @@ package body Vhdl.Sem_Names is
                end if;
             when others =>
                --  Consider only visible declarations (case of an implicit
-               --  declaration that is overriden by explicit one).
+               --  declaration that is overridden by explicit one).
                if Get_Identifier (Decl) = Id and Get_Visible_Flag (Decl) then
                   Add_Result (Res, Decl);
                end if;
@@ -426,10 +428,9 @@ package body Vhdl.Sem_Names is
             end;
          when Iir_Kind_Package_Instantiation_Declaration
            | Iir_Kind_Interface_Package_Declaration =>
-            --  Generics are not visible in selected name.
-            --  They are indeed not included in LRM08 12.3 f)
-            null;
-            --  Iterator_Decl_Chain (Get_Generic_Chain (Decl), Id);
+            --  A generic is a declaration, and according to LRM08 12.3 f), any
+            --  declaration is visible by selection.
+            Iterator_Decl_Chain (Get_Generic_Chain (Decl), Id);
          when Iir_Kind_Block_Statement =>
             declare
                Header : constant Iir := Get_Block_Header (Decl);
@@ -735,7 +736,7 @@ package body Vhdl.Sem_Names is
       Suffix: Iir;
       Slice_Type : Iir;
       Expr_Type : Iir;
-      Staticness : Iir_Staticness;
+      Staticness, Expr_Staticness : Iir_Staticness;
       Prefix_Rng : Iir;
       Suffix_Rng : Iir;
    begin
@@ -824,8 +825,15 @@ package body Vhdl.Sem_Names is
 
       --  LRM93 7.4.1
       --  A slice is never a locally static expression.
-      Set_Expr_Staticness
-        (Name, Min (Min (Staticness, Get_Expr_Staticness (Prefix)), Globally));
+      --
+      --  LRM08 9.4 Static expressions
+      --  o) A slice name whose prefix is a locally static primary and whose
+      --    discrete range is a locally static discrete range
+      Expr_Staticness := Min (Staticness, Get_Expr_Staticness (Prefix));
+      if Vhdl_Std < Vhdl_08 then
+         Expr_Staticness := Min (Expr_Staticness, Globally);
+      end if;
+      Set_Expr_Staticness (Name, Expr_Staticness);
       Set_Name_Staticness
         (Name, Min (Staticness, Get_Name_Staticness (Prefix)));
 
@@ -1124,7 +1132,15 @@ package body Vhdl.Sem_Names is
          end if;
          if Dim < 1 or else Dim > Int64 (Get_Nbr_Elements (Indexes_List))
          then
-            Error_Msg_Sem (+Attr, "parameter value out of bound");
+            if Dim < 1 then
+               Error_Msg_Sem
+                 (+Attr, "dimension parameter must be greater than 0");
+            else
+               Error_Msg_Sem
+                 (+Attr,
+                 "dimension parameter greater than the array dimension");
+            end if;
+            Parameter := Create_Error (Parameter);
             Dim := 1;
          end if;
          Index_Type := Get_Index_Type (Indexes_List, Natural (Dim - 1));
@@ -1826,12 +1842,14 @@ package body Vhdl.Sem_Names is
             Set_Base_Name (Name_Res, Res);
             return Name_Res;
          when Iir_Kind_Function_Declaration
-           | Iir_Kind_Interface_Function_Declaration =>
+           | Iir_Kind_Interface_Function_Declaration
+           | Iir_Kind_Function_Instantiation_Declaration =>
             Name_Res := Finish_Sem_Denoting_Name (Name, Res);
             Set_Type (Name_Res, Get_Return_Type (Res));
             return Name_Res;
          when Iir_Kind_Procedure_Declaration
-           | Iir_Kind_Interface_Procedure_Declaration =>
+           | Iir_Kind_Interface_Procedure_Declaration
+           | Iir_Kind_Procedure_Instantiation_Declaration =>
             return Finish_Sem_Denoting_Name (Name, Res);
          when Iir_Kind_Type_Conversion =>
             pragma Assert (Get_Kind (Name) = Iir_Kind_Parenthesis_Name);
@@ -3021,7 +3039,8 @@ package body Vhdl.Sem_Names is
                   +Prefix_Name);
             end if;
          when Iir_Kind_Function_Declaration
-           | Iir_Kind_Interface_Function_Declaration =>
+           | Iir_Kind_Interface_Function_Declaration
+           | Iir_Kind_Function_Instantiation_Declaration =>
             Sem_Parenthesis_Function (Prefix);
             Set_Named_Entity (Prefix_Name, Res_Prefix);
             if Res = Null_Iir then
@@ -3122,7 +3141,8 @@ package body Vhdl.Sem_Names is
             return;
 
          when Iir_Kind_Procedure_Declaration
-           | Iir_Kind_Interface_Procedure_Declaration =>
+           | Iir_Kind_Interface_Procedure_Declaration
+           | Iir_Kind_Procedure_Instantiation_Declaration =>
             Error_Msg_Sem (+Name, "cannot call %n in an expression",
                            +Prefix);
 
@@ -4242,7 +4262,8 @@ package body Vhdl.Sem_Names is
            | Iir_Kind_Group_Template_Declaration
            | Iir_Kind_File_Declaration
            | Iir_Kinds_Library_Unit
-           | Iir_Kind_Non_Object_Alias_Declaration =>
+           | Iir_Kind_Non_Object_Alias_Declaration
+           | Iir_Kind_Object_Alias_Declaration =>
             null;
 
          when Iir_Kind_Interface_Signal_Declaration
@@ -5107,6 +5128,7 @@ package body Vhdl.Sem_Names is
             if Expr /= Null_Iir then
                Expr := Sem_Expression_Wildcard
                  (Expr, Wildcard_Any_Discrete_Type);
+               Set_Pathname_Expression (Path, Expr);
             end if;
          end if;
          Path := Get_Pathname_Suffix (Path);

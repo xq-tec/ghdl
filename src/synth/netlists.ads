@@ -35,17 +35,43 @@ package Netlists is
    --  As there are many artificial and hierarchical names in a netlist, names
    --  are not flat: it is possible to create a new name using an existing one
    --  without copying the whole prefix.
+   --
+   --  Important: this type is exported in synth.h
    type Sname_Kind is
      (
+      --  A unique name (use a number)
+      --  No prefix.
+      Sname_Unique,
+
+      --  The name of a gate or the name of a gate port.
+      --  To avoid any clash with user names, gate names are a separate
+      --  namespace.
+      --  Also used to for container 'top' module (which contains gates
+      --  and user modules).
+      --  No prefix.
+      Sname_System,
+
       --  The name adds a suffix to an existing name.  Simple names (without
       --  prefix) are in this kind, with a null prefix.
       Sname_User,
-      Sname_Artificial,
+
+      --  A subelement of a record, or a field of a struct.
+      --  Prefix required.
+      Sname_Field,
 
       --  Create a new version of an existing prefix.
+      --  Prefix required
       Sname_Version
      );
    pragma Convention (C, Sname_Kind);
+
+   --  Sname with a prefix
+   subtype Sname_Kind_Prefix is
+     Sname_Kind range Sname_User .. Sname_Version;
+
+   --  Sname with a Name_Id suffix
+   subtype Sname_Kind_Suffix is
+     Sname_Kind range Sname_System .. Sname_Field;
 
    type Sname is private;
    No_Sname : constant Sname;
@@ -55,8 +81,10 @@ package Netlists is
    --  is no check that the name already exists, so these routines may create
    --  a duplicate name.  Callers must ensure they create uniq names.
    function New_Sname_User (Id : Name_Id; Prefix : Sname) return Sname;
-   function New_Sname_Artificial (Id : Name_Id) return Sname;
+   function New_Sname_System (Id : Name_Id) return Sname;
    function New_Sname_Version (Ver : Uns32; Prefix : Sname) return Sname;
+   function New_Sname_Field (Id : Name_Id; Prefix : Sname) return Sname;
+   function New_Sname_Unique (Num : Uns32) return Sname;
 
    --  Read the content of an Sname.
    function Get_Sname_Kind (Name : Sname) return Sname_Kind;
@@ -65,6 +93,7 @@ package Netlists is
    function Get_Sname_Version (Name : Sname) return Uns32;
 
    --  Modifies an Sname.
+   --  Used only for display.
    procedure Set_Sname_Prefix (Name : Sname; Prefix : Sname);
 
    --  TODO: procedure to free an Sname.
@@ -100,7 +129,7 @@ package Netlists is
    type Instance is private;
    No_Instance : constant Instance;
 
-   type Instance_Array is array (Int32 range <>) of Instance;
+   type Instance_Array is array (Nat32 range <>) of Instance;
 
    --  Hash INST (simply return its index).
    function Hash (Inst : Instance) return Hash_Value_Type;
@@ -111,7 +140,7 @@ package Netlists is
    No_Net : constant Net;
 
    --  So pervasive that it is worth defining this array here.
-   type Net_Array is array (Int32 range <>) of Net;
+   type Net_Array is array (Nat32 range <>) of Net;
 
    type Input is private;
    No_Input : constant Input;
@@ -154,11 +183,13 @@ package Netlists is
 
       Dir : Port_Kind;
 
+      --  Ports order for printers.
+      Order : Uns32;
+
       --  Port width (number of bits).
       W : Width;
    end record;
    pragma Pack (Port_Desc);
-   pragma Convention (C, Port_Desc);
 
    type Port_Desc_Array is array (Port_Idx range <>) of Port_Desc;
 
@@ -180,10 +211,10 @@ package Netlists is
 
       --  A Generic value (with a hint of the type).  This is a bit/logic
       --  vector.
-      --  TODO: Replace Integer with Signed/Unsigned.
       Param_Pval_Vector,
       Param_Pval_String,
-      Param_Pval_Integer,
+      Param_Pval_Signed,
+      Param_Pval_Unsigned,
       Param_Pval_Real,
       Param_Pval_Time_Ps,
       Param_Pval_Boolean
@@ -367,18 +398,7 @@ private
    No_Sname : constant Sname := 0;
 
    --  Just to confirm.
-   for Port_Desc'Size use 64;
-
-   --  We don't care about C compatible representation of Sname_Record.
-   pragma Warnings (Off, "*convention*");
-   type Sname_Record is record
-      Kind : Sname_Kind;
-      Prefix : Sname;
-      Suffix : Uns32;
-   end record;
-   pragma Pack (Sname_Record);
-   for Sname_Record'Size use 2*32;
-   pragma Warnings (On, "*convention*");
+   for Port_Desc'Size use 3*32;
 
    type Module is mod 2**30;
    No_Module : constant Module := 0;

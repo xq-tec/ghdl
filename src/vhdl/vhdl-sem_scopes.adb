@@ -373,6 +373,8 @@ package body Vhdl.Sem_Scopes is
          when Iir_Kind_Enumeration_Literal
            | Iir_Kind_Function_Declaration
            | Iir_Kind_Procedure_Declaration
+           | Iir_Kind_Function_Instantiation_Declaration
+           | Iir_Kind_Procedure_Instantiation_Declaration
            | Iir_Kind_Interface_Function_Declaration
            | Iir_Kind_Interface_Procedure_Declaration =>
             return True;
@@ -1006,6 +1008,12 @@ package body Vhdl.Sem_Scopes is
         Get_Interpretation_Raw (Ident);
       Prev_Hidden : Boolean;
    begin
+      if Ident = Null_Identifier then
+         --  Missing identifier can happen only in case of parse error.
+         pragma Assert (Flags.Flag_Force_Analysis);
+         return;
+      end if;
+
       --  Compute wether the current interpretation should be hidden or not.
       if Valid_Interpretation (Raw_Inter)
         and then not Is_Conflict_Declaration (Raw_Inter)
@@ -1093,6 +1101,8 @@ package body Vhdl.Sem_Scopes is
             if not Is_Second_Subprogram_Specification (Decl) then
                Handle_Decl (Decl, Arg);
             end if;
+         when Iir_Kinds_Subprogram_Instantiation_Declaration =>
+            Handle_Decl (Decl, Arg);
          when Iir_Kind_Type_Declaration =>
             declare
                Def : constant Iir := Get_Type_Definition (Decl);
@@ -1535,7 +1545,7 @@ package body Vhdl.Sem_Scopes is
               and then Is_Operation_For_Type (El, Base_Type)
             then
                if Get_Visible_Flag (El) then
-                  --  Implicit declaration EL was overriden by a user
+                  --  Implicit declaration EL was overridden by a user
                   --  declaration.  Don't make it visible.
                   Potentially_Add_Name (El);
                else

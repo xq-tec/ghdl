@@ -27,14 +27,15 @@ with PSL.Nodes;
 with PSL.Subsets;
 with PSL.Types;
 
-with Elab.Vhdl_Expr;
-
 with Synth.Vhdl_Stmts;
 with Synth.Vhdl_Decls;
 with Synth.Vhdl_Expr;
 with Trans_Analyzes;
 
 package body Simul.Vhdl_Elab is
+   --  Number of implicit signals declared in processes
+   Nbr_Proc_Signals : Signal_Index_Type;
+
    procedure Gather_Processes_1 (Inst : Synth_Instance_Acc);
 
    procedure Convert_Type_Width (T : Type_Acc) is
@@ -102,16 +103,16 @@ package body Simul.Vhdl_Elab is
       Sig_Type : Node;
       Sub_Resolved : Boolean;
    begin
-      if Get_Kind (Sig_Type1) = Iir_Kind_Interface_Type_Definition then
+      Sig_Type := Get_Concrete_Type (Inst, Sig_Type1);
+
+      while Get_Kind (Sig_Type) = Iir_Kind_Interface_Type_Definition loop
          declare
             Ntyp : Type_Acc;
          begin
-            Get_Interface_Type (Inst, Sig_Type1, Ntyp, Sig_Type);
+            Get_Interface_Type (Inst, Sig_Type, Ntyp, Sig_Type);
             pragma Unreferenced (Ntyp);
          end;
-      else
-         Sig_Type := Sig_Type1;
-      end if;
+      end loop;
 
       if not Already_Resolved
         and then Get_Kind (Sig_Type) in Iir_Kinds_Subtype_Definition
@@ -232,7 +233,7 @@ package body Simul.Vhdl_Elab is
    begin
       Mark_Expr_Pool (Marker);
 
-      Synth.Vhdl_Stmts.Synth_Assignment_Prefix (Inst, Name, Base, Typ, Off);
+      Synth.Vhdl_Stmts.Synth_Object_Name (Inst, Name, Base, Typ, Off);
       if Base = No_Valtyp then
          Res := (Base => No_Signal_Index,
                  Typ => null,
@@ -337,7 +338,7 @@ package body Simul.Vhdl_Elab is
          Mark_Expr_Pool (Marker);
          Instance_Pool := Global_Pool'Access;
 
-         Synth.Vhdl_Stmts.Synth_Assignment_Prefix (Inst, Name, Base, Typ, Off);
+         Synth.Vhdl_Stmts.Synth_Object_Name (Inst, Name, Base, Typ, Off);
          V.Val.A_Off := Off;
          pragma Assert (Base.Val = V.Val.A_Obj);
          pragma Unreferenced (Typ);
@@ -345,53 +346,6 @@ package body Simul.Vhdl_Elab is
          Release_Expr_Pool (Marker);
       end if;
    end Elab2_Object_Alias;
-
-   procedure Elab_External_Name (Inst : Synth_Instance_Acc; Name : Node)
-   is
-      Prev_Instance_Pool : constant Areapools.Areapool_Acc := Instance_Pool;
-      Marker : Mark_Type;
-
-      Prev : Valtyp;
-      Res : Valtyp;
-      Name_Typ : Type_Acc;
-   begin
-      Mark_Expr_Pool (Marker);
-      Instance_Pool := Global_Pool'Access;
-
-      Prev := Get_Value (Inst, Name);
-
-      --  Resolve the external name.
-      Res := Elab.Vhdl_Expr.Exec_External_Name (Inst, Name);
-
-      if Res /= No_Valtyp then
-         --  Rewrite the external name as an alias.
-         Name_Typ := Prev.Typ;
-         case Res.Val.Kind is
-            when Value_Signal
-              | Value_Memory =>
-               Prev.Val.all := (Kind => Value_Alias,
-                                A_Obj => Res.Val,
-                                A_Typ => Res.Typ,
-                                A_Off => No_Value_Offsets);
-            when others =>
-               raise Internal_Error;
-         end case;
-
-         --  Subtype conversion.
-         --  The type of the external name is Res.Typ, and the target type is
-         --  in Prev.Typ.  Need to do some gymnastic.
-         Prev.Typ := Res.Typ;
-         Prev := Elab.Vhdl_Expr.Exec_Subtype_Conversion
-           (Prev, Name_Typ, True, Name);
-         Convert_Type_Width (Prev.Typ);
-         Prev.Typ := Unshare (Prev.Typ, Instance_Pool);
-
-         Mutate_Object (Inst, Name, Prev);
-      end if;
-
-      Instance_Pool := Prev_Instance_Pool;
-      Release_Expr_Pool (Marker);
-   end Elab_External_Name;
 
    procedure Gather_Processes_Decl (Inst : Synth_Instance_Acc; Decl : Node) is
    begin
@@ -510,8 +464,10 @@ package body Simul.Vhdl_Elab is
            | Iir_Kind_Subtype_Declaration
            | Iir_Kind_Function_Declaration
            | Iir_Kind_Procedure_Declaration
+           | Iir_Kinds_Subprogram_Instantiation_Declaration
            | Iir_Kind_Function_Body
            | Iir_Kind_Procedure_Body
+           | Iir_Kind_Subprogram_Instantiation_Body
            | Iir_Kind_Component_Declaration
            | Iir_Kind_File_Declaration
            | Iir_Kind_Protected_Type_Body
@@ -519,7 +475,8 @@ package body Simul.Vhdl_Elab is
            | Iir_Kind_Use_Clause
            | Iir_Kind_Mode_View_Declaration
            | Iir_Kind_Group_Template_Declaration
-           | Iir_Kind_Group_Declaration =>
+           | Iir_Kind_Group_Declaration
+           | Iir_Kind_Suspend_State_Declaration =>
             null;
 
          when Iir_Kind_Package_Instantiation_Declaration =>
@@ -533,7 +490,7 @@ package body Simul.Vhdl_Elab is
             null;
 
          when Iir_Kinds_External_Name =>
-            Elab_External_Name (Inst, Decl);
+            Synth.Vhdl_Decls.Synth_Concurrent_External_Name (Inst, Decl, Decl);
 
          when others =>
             Error_Kind ("gather_processes_decl", Decl);
@@ -815,12 +772,12 @@ package body Simul.Vhdl_Elab is
       if Formal = Null_Iir then
          Formal := Inter;
       end if;
-      Synth_Assignment_Prefix (Port_Inst, Formal, Formal_Base, Typ, Off);
+      Synth_Object_Name (Port_Inst, Formal, Formal_Base, Typ, Off);
       Typ := Unshare (Typ, Global_Pool'Access);
       Formal_Sig := Formal_Base.Val.S;
       Formal_Ep := (Formal_Sig, Off, Typ);
 
-      Synth_Assignment_Prefix
+      Synth_Object_Name
         (Assoc_Inst, Get_Actual (Assoc), Actual_Base, Typ, Off);
       Typ := Unshare (Typ, Global_Pool'Access);
       Actual_Sig := Actual_Base.Val.S;
@@ -1002,6 +959,27 @@ package body Simul.Vhdl_Elab is
       pragma Assert (Areapools.Is_Empty (Expr_Pool));
    end Gather_Connections_Instantiation_Statement;
 
+   --  Count number of extra implicit signals declared within processes.
+   procedure Count_Process_Implicit_Signals (Decls : Node)
+   is
+      Decl : Node;
+      El : Node;
+   begin
+      Decl := Decls;
+      while Decl /= Null_Node loop
+         if Get_Kind (Decl) = Iir_Kind_Attribute_Implicit_Declaration then
+            El := Get_Attribute_Implicit_Chain (Decl);
+            while El /= Null_Node loop
+               if Get_Kind (El) in Iir_Kinds_AMS_Signal_Attribute then
+                  Nbr_Proc_Signals := Nbr_Proc_Signals + 1;
+               end if;
+               El := Get_Attr_Chain (El);
+            end loop;
+         end if;
+         Decl := Get_Chain (Decl);
+      end loop;
+   end Count_Process_Implicit_Signals;
+
    procedure Gather_Processes_Stmt
      (Inst : Synth_Instance_Acc; Stmt : Node) is
    begin
@@ -1071,6 +1049,7 @@ package body Simul.Vhdl_Elab is
                                      Sensitivity => No_Sensitivity_Index));
             --  Do not yet compute drivers or sensitivity as it may depends
             --  on declarations within the process.
+            Count_Process_Implicit_Signals (Get_Declaration_Chain (Stmt));
          when Iir_Kind_Psl_Default_Clock
            | Iir_Kind_Psl_Declaration =>
             null;
@@ -1185,7 +1164,14 @@ package body Simul.Vhdl_Elab is
       pragma Assert (Areapools.Is_Empty (Expr_Pool));
    end Gather_Processes_1;
 
-   procedure Gather_Processes (Top : Synth_Instance_Acc) is
+   procedure Gather_Processes (Top : Synth_Instance_Acc)
+   is
+      Null_Entry : constant Signal_Entry :=
+        (Signal_None, Null_Node, null, null, null, null, null,
+         No_Sensitivity_Index,
+         No_Signal_Index, No_Value_Offsets,
+         No_Connect_Index, False);
+      Nbr_Signals : constant Signal_Index_Type := Get_Nbr_Signal;
    begin
       pragma Assert (Areapools.Is_Empty (Expr_Pool));
 
@@ -1194,14 +1180,11 @@ package body Simul.Vhdl_Elab is
       Drivers_Table.Init;
 
       --  Init Signals_Table.
-      Signals_Table.Set_Last (Get_Nbr_Signal);
+      Signals_Table.Set_Last (Nbr_Signals);
       for I in Signals_Table.First .. Signals_Table.Last loop
-         Signals_Table.Table (I) :=
-           (Signal_None, Null_Node, null, null, null, null, null,
-            No_Sensitivity_Index,
-            No_Signal_Index, No_Value_Offsets,
-            No_Connect_Index, False);
+         Signals_Table.Table (I) := Null_Entry;
       end loop;
+      Nbr_Proc_Signals := 0;
 
       --  Gather declarations of top-level packages.
       declare
@@ -1222,6 +1205,14 @@ package body Simul.Vhdl_Elab is
 
       --  For the debugger.
       Top_Instance := Top;
+
+      --  Extra implicit signals
+      if Nbr_Proc_Signals > 0 then
+         Signals_Table.Set_Last (Nbr_Signals + Nbr_Proc_Signals);
+         for I in Nbr_Signals + 1 .. Nbr_Signals + Nbr_Proc_Signals loop
+            Signals_Table.Table (I) := Null_Entry;
+         end loop;
+      end if;
    end Gather_Processes;
 
    procedure Compute_Sources is
@@ -1314,6 +1305,9 @@ package body Simul.Vhdl_Elab is
             Synth.Vhdl_Decls.Synth_Declarations
               (Proc_Inst, Get_Declaration_Chain (Proc), True);
             exit when Is_Error (Proc_Inst);
+
+            --  For implicit signals
+            Gather_Processes_Decls (Proc_Inst, Get_Declaration_Chain (Proc));
 
             pragma Assert (Is_Expr_Pool_Empty);
             Gather_Process_Drivers (Proc_Inst, Proc, I);

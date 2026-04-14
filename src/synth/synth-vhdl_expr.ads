@@ -19,6 +19,7 @@
 with Ada.Unchecked_Deallocation;
 
 with Types; use Types;
+with Grt.Types; use Grt.Types;
 
 with PSL.Types;
 with Vhdl.Nodes; use Vhdl.Nodes;
@@ -28,7 +29,6 @@ with Elab.Vhdl_Objtypes; use Elab.Vhdl_Objtypes;
 with Elab.Vhdl_Values; use Elab.Vhdl_Values;
 
 with Netlists; use Netlists;
-with Netlists.Builders; use Netlists.Builders;
 
 with Synth.Source;
 
@@ -58,19 +58,15 @@ package Synth.Vhdl_Expr is
    --  False means either not positive or unknown.
    function Is_Positive (V : Valtyp) return Boolean;
 
-   procedure From_Std_Logic (Enum : Int64; Val : out Uns32; Zx : out Uns32);
-   procedure From_Bit (Enum : Int64; Val : out Uns32);
+   procedure From_Std_Logic (Enum : Ghdl_U8; Val : out Uns32; Zx : out Uns32);
    procedure To_Logic
-     (Enum : Int64; Etype : Type_Acc; Val : out Uns32; Zx : out Uns32);
+     (Enum : Ghdl_U8; Etype : Type_Acc; Val : out Uns32; Zx : out Uns32);
 
    --  Try to match: clk'event and clk = X
    --            or: clk = X and clk'event
    --  where X is '0' or '1'.
    function Synth_Clock_Edge
      (Syn_Inst : Synth_Instance_Acc; Left, Right : Node) return Net;
-
-   procedure Concat_Array
-     (Ctxt : Context_Acc; Arr : in out Net_Array; N : out Net);
 
    --  Hook to convert a signal to a value.
    --  If not defined, the signal are not allowed (like in expressions during
@@ -142,9 +138,6 @@ package Synth.Vhdl_Expr is
                                  Voff : out Net;
                                  Off : out Value_Offsets;
                                  Error : out Boolean);
-
-   function Synth_Name (Syn_Inst : Synth_Instance_Acc; Name : Node)
-                       return Valtyp;
 
    --  Conversion to logic vector.
    type Digit_Index is new Natural;

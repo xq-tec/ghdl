@@ -379,11 +379,24 @@ package body Vhdl.Sem_Psl is
    end Sem_Hdl_Expr;
 
    --  Sem a boolean node.
-   function Sem_Boolean (Bool : PSL_Node) return PSL_Node is
+   function Sem_Boolean (Bool : PSL_Node) return PSL_Node
+   is
+      Res : PSL_Node;
    begin
       case Get_Kind (Bool) is
          when N_HDL_Expr =>
-            return Sem_Hdl_Expr (Bool);
+            Res := Sem_Hdl_Expr (Bool);
+            case Get_Kind (Res) is
+               when N_Sequence_Instance
+                 | N_Property_Instance
+                 | N_Sequence_Parameter
+                 | N_Property_Parameter
+                 | N_Endpoint_Instance =>
+                  Error_Msg_Sem (+Res, "boolean expression expected");
+               when others =>
+                  null;
+            end case;
+            return Res;
          when N_And_Bool
            | N_Or_Bool =>
             Set_Left (Bool, Sem_Boolean (Get_Left (Bool)));
@@ -1292,15 +1305,24 @@ package body Vhdl.Sem_Psl is
       if Arch_Name /= Null_Iir then
          Arch := Sem_Lib.Load_Secondary_Unit
            (Design_Entity, Get_Identifier (Arch_Name), Arch_Name);
-         if Arch /= Null_Iir then
-            Set_Named_Entity (Arch_Name, Get_Library_Unit (Arch));
+         if Arch = Null_Iir then
+            --  It will probably be difficult to analyze the unit, as
+            --  the names from the architecture couldn't be visible.
+            Error_Msg_Sem (+Arch_Name,
+              "cannot find architecture %i of entity %i",
+              (+Arch_Name, + Entity_Name));
+            return;
          end if;
+         Set_Named_Entity (Arch_Name, Get_Library_Unit (Arch));
       end if;
    end Sem_Hierarchical_Name;
 
    procedure Sem_Psl_Verification_Unit (Unit : Iir)
    is
+      use Vhdl.Sem_Decls;
+
       Hier_Name : constant Iir := Get_Hierarchical_Name (Unit);
+      Implicit : Implicit_Declaration_Type;
       Entity : Iir;
       Arch : Iir;
       Item : Iir;
@@ -1347,6 +1369,8 @@ package body Vhdl.Sem_Psl is
             Sem_Scopes.Extend_Scope_Of_Block_Declarations (Arch);
          end if;
       end if;
+
+      Push_Signals_Declarative_Part (Implicit, Unit);
 
       Item := Get_Vunit_Item_Chain (Unit);
       while Item /= Null_Iir loop
@@ -1450,6 +1474,8 @@ package body Vhdl.Sem_Psl is
          Prev_Item := Item;
          Item := Get_Chain (Item);
       end loop;
+
+      Pop_Signals_Declarative_Part (Implicit);
 
       if Arch /= Null_Iir then
          Sem_Scopes.Close_Scope_Extension;

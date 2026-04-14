@@ -56,7 +56,7 @@ architecture behav of externalerr02 is
       o   : out std_logic_vector(7 downto 0));
   end component externalerr02_sub;
 begin
-  dut : entity externalerr02_sub
+  dut : externalerr02_sub
     port map (clk => clk,
               rst => rst,
               a => a,

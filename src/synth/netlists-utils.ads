@@ -58,18 +58,11 @@ package Netlists.Utils is
    function Get_Input_Instance (Inst : Instance; Idx : Port_Idx)
                                return Instance;
 
-   --  Return True iff ID describe a constant.
+   --  Return True iff ID describe a constant value (without X/Z).
    function Is_Const_Net (N : Net) return Boolean;
 
    --  Assuming that N is a const net, return the value (for small values).
    function Get_Net_Uns64 (N : Net) return Uns64;
-
-   function Get_Net_Int64 (N : Net) return Int64;
-   pragma Inline (Get_Net_Int64);
-
-   --  Assuming that N is a const net, return the value at offset OFF.
-   procedure Get_Net_Element
-     (N : Net; Off : Uns32; Va : out Uns32; Zx : out Uns32);
 
    --  Return True iff O has at least one sink (ie is connected to at least one
    --  input).
@@ -100,6 +93,7 @@ package Netlists.Utils is
    function Skip_Signal (N : Net) return Net;
 
    function Clog2 (W : Width) return Width;
+   function Is_Pow2 (W : Width) return Boolean;
 
    --  Copy attribtues of SRC to DEST.
    procedure Copy_Instance_Attributes (Dest : Instance; Src : Instance);

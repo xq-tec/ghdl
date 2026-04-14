@@ -1,9 +1,12 @@
+#![allow(dead_code)]
 pub const MSGID_NOTE: u8 = 0;
 pub const MSGID_FIRST_WARNID: u8 = 1;
 pub const MSGID_WARNING: u8 = 39;
 pub const MSGID_ERROR: u8 = 40;
 pub const MSGID_FATAL: u8 = 41;
 
+#[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Warnid {
     Library,
     DeprecatedOption,
@@ -46,7 +49,7 @@ pub enum Warnid {
 }
 
 impl Warnid {
-    const VALUES: [Self; 38] = [
+    pub const VALUES: [Self; 38] = [
         Self::Library,
         Self::DeprecatedOption,
         Self::UnexpectedOption,
@@ -87,43 +90,43 @@ impl Warnid {
         Self::Elaboration,
     ];
 
-    const IMAGES: [&'static str; 38] = [
+    pub const IMAGES: [&'static str; 38] = [
         "library",
-        "deprecatedoption",
-        "unexpectedoption",
-        "missingxref",
-        "defaultbinding",
+        "deprecated-option",
+        "unexpected-option",
+        "missing-xref",
+        "default-binding",
         "binding",
         "port",
-        "reservedword",
+        "reserved-word",
         "pragma",
-        "nestedcomment",
+        "nested-comment",
         "parenthesis",
-        "vitalgeneric",
-        "delayedchecks",
+        "vital-generic",
+        "delayed-checks",
         "sensitivity",
         "body",
         "specs",
         "universal",
-        "portbounds",
-        "runtimeerror",
-        "deltacycle",
-        "missingwait",
+        "port-bounds",
+        "runtime-error",
+        "delta-cycle",
+        "missing-wait",
         "shared",
         "hide",
         "unused",
         "nowrite",
-        "logicloop",
+        "logic-loop",
         "others",
         "pure",
-        "analyzeassert",
+        "analyze-assert",
         "attribute",
         "useless",
-        "missingassoc",
-        "openassoc",
+        "missing-assoc",
+        "open-assoc",
         "conformance",
-        "unkeptattribute",
-        "unhandledattribute",
+        "unkept-attribute",
+        "unhandled-attribute",
         "static",
         "elaboration",
     ];

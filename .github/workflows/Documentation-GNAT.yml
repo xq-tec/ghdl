@@ -19,7 +19,7 @@ jobs:
 
     steps:
       - name: '⏬ Checkout'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           # Full make builds adapter/ via Cargo (path crates are git submodules).
           submodules: recursive
@@ -54,7 +54,7 @@ jobs:
           ls -lAh gnat*
 
       - name: "📤 Upload artifact: '${{ inputs.html_artifact }}'"
-        uses: pyTooling/upload-artifact@v4
+        uses: pyTooling/upload-artifact@v6
         if: inputs.html_artifact != ''
         with:
           name: ${{ inputs.html_artifact }}

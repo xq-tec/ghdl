@@ -153,6 +153,26 @@ synth_tb()
   clean
 }
 
+synth_vlg2vhd()
+{
+  t=$1
+  shift
+
+  synth $* $t.v -e $t > syn_$t.vhdl
+}
+
+synth_vlg_tb()
+{
+  t=$1
+  shift
+
+  synth_vlg2vhd $t $*
+
+  analyze $* syn_$t.vhdl tb_$t.vhdl
+  elab_simulate tb_$t --ieee-asserts=disable-at-0 --assert-level=error
+  clean
+}
+
 verilog_synth_tb()
 {
     t=$1
@@ -187,7 +207,7 @@ ghdl_has_feature ()
 
 ghdl_is_interpretation ()
 {
-  "$GHDL" --version | grep -q interpretation
+  echo "$GHDL_FLAGS" | fgrep -q interp
 }
 
 ghdl_is_preelaboration ()

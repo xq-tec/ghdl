@@ -22,11 +22,6 @@ package body Netlists.Errors is
       return Make_Earg_Synth_Instance (Uns32 (N));
    end "+";
 
-   function "+" (N : Net) return Earg_Type is
-   begin
-      return Make_Earg_Synth_Net (Uns32 (N));
-   end "+";
-
    function "+" (N : Sname) return Earg_Type is
    begin
       return Make_Earg_Synth_Name (Uns32 (N));
@@ -34,6 +29,7 @@ package body Netlists.Errors is
 
    procedure Output_Name_1 (N : Sname)
    is
+      Kind : constant Sname_Kind := Get_Sname_Kind (N);
       Prefix : Sname;
    begin
       --  Do not crash on No_Name.
@@ -42,18 +38,22 @@ package body Netlists.Errors is
          return;
       end if;
 
-      Prefix := Get_Sname_Prefix (N);
-      if Prefix /= No_Sname then
-         Output_Name_1 (Prefix);
-         Output_Message (".");
+      if Kind in Sname_Kind_Prefix then
+         Prefix := Get_Sname_Prefix (N);
+         if Prefix /= No_Sname then
+            Output_Name_1 (Prefix);
+            Output_Message (".");
+         end if;
       end if;
 
       case Get_Sname_Kind (N) is
-         when Sname_User =>
+         when Sname_User
+           | Sname_Field =>
             Output_Identifier (Get_Sname_Suffix (N));
-         when Sname_Artificial =>
+         when Sname_System =>
             Output_Identifier (Get_Sname_Suffix (N));
-         when Sname_Version =>
+         when Sname_Version
+           | Sname_Unique =>
             Output_Message ("n");
             Output_Uns32 (Get_Sname_Version (N));
       end case;
@@ -83,31 +83,6 @@ package body Netlists.Errors is
       end case;
    end Synth_Instance_Handler;
 
-   procedure Synth_Net_Handler
-     (Format : Character; Err : Error_Record; Val : Uns32)
-   is
-      pragma Unreferenced (Err);
-      N : constant Net := Net (Val);
-   begin
-      case Format is
-         when 'n' =>
-            declare
-               Inst : constant Instance := Get_Net_Parent (N);
-               Idx : constant Port_Idx := Get_Port_Idx (N);
-               Name : Sname;
-            begin
-               if Is_Self_Instance (Inst) then
-                  Name := Get_Input_Desc (Get_Module (Inst), Idx).Name;
-               else
-                  Name := Get_Output_Desc (Get_Module (Inst), Idx).Name;
-               end if;
-               Output_Name (Name);
-            end;
-         when others =>
-            raise Internal_Error;
-      end case;
-   end Synth_Net_Handler;
-
    procedure Synth_Name_Handler
      (Format : Character; Err : Error_Record; Val : Uns32)
    is
@@ -125,8 +100,6 @@ package body Netlists.Errors is
    begin
       Register_Earg_Handler
         (Earg_Synth_Instance, Synth_Instance_Handler'Access);
-      Register_Earg_Handler
-        (Earg_Synth_Net, Synth_Net_Handler'Access);
       Register_Earg_Handler
         (Earg_Synth_Name, Synth_Name_Handler'Access);
    end Initialize;

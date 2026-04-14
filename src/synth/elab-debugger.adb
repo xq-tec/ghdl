@@ -23,6 +23,7 @@ with Name_Table;
 with Str_Table;
 
 with Grt.Types; use Grt.Types;
+with Grt.Stdio;
 
 with Vhdl.Errors;
 with Vhdl.Utils;
@@ -465,13 +466,13 @@ package body Elab.Debugger is
       Prepare_Continue;
    end Cont_Proc;
 
-   procedure Disp_A_Frame (Inst: Synth_Instance_Acc)
+   procedure Gen_Disp_A_Frame (Inst: Synth_Instance_Acc)
    is
       use Vhdl.Utils;
       Src : Node;
    begin
       if Inst = Root_Instance then
-         Put_Line ("root instance");
+         Put ("root instance");
          return;
       end if;
 
@@ -488,8 +489,9 @@ package body Elab.Debugger is
       end case;
       Put (" at ");
       Put (Files_Map.Image (Get_Location (Src)));
-      New_Line;
-   end Disp_A_Frame;
+   end Gen_Disp_A_Frame;
+
+   procedure Disp_A_Frame is new Gen_Disp_A_Frame (Simple_IO.Put);
 
    procedure Debug_Bt (Instance : Synth_Instance_Acc)
    is
@@ -498,6 +500,7 @@ package body Elab.Debugger is
       Inst := Instance;
       while Inst /= null loop
          Disp_A_Frame (Inst);
+         New_Line;
          Inst := Get_Caller_Instance (Inst);
       end loop;
    end Debug_Bt;
@@ -607,7 +610,11 @@ package body Elab.Debugger is
       Res : Synth_Instance_Acc;
    begin
       F := Skip_Blanks (Line);
-      if Line (F .. Line'Last) = ".." then
+      if F > Line'Last or Line (F .. Line'Last) = "-h" then
+         Put_Line ("usage: ch ..");
+         Put_Line ("       ch LABEL");
+         return;
+      elsif Line (F .. Line'Last) = ".." then
          Res := Get_Instance_Path_Parent (Current_Instance);
          if Res = null then
             Put_Line ("already at top");
@@ -629,7 +636,7 @@ package body Elab.Debugger is
    is
       pragma Unreferenced (Line);
    begin
-      Disp_Instance_Path (Current_Instance);
+      Disp_Instance_Path (Grt.Stdio.stdout, Current_Instance);
       New_Line;
    end Print_Hierarchy_Path;
 

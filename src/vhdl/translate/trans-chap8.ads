@@ -59,6 +59,12 @@ package Trans.Chap8 is
    --  Return true if there is a return statement in the chain.
    function Translate_Statements_Chain_Has_Return (First : Iir) return Boolean;
 
+   --  Translate a choice by expression for unidim types.
+   --  Also used by case generate
+   function Translate_Simple_String_Choice (Expr : Mnode;
+                                            Val  : Mnode;
+                                            Func : Iir) return O_Enode;
+
    --  Create a case branch for CHOICE.
    --  Used by case statement and aggregates.
    procedure Translate_Case_Choice
@@ -75,6 +81,11 @@ package Trans.Chap8 is
 
    --  Create declarations for a for-loop statement.
    procedure Translate_For_Loop_Statement_Declaration (Stmt : Iir);
+
+   --  Add two associations (base and length) in ASSOC for STR.
+   --  STR can be Mnode_Null or it must have been stabilized.
+   procedure New_Association_String_Base_Len (Assoc : in out O_Assoc_List;
+                                              Str : Mnode);
 
    procedure Translate_Report (Stmt : Iir; Subprg : O_Dnode; Level : Iir);
 

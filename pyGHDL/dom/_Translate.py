@@ -30,12 +30,17 @@
 #
 # SPDX-License-Identifier: GPL-2.0-or-later
 # ============================================================================
-from typing import List, Generator, Type
+"""
+This module offers helper functions to translate often used IIR substructures to pyGHDL.dom (pyVHDLModel) constructs.
+"""
+
+from typing import List, Generator, Type, Dict
 
 from pyTooling.Decorators import export
+from pyTooling.Warning import WarningCollector
 
-from pyVHDLModel import Name
 from pyVHDLModel.Base import ModelEntity, Direction, ExpressionUnion
+from pyVHDLModel.Name import Name
 from pyVHDLModel.Symbol import Symbol
 from pyVHDLModel.Association import AssociationItem
 from pyVHDLModel.Interface import GenericInterfaceItemMixin, PortInterfaceItemMixin, ParameterInterfaceItemMixin
@@ -49,19 +54,21 @@ from pyGHDL.libghdl.vhdl import nodes
 from pyGHDL.dom.Sequential import (
     IfStatement,
     ForLoopStatement,
+    WhileLoopStatement,
     CaseStatement,
     SequentialReportStatement,
     SequentialAssertStatement,
     WaitStatement,
     SequentialSimpleSignalAssignment,
     NullStatement,
+    NextStatement,
     ExitStatement,
     SequentialProcedureCall,
 )
 
 from pyGHDL.dom import Position, DOMException
 from pyGHDL.dom._Utils import GetNameOfNode, GetIirKindOfNode
-from pyGHDL.dom.Names import (
+from pyGHDL.dom.Name import (
     SimpleName,
     SelectedName,
     AttributeName,
@@ -72,9 +79,11 @@ from pyGHDL.dom.Names import (
 from pyGHDL.dom.Symbol import (
     SimpleObjectOrFunctionCallSymbol,
     SimpleSubtypeSymbol,
-    ConstrainedCompositeSubtypeSymbol,
+    ConstrainedArraySubtypeSymbol,
     IndexedObjectOrFunctionCallSymbol,
     ConstrainedScalarSubtypeSymbol,
+    ConstrainedRecordSubtypeSymbol,
+    RecordElementSymbol,
 )
 from pyGHDL.dom.Type import (
     IntegerType,
@@ -167,6 +176,16 @@ from pyGHDL.dom.PSL import DefaultClock
 
 @export
 def GetName(node: Iir) -> Name:
+    """
+    Translates a *name* IIR node to a :class:`~pyVHDLModel.Name.Name`.
+
+    A name can be a *simple name* or complex name consisting of *selected*, *parenthesis*, *attribute*, ... *names*.
+    Complex names are composed as a chain of name objects, which can be traversed using the
+    :attr:`~pyVHDLModel.Name.Name.Prefix` property.
+
+    :param node: The name IIR node to translate.
+    :return:     A name object.
+    """
     kind = GetIirKindOfNode(node)
     if kind == nodes.Iir_Kind.Simple_Name:
         name = GetNameOfNode(node)
@@ -195,10 +214,7 @@ def GetAssociations(node: Iir) -> List:
     for item in utils.chain_iter(nodes.Get_Association_Chain(node)):
         kind = GetIirKindOfNode(item)
 
-        if kind in (
-            nodes.Iir_Kind.Association_Element_By_Expression,
-            nodes.Iir_Kind.Association_Element_By_Name,
-        ):
+        if kind in (nodes.Iir_Kind.Association_Element_By_Expression, nodes.Iir_Kind.Association_Element_By_Name):
             actual = nodes.Get_Actual(item)
             expr = GetExpressionFromNode(actual)
 
@@ -232,6 +248,30 @@ def GetArrayConstraintsFromSubtypeIndication(
             raise DOMException(
                 f"Unknown constraint kind '{constraintKind.name}' for constraint '{constraint}' in subtype indication '{subtypeIndication}' at {position}."
             )
+
+    return constraints
+
+
+@export
+def GetRecordConstraintsFromSubtypeIndication(
+    subtypeIndication: Iir,
+) -> Dict:
+    constraints = {}
+    recordElementConstraint = nodes.Get_Owned_Elements_Chain(subtypeIndication)
+    while recordElementConstraint != nodes.Null_Iir:
+        recordElementKind = GetIirKindOfNode(recordElementConstraint)
+        if recordElementKind == nodes.Iir_Kind.Record_Element_Constraint:
+            recordElementName = GetNameOfNode(recordElementConstraint)
+            sym = RecordElementSymbol(recordElementConstraint, SimpleName(recordElementConstraint, recordElementName))
+
+            constraints[sym] = None
+        else:
+            position = Position.parse(recordElementConstraint)
+            raise DOMException(
+                f"Unknown constraint kind '{recordElementKind.name}' for constraint '{recordElementConstraint}' in subtype indication '{subtypeIndication}' at {position}."
+            )
+
+        recordElementConstraint = nodes.Get_Chain(recordElementConstraint)
 
     return constraints
 
@@ -283,7 +323,7 @@ def GetAnonymousTypeFromNode(node: Iir) -> BaseType:
         return PhysicalType.parse(typeName, typeDefinition)
 
     elif kind == nodes.Iir_Kind.Array_Subtype_Definition:
-        print("[NOT IMPLEMENTED] Array_Subtype_Definition")
+        WarningCollector.Raise(NotImplementedError("Array_Subtype_Definition"))
 
         return ArrayType(typeDefinition, "????", [], None)
     else:
@@ -295,12 +335,35 @@ def GetAnonymousTypeFromNode(node: Iir) -> BaseType:
 
 @export
 def GetSubtypeIndicationFromNode(node: Iir, entity: str, name: str) -> Symbol:
+    """
+    Extracts the subtype indication from an IIR node and translates it to a :class:`~pyVHDLModel.Symbol.Symbol`.
+
+    .. note::
+
+       This function calls :func:`GetSubtypeIndicationFromIndicationNode`.
+
+       This function should be used directly if :pycode:`nodes.Get_Subtype_Indication(...)` was already called or a
+       subtype indication is return by another getter.
+
+    :param node:   The IIR node to get the subtype indication from.
+    :param entity: The entity kind the subtype indication is extracted from (e.g. ``constant``). Used in exception messages.
+    :param name:   The entity's name the subtype indication is extracted from (e.g. ``BITS``). Used in exception messages.
+    :returns:      A symbol representing a reference to a type/subtype and possible array or record constraints.
+    """
     subtypeIndicationNode = nodes.Get_Subtype_Indication(node)
     return GetSubtypeIndicationFromIndicationNode(subtypeIndicationNode, entity, name)
 
 
 @export
 def GetSubtypeIndicationFromIndicationNode(subtypeIndicationNode: Iir, entity: str, name: str) -> Symbol:
+    """
+    Translate a subtype indication to a :class:`~pyVHDLModel.Symbol.Symbol`.
+
+    :param subtypeIndicationNode: The subtype indication IIR node.
+    :param entity: The entity kind the subtype indication is extracted from (e.g. ``constant``). Used in exception messages.
+    :param name:   The entity's name the subtype indication is extracted from (e.g. ``BITS``). Used in exception messages.
+    :returns:      A symbol representing a reference to a type/subtype and possible array or record constraints.
+    """
     if subtypeIndicationNode is nodes.Null_Iir:
         raise ValueError("Parameter 'subtypeIndicationNode' is 'Null_Iir'.")
 
@@ -314,7 +377,9 @@ def GetSubtypeIndicationFromIndicationNode(subtypeIndicationNode: Iir, entity: s
     elif kind == nodes.Iir_Kind.Subtype_Definition:
         return GetScalarConstrainedSubtypeFromNode(subtypeIndicationNode)
     elif kind == nodes.Iir_Kind.Array_Subtype_Definition:
-        return GetCompositeConstrainedSubtypeFromNode(subtypeIndicationNode)
+        return GetArrayConstrainedSubtypeFromNode(subtypeIndicationNode)
+    elif kind == nodes.Iir_Kind.Record_Subtype_Definition:
+        return GetRecordConstrainedSubtypeFromNode(subtypeIndicationNode)
     else:
         raise DOMException(f"Unknown kind '{kind.name}' for an subtype indication in a {entity} of `{name}`.")
 
@@ -336,23 +401,36 @@ def GetScalarConstrainedSubtypeFromNode(
 
     r = None
     # Check if RangeExpression. Might also be an AttributeName (see §3.1)
-    if GetIirKindOfNode(rangeConstraint) == nodes.Iir_Kind.Range_Expression:
-        r = GetRangeFromNode(rangeConstraint)
-    # todo: Get actual range from AttributeName node?
+    if rangeConstraint != nodes.Null_Iir:
+        if GetIirKindOfNode(rangeConstraint) == nodes.Iir_Kind.Range_Expression:
+            r = GetRangeFromNode(rangeConstraint)
+    # TODO: Get actual range from AttributeName node?
 
     return ConstrainedScalarSubtypeSymbol(subtypeIndicationNode, simpleTypeMark, r)
 
 
 @export
-def GetCompositeConstrainedSubtypeFromNode(
+def GetArrayConstrainedSubtypeFromNode(
     subtypeIndicationNode: Iir,
-) -> ConstrainedCompositeSubtypeSymbol:
+) -> ConstrainedArraySubtypeSymbol:
     typeMark = nodes.Get_Subtype_Type_Mark(subtypeIndicationNode)
     typeMarkName = GetNameOfNode(typeMark)
     simpleTypeMark = SimpleName(typeMark, typeMarkName)
 
     constraints = GetArrayConstraintsFromSubtypeIndication(subtypeIndicationNode)
-    return ConstrainedCompositeSubtypeSymbol(subtypeIndicationNode, simpleTypeMark, constraints)
+    return ConstrainedArraySubtypeSymbol(subtypeIndicationNode, simpleTypeMark, constraints)
+
+
+@export
+def GetRecordConstrainedSubtypeFromNode(
+    subtypeIndicationNode: Iir,
+) -> ConstrainedRecordSubtypeSymbol:
+    typeMark = nodes.Get_Subtype_Type_Mark(subtypeIndicationNode)
+    typeMarkName = GetNameOfNode(typeMark)
+    simpleTypeMark = SimpleName(typeMark, typeMarkName)
+
+    constraints = GetRecordConstraintsFromSubtypeIndication(subtypeIndicationNode)
+    return ConstrainedRecordSubtypeSymbol(subtypeIndicationNode, simpleTypeMark, constraints)
 
 
 @export
@@ -365,6 +443,12 @@ def GetSubtypeFromNode(subtypeNode: Iir) -> Symbol:
 
 @export
 def GetRangeFromNode(node: Iir) -> Range:
+    """
+    Translate a range IIR node to a :class:`~pyVHDLModel.Base.Range`.
+
+    :param node: The IIR node representing a range.
+    :return:     The translated range object.
+    """
     direction = nodes.Get_Direction(node)
     leftBound = nodes.Get_Left_Limit_Expr(node)
     rightBound = nodes.Get_Right_Limit_Expr(node)
@@ -435,6 +519,12 @@ __EXPRESSION_TRANSLATION = {
 
 @export
 def GetExpressionFromNode(node: Iir) -> ExpressionUnion:
+    """
+    Translates an expression IIR node to an :class:`~pyVHDLModel.Expression.BaseExpression`.
+
+    :param node: The IIR node representing an expression.
+    :return:     The translated expression.
+    """
     kind = GetIirKindOfNode(node)
 
     try:
@@ -447,9 +537,13 @@ def GetExpressionFromNode(node: Iir) -> ExpressionUnion:
 
 
 @export
-def GetGenericsFromChainedNodes(
-    nodeChain: Iir,
-) -> Generator[GenericInterfaceItemMixin, None, None]:
+def GetGenericsFromChainedNodes(nodeChain: Iir) -> Generator[GenericInterfaceItemMixin, None, None]:
+    """
+    Translates a chain of generics (IIR nodes) to a sequence of :class:`pyVHDLModel.Interface.GenericInterfaceItem`.
+
+    :param nodeChain: The IIR node representing the first generic in the chain.
+    :return:          A generator returning generic interface items.
+    """
     from pyGHDL.dom.InterfaceItem import (
         GenericTypeInterfaceItem,
         GenericPackageInterfaceItem,
@@ -506,9 +600,13 @@ def GetGenericsFromChainedNodes(
 
 
 @export
-def GetPortsFromChainedNodes(
-    nodeChain: Iir,
-) -> Generator[PortInterfaceItemMixin, None, None]:
+def GetPortsFromChainedNodes(nodeChain: Iir) -> Generator[PortInterfaceItemMixin, None, None]:
+    """
+    Translates a chain of ports (IIR nodes) to a sequence of :class:`pyVHDLModel.Interface.PortInterfaceItem`.
+
+    :param nodeChain: The IIR node representing the first port in the chain.
+    :return:          A generator returning port interface items.
+    """
     furtherIdentifiers = []
     port = nodeChain
     while port != nodes.Null_Iir:
@@ -547,9 +645,13 @@ def GetPortsFromChainedNodes(
 
 
 @export
-def GetParameterFromChainedNodes(
-    nodeChain: Iir,
-) -> Generator[ParameterInterfaceItemMixin, None, None]:
+def GetParameterFromChainedNodes(nodeChain: Iir) -> Generator[ParameterInterfaceItemMixin, None, None]:
+    """
+    Translates a chain of parameters (IIR nodes) to a sequence of :class:`pyVHDLModel.Interface.ParameterInterfaceItem`.
+
+    :param nodeChain: The IIR node representing the first parameter in the chain.
+    :return:          A generator returning parameter interface items.
+    """
     identifiers = []
     parameter = nodeChain
     while parameter != nodes.Null_Iir:
@@ -602,34 +704,32 @@ def GetParameterFromChainedNodes(
 
 
 def GetMapAspect(mapAspect: Iir, cls: Type, entity: str) -> Generator[AssociationItem, None, None]:
-    for generic in utils.chain_iter(mapAspect):
-        kind = GetIirKindOfNode(generic)
+    for item in utils.chain_iter(mapAspect):
+        kind = GetIirKindOfNode(item)
         if kind is nodes.Iir_Kind.Association_Element_By_Expression:
-            formalNode = nodes.Get_Formal(generic)
+            formalNode = nodes.Get_Formal(item)
             if formalNode is nodes.Null_Iir:
                 formal = None
             else:
                 formal = GetName(formalNode)
 
-            actual = GetExpressionFromNode(nodes.Get_Actual(generic))
+            actual = GetExpressionFromNode(nodes.Get_Actual(item))
 
-            yield cls(generic, actual, formal)
+            yield cls(item, actual, formal)
         elif kind is nodes.Iir_Kind.Association_Element_Open:
-            formalNode = nodes.Get_Formal(generic)
+            formalNode = nodes.Get_Formal(item)
             if formalNode is nodes.Null_Iir:
                 formal = None
             else:
                 formal = GetName(formalNode)
 
-            yield cls(generic, OpenName(generic), formal)
+            yield cls(item, OpenName(item), formal)
         else:
-            pos = Position.parse(generic)
+            pos = Position.parse(item)
             raise DOMException(f"Unknown association kind '{kind.name}' in {entity} map at line {pos.Line}.")
 
 
-def GetGenericMapAspect(
-    genericMapAspect: Iir,
-) -> Generator[GenericAssociationItem, None, None]:
+def GetGenericMapAspect(genericMapAspect: Iir) -> Generator[GenericAssociationItem, None, None]:
     return GetMapAspect(genericMapAspect, GenericAssociationItem, "generic")
 
 
@@ -637,9 +737,7 @@ def GetPortMapAspect(portMapAspect: Iir) -> Generator[PortAssociationItem, None,
     return GetMapAspect(portMapAspect, PortAssociationItem, "port")
 
 
-def GetParameterMapAspect(
-    parameterMapAspect: Iir,
-) -> Generator[ParameterAssociationItem, None, None]:
+def GetParameterMapAspect(parameterMapAspect: Iir) -> Generator[ParameterAssociationItem, None, None]:
     return GetMapAspect(parameterMapAspect, ParameterAssociationItem, "parameter")
 
 
@@ -687,7 +785,7 @@ def GetDeclaredItemsFromChainedNodes(nodeChain: Iir, entity: str, name: str) -> 
                 if nodes.Get_Has_Body(item):
                     yield Function.parse(item)
                 else:
-                    print("[NOT IMPLEMENTED] function declaration without body")
+                    WarningCollector.Raise(NotImplementedError("function declaration without body"))
 
                 lastKind = kind
                 item = nodes.Get_Chain(item)
@@ -704,7 +802,7 @@ def GetDeclaredItemsFromChainedNodes(nodeChain: Iir, entity: str, name: str) -> 
                 if nodes.Get_Has_Body(item):
                     yield Procedure.parse(item)
                 else:
-                    print("[NOT IMPLEMENTED] procedure declaration without body")
+                    WarningCollector.Raise(NotImplementedError("procedure declaration without body"))
 
                 lastKind = kind
                 item = nodes.Get_Chain(item)
@@ -746,25 +844,25 @@ def GetDeclaredItemsFromChainedNodes(nodeChain: Iir, entity: str, name: str) -> 
 
                 yield PackageInstantiation.parse(item)
             elif kind == nodes.Iir_Kind.Configuration_Specification:
-                print(f"[NOT IMPLEMENTED] Configuration specification in {name}")
+                WarningCollector.Raise(NotImplementedError(f"Configuration specification in {name}"))
             elif kind == nodes.Iir_Kind.Psl_Default_Clock:
                 yield DefaultClock.parse(item)
             elif kind == nodes.Iir_Kind.Group_Declaration:
-                print(f"[NOT IMPLEMENTED] Group declaration in {name}")
+                WarningCollector.Raise(NotImplementedError(f"Group declaration in {name}"))
             elif kind == nodes.Iir_Kind.Group_Template_Declaration:
-                print(f"[NOT IMPLEMENTED] Group template declaration in {name}")
+                WarningCollector.Raise(NotImplementedError(f"Group template declaration in {name}"))
             elif kind == nodes.Iir_Kind.Disconnection_Specification:
-                print(f"[NOT IMPLEMENTED] Disconnect specification in {name}")
+                WarningCollector.Raise(NotImplementedError(f"Disconnect specification in {name}"))
             elif kind == nodes.Iir_Kind.Nature_Declaration:
-                print(f"[NOT IMPLEMENTED] Nature declaration in {name}")
+                WarningCollector.Raise(NotImplementedError(f"Nature declaration in {name}"))
             elif kind == nodes.Iir_Kind.Free_Quantity_Declaration:
-                print(f"[NOT IMPLEMENTED] Free quantity declaration in {name}")
+                WarningCollector.Raise(NotImplementedError(f"Free quantity declaration in {name}"))
             elif kind == nodes.Iir_Kind.Across_Quantity_Declaration:
-                print(f"[NOT IMPLEMENTED] Across quantity declaration in {name}")
+                WarningCollector.Raise(NotImplementedError(f"Across quantity declaration in {name}"))
             elif kind == nodes.Iir_Kind.Through_Quantity_Declaration:
-                print(f"[NOT IMPLEMENTED] Through quantity declaration in {name}")
+                WarningCollector.Raise(NotImplementedError(f"Through quantity declaration in {name}"))
             elif kind == nodes.Iir_Kind.Terminal_Declaration:
-                print(f"[NOT IMPLEMENTED] Terminal declaration in {name}")
+                WarningCollector.Raise(NotImplementedError(f"Terminal declaration in {name}"))
             else:
                 position = Position.parse(item)
                 raise DOMException(f"Unknown declared item kind '{kind.name}' in {entity} '{name}' at {position}.")
@@ -816,12 +914,16 @@ def GetConcurrentStatementsFromChainedNodes(
         elif kind == nodes.Iir_Kind.Concurrent_Simple_Signal_Assignment:
             yield ConcurrentSimpleSignalAssignment.parse(statement, label)
         elif kind == nodes.Iir_Kind.Concurrent_Conditional_Signal_Assignment:
-            print(
-                f"[NOT IMPLEMENTED] Concurrent (conditional) signal assignment (label: '{label}') at line {position.Line}"
+            WarningCollector.Raise(
+                NotImplementedError(
+                    f"Concurrent (conditional) signal assignment (label: '{label}') at line {position.Line}"
+                )
             )
         elif kind == nodes.Iir_Kind.Concurrent_Selected_Signal_Assignment:
-            print(
-                f"[NOT IMPLEMENTED] Concurrent (selected) signal assignment (label: '{label}') at line {position.Line}"
+            WarningCollector.Raise(
+                NotImplementedError(
+                    f"Concurrent (selected) signal assignment (label: '{label}') at line {position.Line}"
+                )
             )
         elif kind == nodes.Iir_Kind.Concurrent_Procedure_Call_Statement:
             yield ConcurrentProcedureCall.parse(statement, label)
@@ -833,7 +935,10 @@ def GetConcurrentStatementsFromChainedNodes(
                 yield EntityInstantiation.parse(statement, instantiatedUnit, label)
             elif instantiatedUnitKind == nodes.Iir_Kind.Entity_Aspect_Configuration:
                 yield ConfigurationInstantiation.parse(statement, instantiatedUnit, label)
-            elif instantiatedUnitKind == nodes.Iir_Kind.Simple_Name:
+            elif (
+                instantiatedUnitKind == nodes.Iir_Kind.Simple_Name
+                or instantiatedUnitKind == nodes.Iir_Kind.Selected_Name
+            ):
                 yield ComponentInstantiation.parse(statement, instantiatedUnit, label)
             else:
                 raise DOMException(
@@ -850,9 +955,13 @@ def GetConcurrentStatementsFromChainedNodes(
         elif kind == nodes.Iir_Kind.Psl_Assert_Directive:
             yield ConcurrentAssertStatement.parse(statement, label)
         elif kind == nodes.Iir_Kind.Simple_Simultaneous_Statement:
-            print(f"[NOT IMPLEMENTED] Simple simultaneous statement (label: '{label}') at line {position.Line}")
+            WarningCollector.Raise(
+                NotImplementedError(f"Simple simultaneous statement (label: '{label}') at line {position.Line}")
+            )
         else:
-            raise DOMException(f"Unknown statement of kind '{kind.name}' in {entity} '{name}' at {position}.")
+            raise DOMException(
+                f"Unknown concurrent statement of kind '{kind.name}' in {entity} '{name}' at {position}."
+            )
 
 
 def GetSequentialStatementsFromChainedNodes(
@@ -866,17 +975,22 @@ def GetSequentialStatementsFromChainedNodes(
         kind = GetIirKindOfNode(statement)
         if kind == nodes.Iir_Kind.If_Statement:
             yield IfStatement.parse(statement, label)
-        elif kind == nodes.Iir_Kind.For_Loop_Statement:
-            yield ForLoopStatement.parse(statement, label)
         elif kind == nodes.Iir_Kind.Case_Statement:
             yield CaseStatement.parse(statement, label)
+        elif kind == nodes.Iir_Kind.For_Loop_Statement:
+            yield ForLoopStatement.parse(statement, label)
+        elif kind == nodes.Iir_Kind.While_Loop_Statement:
+            yield WhileLoopStatement.parse(statement, label)
         elif kind == nodes.Iir_Kind.Simple_Signal_Assignment_Statement:
             yield SequentialSimpleSignalAssignment.parse(statement, label)
         elif kind in (
             nodes.Iir_Kind.Variable_Assignment_Statement,
             nodes.Iir_Kind.Conditional_Variable_Assignment_Statement,
+            nodes.Iir_Kind.Conditional_Signal_Assignment_Statement,
         ):
-            print(f"[NOT IMPLEMENTED] Variable assignment (label: '{label}') at line {position.Line}")
+            WarningCollector.Raise(
+                NotImplementedError(f"Variable assignment (label: '{label}') at line {position.Line}")
+            )
         elif kind == nodes.Iir_Kind.Wait_Statement:
             yield WaitStatement.parse(statement, label)
         elif kind == nodes.Iir_Kind.Procedure_Call_Statement:
@@ -887,10 +1001,14 @@ def GetSequentialStatementsFromChainedNodes(
             yield SequentialAssertStatement.parse(statement, label)
         elif kind == nodes.Iir_Kind.Null_Statement:
             yield NullStatement(statement, label)
+        elif kind == nodes.Iir_Kind.Next_Statement:
+            yield NextStatement(statement, label)
         elif kind == nodes.Iir_Kind.Exit_Statement:
             yield ExitStatement(statement, label)
         else:
-            raise DOMException(f"Unknown statement of kind '{kind.name}' in {entity} '{name}' at {position}.")
+            raise DOMException(
+                f"Unknown sequential statement of kind '{kind.name}' in {entity} '{name}' at {position}."
+            )
 
 
 def GetAliasFromNode(aliasNode: Iir):

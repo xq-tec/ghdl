@@ -682,12 +682,8 @@ package body Verilog.Parse is
       Scan;
 
       case Current_Token is
-         when Tok_Number_32 =>
-            Res := Create_Node (N_Number);
-            Reformat_Based_Number (Natural (Width));
-            Set_Number_Lo_Val (Res, Current_Number_Lo.Val);
-            Set_Number_Lo_Zx (Res, Current_Number_Lo.Zx);
-         when Tok_Number_64 =>
+         when Tok_Number_32
+           | Tok_Number_64 =>
             Res := Create_Node (N_Number);
             Reformat_Based_Number (Natural (Width));
             Set_Number_Lo_Val (Res, Current_Number_Lo.Val);
@@ -1091,7 +1087,7 @@ package body Verilog.Parse is
          if Val /= 1.0 then
             Error_Msg_Parse ("'step' delay can only be '1step'");
          end if;
-         Res := Create_Node (N_1step_Literal);
+         Res := Create_Node (N_Step_Literal);
          Set_Location (Res, Loc);
 
          --  Skip identifier.
@@ -3038,6 +3034,7 @@ package body Verilog.Parse is
    --  type (T being a typedef or a class) or declaration of T with an
    --  implicit type.
    procedure Data_Type_To_Identifier (Id : out Name_Id;
+                                      Loc : out Location_Type;
                                       Decl_Type : in out Type_Node)
    is
       pragma Assert (Decl_Type.Own);
@@ -3046,6 +3043,7 @@ package body Verilog.Parse is
       case Get_Kind (Typ) is
          when N_Name =>
             Id := Get_Identifier (Typ);
+            Loc := Get_Location (Typ);
             Free_Node (Typ);
             Decl_Type := (Implicit_Typedef, False);
          when N_Packed_Array =>
@@ -3059,10 +3057,11 @@ package body Verilog.Parse is
                if not Get_Type_Owner (Typ) then
                   Error_Msg_Parse (+Typ, "missing identifier");
                   Id := Null_Identifier;
+                  Loc := No_Location;
                   return;
                end if;
                Pfx_Type := (Pfx, True);
-               Data_Type_To_Identifier (Id, Pfx_Type);
+               Data_Type_To_Identifier (Id, Loc, Pfx_Type);
                Res := Create_Node (N_Array);
                Location_Copy (Res, Typ);
                Set_Msb (Res, Get_Msb (Typ));
@@ -3081,9 +3080,11 @@ package body Verilog.Parse is
      (Decl : Node; Decl_Type : in out Type_Node)
    is
       Id : Name_Id;
+      Loc : Location_Type;
    begin
-      Data_Type_To_Identifier (Id, Decl_Type);
+      Data_Type_To_Identifier (Id, Loc, Decl_Type);
       Set_Identifier (Decl, Id);
+      Set_Location (Decl, Loc);
    end Data_Type_To_Identifier;
 
    --  1800-2017 6.18 User-defined types
@@ -6169,33 +6170,50 @@ package body Verilog.Parse is
                --  Skip '.*'.
                Scan;
             else
-               Conn := Create_Node (N_Port_Connection);
-               Set_Token_Location (Conn);
+               Loc := Get_Token_Location;
+
                Expr := Null_Node;
                if Current_Token = Tok_Dot then
                   --  Skip '.'.
                   Scan;
 
-                  --  Skip identifier.
-                  Scan_Identifier (Conn, "port identifier expected after '.'");
+                  if Current_Token = Tok_Identifier then
+                     Id := Current_Identifier;
 
-                  --  Skip '('.
-                  Scan_Or_Error (Tok_Left_Paren,
-                                 "'(' expected after port identifier");
-
-                  if Current_Token /= Tok_Right_Paren then
-                     Expr := Parse_Expression;
+                     --  Skip identifier.
+                     Scan;
+                  else
+                     Error_Msg_Parse ("port identifier expected after '.'");
+                     Id := Null_Identifier;
                   end if;
 
-                  Scan_Or_Error
-                    (Tok_Right_Paren,
-                     "')' expected after expression in port connection");
+                  if Current_Token = Tok_Left_Paren then
+                     Conn := Create_Node (N_Port_Connection);
+
+                     --  Skip '('.
+                     Scan;
+
+                     if Current_Token /= Tok_Right_Paren then
+                        Expr := Parse_Expression;
+                        Set_Expression (Conn, Expr);
+                     end if;
+
+                     Scan_Or_Error
+                       (Tok_Right_Paren,
+                       "')' expected after expression in port connection");
+                  else
+                     Conn := Create_Node (N_Implicit_Connection);
+                  end if;
+                  Set_Identifier (Conn, Id);
                else
+                  Conn := Create_Node (N_Port_Connection);
+
                   if Current_Token /= Tok_Comma then
                      Expr := Parse_Expression;
+                     Set_Expression (Conn, Expr);
                   end if;
                end if;
-               Set_Expression (Conn, Expr);
+               Set_Location (Conn, Loc);
             end if;
 
             if Last_Conn = Null_Node then
@@ -8275,8 +8293,7 @@ package body Verilog.Parse is
                Port_Id := Null_Identifier;
                Port_Loc := Get_Token_Location;
             else
-               Port_Loc := Get_Location (Port_Type.Typ);
-               Data_Type_To_Identifier (Port_Id, Port_Type);
+               Data_Type_To_Identifier (Port_Id, Port_Loc, Port_Type);
             end if;
 
             --  Scan unpacked_dimension / variable_dimension.
@@ -8442,7 +8459,7 @@ package body Verilog.Parse is
             Set_Type_Node (El, Last_Type);
             if Last_Direction = N_Input then
                Set_Default_Value (El, Expr);
-            elsif Expr /= Null_Node then
+            elsif Expr /= Null_Node and then Last_Kind /= N_Var then
                --  1800-2017 23.2.2.4 Default port values
                --  A module declaration may specify a default value for each
                --  singular input port.
@@ -8459,6 +8476,10 @@ package body Verilog.Parse is
             if Port_Kind = N_Var then
                pragma Assert (Last_Kind = N_Var);
                Set_Has_Var (Decl, True);
+
+               if Expr /= Null_Node and then Last_Direction /= N_Input then
+                  Set_Default_Value (Decl, Expr);
+               end if;
             end if;
 
             Set_Redeclaration (El, Decl);
@@ -9457,6 +9478,7 @@ package body Verilog.Parse is
       Attr : Node;
    begin
       Res := Create_Node (N_Module);
+      Set_Blackbox_Flag (Res, Flags.Flag_Blackbox);
 
       if Attrs /= Null_Node then
          Set_Attributes_Chain (Res, Attrs);
@@ -11478,6 +11500,7 @@ package body Verilog.Parse is
 
       Source := Create_Node (N_Compilation_Unit);
       Set_Token_Location (Source);
+      Set_Blackbox_Flag (Source, Flags.Flag_Blackbox);
 
       --  Scan first token.
       Scan;

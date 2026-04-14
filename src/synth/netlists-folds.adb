@@ -29,6 +29,7 @@ package body Netlists.Folds is
       if Val < 2**32 then
          return Build_Const_UB32 (Ctxt, Uns32 (Val), W);
       else
+         --  GCOV_EXCL_START (not generated)
          pragma Assert (W > 32);
          declare
             Inst : Instance;
@@ -41,6 +42,7 @@ package body Netlists.Folds is
             end loop;
             return Get_Output (Inst, 0);
          end;
+         --  GCOV_EXCL_STOP
       end if;
    end Build2_Const_Uns;
 
@@ -68,6 +70,7 @@ package body Netlists.Folds is
       if Val in -2**31 .. 2**31 - 1 then
          return Build_Const_SB32 (Ctxt, Int32 (Val), W);
       else
+         --  GCOV_EXCL_START (not generated)
          pragma Assert (W > 32);
          declare
             V : constant Uns64 := To_Uns64 (Val);
@@ -83,6 +86,7 @@ package body Netlists.Folds is
             end loop;
             return Get_Output (Inst, 0);
          end;
+         --  GCOV_EXCL_STOP
       end if;
    end Build2_Const_Int;
 
@@ -97,7 +101,8 @@ package body Netlists.Folds is
       end if;
    end Build2_Concat2;
 
-   function Build2_Concat (Ctxt : Context_Acc; Els : Net_Array) return Net
+   function Build2_Concat
+     (Ctxt : Context_Acc; Els : Net_Array; Loc : Location_Type) return Net
    is
       F : constant Int32 := Els'First;
       Len : constant Natural := Els'Length;
@@ -106,10 +111,9 @@ package body Netlists.Folds is
       N : Net;
    begin
       case Len is
-         when 0 =>
-            raise Internal_Error;
+         when 0 => raise Internal_Error;
          when 1 =>
-            N := Els (F);
+            return Els (F);
          when 2 =>
             N := Build_Concat2 (Ctxt, Els (F + 1), Els (F));
          when 3 =>
@@ -130,6 +134,7 @@ package body Netlists.Folds is
                Connect (Get_Input (Inst, Port_Idx (Els'Last - I)), Els (I));
             end loop;
       end case;
+      Set_Location (N, Loc);
       return N;
    end Build2_Concat;
 
@@ -221,6 +226,26 @@ package body Netlists.Folds is
       end if;
    end Build2_Uresize;
 
+   function Build2_Xresize (Ctxt : Context_Acc;
+                            I : Net;
+                            W : Width;
+                            Loc : Location_Type) return Net
+   is
+      Wn : constant Width := Get_Width (I);
+      Res : Net;
+   begin
+      if Wn = W then
+         return I;
+      elsif Wn > W then
+         Res := Build2_Trunc (Ctxt, Id_Utrunc, I, W, Loc);
+      else
+         pragma Assert (Wn < W);
+         Res := Build_Concat2 (Ctxt, Build_Const_X (Ctxt, W - Wn), I);
+      end if;
+      Set_Location (Res, Loc);
+      return Res;
+   end Build2_Xresize;
+
    function Build2_Sresize (Ctxt : Context_Acc;
                             I : Net;
                             W : Width;
@@ -269,10 +294,13 @@ package body Netlists.Folds is
       end if;
    end Build2_Resize;
 
-   function Build2_Extract
-     (Ctxt : Context_Acc; I : Net; Off, W : Width) return Net
+   function Build2_Extract (Ctxt : Context_Acc;
+                            I : Net;
+                            Off, W : Width;
+                            Loc : Location_Type) return Net
    is
       Parent : Instance;
+      Res : Net;
    begin
       if Off = 0 and then W = Get_Width (I) then
          --  No extraction, full input.
@@ -282,13 +310,15 @@ package body Netlists.Folds is
       Parent := Get_Net_Parent (I);
       if Get_Id (Parent) = Id_Extract then
          --  Merge extract of extract.
-         return Build2_Extract
+         Res := Build2_Extract
            (Ctxt,
             Get_Input_Net (Parent, 0),
-            Off + Get_Param_Uns32 (Parent, 0), W);
+            Off + Get_Param_Uns32 (Parent, 0), W, Loc);
+      else
+         Res := Build_Extract (Ctxt, I, Off, W);
+         Set_Location (Res, Loc);
       end if;
-
-      return Build_Extract (Ctxt, I, Off, W);
+      return Res;
    end Build2_Extract;
 
    function Build2_Imp (Ctxt : Context_Acc; A, B : Net; Loc : Location_Type)
@@ -378,12 +408,12 @@ package body Netlists.Folds is
       Inst_Pp : Instance;
       E, N : Net;
    begin
-      --  Swap R and L
+      --  The canonical form.
       if Get_Id (Get_Net_Parent (R)) in Edge_Module_Id then
          return Build_Dyadic (Ctxt, Id_And, R, L);
       end if;
 
-      --  L = Edge and X
+      --  L = (Edge and X)
       --  Rotate with L parent: result = Edge and (R and X)
       Inst_L := Get_Net_Parent (L);
       if Get_Id (Inst_L) = Id_And then
@@ -423,4 +453,55 @@ package body Netlists.Folds is
 
       return Build_Dyadic (Ctxt, Id_And, L, R);
    end Build2_Canon_And;
+
+   function Build2_Umul (Ctxt : Context_Acc;
+                         Idx : Net;
+                         Mul : Uns32;
+                         Loc : Location_Type) return Net
+   is
+      Wmul : constant Uns32 := Clog2 (Mul);
+      Res : Net;
+   begin
+      if Mul = 2**Natural (Wmul) then
+         if Mul = 1 then
+            return Idx;
+         else
+            Res := Build_Concat2 (Ctxt, Idx, Build_Const_UB32 (Ctxt, 0, Wmul));
+         end if;
+      else
+         declare
+            Widx : constant Width := Get_Width (Idx);
+         begin
+            Res := Build_Dyadic (Ctxt, Id_Umul,
+                                 Build2_Uresize (Ctxt, Idx, Widx + Wmul, Loc),
+                                 Build_Const_UB32 (Ctxt, Mul, Widx + Wmul));
+         end;
+      end if;
+      Set_Location (Res, Loc);
+      return Res;
+   end Build2_Umul;
+
+   function Build2_Addmul (Ctxt : Context_Acc;
+                           Idx : Net;
+                           Mul : Uns32;
+                           Add : Net;
+                           Loc : Location_Type) return Net
+   is
+      V1, V2, Res : Net;
+   begin
+      if Add = No_Net then
+         return Build2_Umul (Ctxt, Idx, Mul, Loc);
+      else
+         if Mul = 2**Natural(Get_Width (Add)) then
+            Res := Build_Concat2 (Ctxt, Idx, Add);
+         else
+            V1 := Build2_Umul (Ctxt, Idx, Mul, Loc);
+            V2 := Build2_Uresize (Ctxt, Add, Get_Width (V1), Loc);
+            Res := Build_Dyadic (Ctxt, Id_Add, V1, V2);
+         end if;
+         Set_Location (Res, Loc);
+         return Res;
+      end if;
+   end Build2_Addmul;
+
 end Netlists.Folds;

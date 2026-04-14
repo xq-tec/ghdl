@@ -36,6 +36,8 @@ package Vhdl.Sem_Inst is
    --  Create interface parameters of INST from SUBPRG.
    procedure Instantiate_Subprogram_Declaration (Inst : Iir; Subprg : Iir);
 
+   function Instantiate_Subprogram_Body (Inst : Iir) return Iir;
+
    --  Return the instantiation of the body for INST, ie macro-expand the
    --  body.  INST has the form of a generic-mapped package.
    function Instantiate_Package_Body (Inst : Iir) return Iir;
@@ -65,4 +67,8 @@ package Vhdl.Sem_Inst is
    --  Likewise for protected type bodies.
    --  ATYPE is the protected type definition.
    function Get_Protected_Type_Body_Origin (Atype : Iir) return Iir;
+
+   --  Replace formals in ASSOCS by NEW_FORMALS.
+   procedure Reassoc_Association_Formals
+     (Assocs : Iir; Formals : Iir; New_Formals : Iir);
 end Vhdl.Sem_Inst;

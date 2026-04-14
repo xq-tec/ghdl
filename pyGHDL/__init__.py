@@ -56,26 +56,60 @@ __copyright__ = "2002-2024, Tristan Gingold and contributors"
 __license__ = "GNU General Public License v2"
 __keywords__ = ["vhdl", "parser", "compiler", "simulator", "ghdl"]
 
+
 from sys import version_info
 from typing import List
 
-from pyTooling.Decorators import export
+from pyTooling.Decorators import export, readonly
 
 
 @export
 class GHDLBaseException(Exception):
+    """Base exception derived from :exc:`Exception <python:Exception>` for all custom exceptions."""
+
+    _message: str
+
+    def __init__(self, message: str = "") -> None:
+        """
+        GHDLBaseException initializer.
+
+        :param message:   The exception message.
+        """
+        super().__init__()
+        self._message = message
+
     # WORKAROUND: for Python <3.11
     # Implementing a dummy method for Python versions before
     if version_info < (3, 11):  # pragma: no cover
-        __notes__: List[str]
-
-        def __init__(self, *args):
-            super().__init__(*args)
-            self.__notes__ = []
+        __notes__: List[str]  #: A list of notes for this exception.
 
         def add_note(self, message: str) -> None:
-            self.__notes__.append(message)
+            """
+            Add a note to the exception.
 
-    @property
+            :param message: The note's message.
+            """
+            try:
+                self.__notes__.append(message)
+            except AttributeError:
+                self.__notes__ = [message]
+
+    @readonly
     def message(self) -> str:
-        return str(self)
+        """
+        Returns the exception's message.
+
+        :returns: Exception message.
+        """
+        return self._message
+
+    def __str__(self) -> str:
+        """
+        Returns the exception's message.
+
+        :returns: Exception message.
+        """
+        return self._message
+
+    def with_traceback(self, tb) -> None:
+        super().with_traceback(tb)

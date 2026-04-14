@@ -1044,24 +1044,7 @@ package body Vhdl.Sem_Decls is
          return;
       end if;
 
-      if not Is_Proper_Subtype_Indication (Ind) then
-         if Get_Kind (Def) /= Iir_Kind_Protected_Type_Declaration
-           and then Get_Kind (Def) /= Iir_Kind_Interface_Type_Definition
-         then
-            --  There is no added constraints and therefore the subtype
-            --  declaration is in fact an alias of the type.  Create a copy so
-            --  that it has its own type declarator.
-            --  (Except for protected types).
-            Def := Copy_Subtype_Indication (Def);
-            Location_Copy (Def, Decl);
-            Set_Subtype_Type_Mark (Def, Ind);
-            Set_Subtype_Indication (Decl, Def);
-            Set_Type_Declarator (Def, Decl);
-         else
-            --  Do not set type_declarator, as there is no copy.
-            null;
-         end if;
-      else
+      if Is_Proper_Subtype_Indication (Ind) then
          Set_Type_Declarator (Def, Decl);
       end if;
 
@@ -1208,7 +1191,7 @@ package body Vhdl.Sem_Decls is
             end;
 
          when others =>
-            Error_Kind ("sem_object_declaration(2)", Decl);
+            Error_Kind ("check_object_declaration", Decl);
       end case;
    end Check_Object_Declaration;
 
@@ -1249,9 +1232,12 @@ package body Vhdl.Sem_Decls is
             if Default_Value = Null_Iir then
                Default_Value :=
                  Create_Error_Expr (Get_Default_Value (Decl), Atype);
+            else
+               Check_Read (Default_Value);
+               Default_Value :=
+                 Eval_Expr_Check_If_Static (Default_Value, Atype);
             end if;
-            Check_Read (Default_Value);
-            Default_Value := Eval_Expr_Check_If_Static (Default_Value, Atype);
+
          end if;
       else
          pragma Assert (Get_Kind (Last_Decl) = Get_Kind (Decl));
@@ -1274,8 +1260,8 @@ package body Vhdl.Sem_Decls is
       --  constant must conform to that given in the deferred constant
       --  declaration.
       if Deferred_Const /= Null_Iir
-        and then not Are_Trees_Equal (Get_Type (Decl),
-                                      Get_Type (Deferred_Const))
+        and then not Are_Trees_Equal (Get_Subtype_Indication (Decl),
+                                      Get_Subtype_Indication (Deferred_Const))
       then
          Error_Msg_Sem
            (+Decl,
@@ -1635,7 +1621,7 @@ package body Vhdl.Sem_Decls is
         or else (Flags.Vhdl_Std > Vhdl_87
                  and then Ident in Std_Names.Name_Id_Vhdl93_Attributes)
       then
-         Error_Msg_Sem (+Decl, "predefined attribute %i overriden", +Decl);
+         Error_Msg_Sem (+Decl, "predefined attribute %i overridden", +Decl);
       end if;
       Sem_Scopes.Add_Name (Decl);
       Xref_Decl (Decl);

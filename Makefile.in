@@ -62,6 +62,10 @@ ADAPTER_CARGO_FLAGS=--release
 endif
 ADAPTER_LIB=$(ADAPTER_TARGET_DIR)/$(ADAPTER_PROFILE)/libghdl_adapter.a
 ADAPTER_LDFLAGS=-L$(ADAPTER_TARGET_DIR)/$(ADAPTER_PROFILE) -lghdl_adapter
+ifeq ($(EXEEXT),.exe)
+# Link native Windows libs required by Rust std when consuming a static .a.
+ADAPTER_LDFLAGS+=-luserenv -lntdll
+endif
 
 INSTALL_PROGRAM=install -m 755
 INSTALL_DATA=install -m 644
@@ -93,7 +97,10 @@ ifeq "$(enable_checks)" "true"
  LIB_CFLAGS+=
 else
  # Optimize + no checks
- ADA_FLAGS+=-gnatpn
+ ADA_FLAGS+=-gnatp
+ ifneq "$(build_mode)" "coverage"
+   ADA_FLAGS+=-gnatn
+ endif
  OPT_FLAGS+=-O2
  LIB_CFLAGS=-O2
 endif
@@ -176,7 +183,7 @@ install: install.$(backend) install.vhdllib install.vpi install.libghdl install.
 	"$(DESTDIR)$(bindir)/$(GHDL_INSTALL_EXE)" --disp-standard --std=93 > "$(DESTDIR)$(VHDL_LIB_DIR)/src/std/v93/standard.vhdl"
 	"$(DESTDIR)$(bindir)/$(GHDL_INSTALL_EXE)" --disp-standard --std=08 > "$(DESTDIR)$(VHDL_LIB_DIR)/src/std/v08/standard.vhdl"
 
-uninstall: uninstall.$(backend) uninstall.vhdllib uninstall.vpi uninstall.libghdl uninstall.ghw
+uninstall: uninstall.$(backend) uninstall.vhdllib uninstall.vpi uninstall.libghdl uninstall.ghw uninstall.dirs
 
 test: test.$(backend)
 
@@ -306,6 +313,7 @@ copy-sources.gcc: version.ads scripts/gcc/Make-lang.in
 	$(CP) -p $(srcdir)/src/grt/grt-vhdl_types.ads $(gcc_vhdl_dir)
 	$(CP) -p $(srcdir)/src/grt/grt-c.ad? $(gcc_vhdl_dir)
 	$(CP) -p $(srcdir)/src/grt/grt-fcvt.ad? $(gcc_vhdl_dir)
+	$(CP) -p $(srcdir)/src/grt/grt-asserts.ad? $(gcc_vhdl_dir)
 	$(CP) -p $(srcdir)/src/grt/grt-algos.ad? $(gcc_vhdl_dir)
 	$(CP) -p $(srcdir)/src/grt/grt-arith.ad? $(gcc_vhdl_dir)
 	$(CP) -p $(srcdir)/src/grt/grt-vstrings.ad? $(gcc_vhdl_dir)
@@ -334,8 +342,9 @@ copy-sources.gcc: version.ads scripts/gcc/Make-lang.in
 	 7.*)      	    gcc_ortho_lang=ortho-lang-7.c ;; \
 	 8.*)      	    gcc_ortho_lang=ortho-lang-8.c ;; \
 	 9.* | 10.* | 11.* | 12.* | 13.* | 14.*) gcc_ortho_lang=ortho-lang-9.c ;; \
+	 15.*)     	    gcc_ortho_lang=ortho-lang-15.c ;; \
 	 *) echo "Mismatch gcc version from $(gcc_src_dir)"; \
-	    echo "Need gcc version 4.9.x, 5.x to 14.x"; \
+	    echo "Need gcc version 4.9.x, 5.x to 15.x"; \
 	    exit 1 ;; \
 	esac; \
 	$(CP) -p $(srcdir)/src/ortho/gcc/$$gcc_ortho_lang \
@@ -347,10 +356,10 @@ copy-sources.gcc: version.ads scripts/gcc/Make-lang.in
 	$(CP) -p $(srcdir)/scripts/gcc/config-lang.in $(gcc_vhdl_dir)
 	$(CP) -p $(srcdir)/scripts/gcc/lang-options.h $(gcc_vhdl_dir)
 	$(CP) -p $(srcdir)/scripts/gcc/lang-specs.h $(gcc_vhdl_dir)
-#	For gcc 12.x, use .cc extension
+#	For gcc >= 12.x, use .cc extension
 	base_ver=`cat $(gcc_src_dir)/gcc/BASE-VER`; \
 	case $$base_ver in \
-	12.* | 13.* | 14.*) for f in $(gcc_vhdl_dir)/*.c; do mv $$f $${f}c; done; \
+	12.* | 13.* | 14.* | 15.*) for f in $(gcc_vhdl_dir)/*.c; do mv $$f $${f}c; done; \
 	  sed -e 's/ortho-lang.c/ortho-lang.cc/' \
 	    < $(srcdir)/scripts/gcc/config-lang.in \
 	    > $(gcc_vhdl_dir)/config-lang.in ;; \
@@ -418,8 +427,8 @@ ghdl_llvm_jit$(EXEEXT): $(GRT_ADD_OBJS) $(GRT_SRC_DEPS) $(ORTHO_DEPS) \
 	@if [ -e $@ ] && [ $(ADAPTER_LIB) -nt $@ ]; then $(RM) $@; fi
 	$(GNATMAKE) -o $@ $(GHDL_LLVM_INCFLAGS) $(GNATFLAGS) ghdl_jit.adb \
 	 $(GNAT_BARGS) -largs llvm-cbindings.o $(GRT_ADD_OBJS) \
-	 $(subst @,$(GRTSRCDIR),$(GRT_EXTRA_LIB)) --LINK=$(CXX) \
-	 $(LLVM_LDFLAGS) $(LDFLAGS) $(ADAPTER_LDFLAGS)
+	 $(subst @,$(GRTSRCDIR),$(GRT_EXTRA_LIB) $(GRT_EXEC_OPTS)) \
+	 --LINK=$(CXX) $(LLVM_LDFLAGS) $(LDFLAGS) $(ADAPTER_LDFLAGS)
 
 llvm-cbindings.o: $(srcdir)/src/ortho/$(llvm_be)/llvm-cbindings.cpp
 	$(CXX) -c `$(LLVM_CONFIG) --includedir --cxxflags` \
@@ -588,15 +597,15 @@ uninstall.libghdl:
 	$(RM) $(DESTDIR)$(libdir)/libghdl$(SOEXT)
 	$(RM) $(DESTDIR)$(libdir)/libghw.dll
 	$(RM) $(DESTDIR)$(libdir)/libghw$(SOEXT)
-	$(RM) $(incdirsuffix)/ghdl/synth.h
-	$(RM) $(incdirsuffix)/ghdl/synth_gates.h
+	$(RM) $(DESTDIR)$(incdir)/synth.h
+	$(RM) $(DESTDIR)$(incdir)/synth_gates.h
 
 ################ ghwdump #################################################
 
 GHWDUMP_OBJS=ghwdump.o libghw.o
 
 ghwdump$(EXEEXT): $(GHWDUMP_OBJS)
-	$(CC) $(LDFLAGS) -o $@ $(GHWDUMP_OBJS)
+	$(CC) $(LDFLAGS) -o $@ $(GHWDUMP_OBJS) $(COVERAGE_FLAGS)
 
 lib/libghw$(SOEXT): libghw.o
 	$(CC) $(PIC_FLAGS) $(LDFLAGS) -shared -o $@ $^
@@ -618,6 +627,14 @@ uninstall.ghw:
 	$(RM) "$(DESTDIR)$(bindir)/ghwdump$(EXEEXT)"
 	$(RM) "$(DESTDIR)$(libdir)/libghw$(EXEEXT)"
 	$(RM) "$(DESTDIR)$(incdir)/libghw.h"
+
+uninstall.dirs:
+	$(RM) -d "$(DESTDIR)$(incdir)"
+	$(RM) -d "$(DESTDIR)$(prefix)/$(incdirsuffix)"
+	$(RM) -d "$(DESTDIR)$(libghdldir)"
+	$(RM) -d "$(DESTDIR)$(libdir)"
+	$(RM) -d "$(DESTDIR)$(bindir)"
+	$(RM) -d "$(DESTDIR)$(prefix)"
 
 ############### grt #####################################################
 
@@ -679,9 +696,11 @@ VHDLLIB_SUBDIRS= \
   ieee/v87 \
   ieee/v93 \
   ieee/v08 \
+  ieee/v19 \
   std/v87 \
   std/v93 \
   std/v08 \
+  std/v19 \
   src/ieee \
   src/ieee/v87 \
   src/ieee/v93 \
@@ -690,6 +709,7 @@ VHDLLIB_SUBDIRS= \
   src/std/v87 \
   src/std/v93 \
   src/std/v08 \
+  src/std/v19 \
   src/synopsys \
   src/synopsys/v08 \
   src/upf

@@ -33,6 +33,7 @@ package Trans is
    --  Ortho type node for string template pointer.
    Std_String_Ptr_Node           : O_Tnode;
    Std_String_Node               : O_Tnode;
+   Std_String_Basep_Node         : O_Tnode;
 
    --  Ortho type for std.standard.integer.
    Std_Integer_Otype : O_Tnode;
@@ -1877,6 +1878,8 @@ package Trans is
             Signal_Function : O_Dnode := O_Dnode_Null;
 
          when Kind_Alias =>
+            --  If set, simply use the name instead of the alias.
+            Alias_Direct : Boolean := False;
             Alias_Var  : Var_Type_Array;
             Alias_Kind : Object_Kind_Type;
 

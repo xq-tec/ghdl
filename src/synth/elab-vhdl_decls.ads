@@ -27,21 +27,14 @@ package Elab.Vhdl_Decls is
    procedure Elab_File_Declaration (Syn_Inst : Synth_Instance_Acc;
                                     Decl : Node);
 
+   procedure Elab_Attribute_Implicit_Declaration
+     (Syn_Inst : Synth_Instance_Acc; Decl : Node);
+
    procedure Elab_Declaration (Syn_Inst : Synth_Instance_Acc;
                                Decl : Node;
-                               Force_Init : Boolean;
                                Last_Type : in out Node);
 
-   procedure Elab_Declarations (Syn_Inst : Synth_Instance_Acc;
-                                Decls : Iir;
-                                Force_Init : Boolean := False);
-
-   procedure Finalize_Declaration (Syn_Inst : Synth_Instance_Acc;
-                                   Decl : Iir;
-                                   Is_Subprg : Boolean);
-   procedure Finalize_Declarations (Syn_Inst : Synth_Instance_Acc;
-                                    Decls : Iir;
-                                    Is_Subprg : Boolean := False);
+   procedure Elab_Declarations (Syn_Inst : Synth_Instance_Acc; Decls : Iir);
 
    --  Create a signal.
    --  It's a wrapper around elab.vhdl_context.create_signal but it computes

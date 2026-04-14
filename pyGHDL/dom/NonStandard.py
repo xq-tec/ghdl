@@ -39,17 +39,18 @@
 import ctypes
 import time
 from pathlib import Path
-from typing import Any, Optional as Nullable
+from typing import Any, Optional as Nullable, List
 
-from pyGHDL.dom.Names import SimpleName
-from pyTooling.Decorators import export, InheritDocString
+from pyTooling.Decorators import export, InheritDocString, readonly
+from pyTooling.Warning import WarningCollector
 
-from pyVHDLModel import VHDLVersion
+from pyVHDLModel import VHDLVersion, IEEEFlavor
 from pyVHDLModel import Design as VHDLModel_Design
 from pyVHDLModel import Library as VHDLModel_Library
 from pyVHDLModel import Document as VHDLModel_Document
 
 from pyGHDL.libghdl import (
+    ENCODING,
     initialize as libghdl_initialize,
     finalize as libghdl_finalize,
     set_option as libghdl_set_option,
@@ -61,13 +62,13 @@ from pyGHDL.libghdl import (
     flags,
     utils,
     files_map_editor,
-    ENCODING,
 )
 from pyGHDL.libghdl.flags import Flag_Gather_Comments
 from pyGHDL.libghdl.vhdl import nodes, sem_lib
 from pyGHDL.libghdl.vhdl.parse import Flag_Parse_Parenthesis
 from pyGHDL.dom import DOMException, Position
 from pyGHDL.dom._Utils import GetIirKindOfNode, CheckForErrors, GetNameOfNode, GetDocumentationOfNode
+from pyGHDL.dom.Name import SimpleName
 from pyGHDL.dom.Symbol import LibraryReferenceSymbol
 from pyGHDL.dom.DesignUnit import (
     Entity,
@@ -89,12 +90,16 @@ class Design(VHDLModel_Design):
     _loadDefaultLibraryTime: Nullable[float]
     _analyzeTime: Nullable[float]
 
+    _warnings: List
+
     @InheritDocString(VHDLModel_Design)
-    def __init__(self, name: str = None):
+    def __init__(self, name: str = None) -> None:
         super().__init__(name)
 
         self._loadDefaultLibraryTime = None
         self._analyzeTime = None
+
+        self._warnings = []
 
         self.__ghdl_init()
 
@@ -114,20 +119,23 @@ class Design(VHDLModel_Design):
 
         # Finish initialization. This will load the standard package.
         if libghdl_analyze_init_status() != 0:
-            raise LibGHDLException("Error initializing 'libghdl'.")
+            raise DOMException("Error initializing 'pyGHDL.dom'.") from LibGHDLException(
+                "Error initializing 'libghdl'."
+            )
 
-    def LoadDefaultLibraries(self):
+    def LoadDefaultLibraries(self, flavor: Nullable[IEEEFlavor] = None):
         t1 = time.perf_counter()
 
         super().LoadStdLibrary()
-        super().LoadIEEELibrary()
+        super().LoadIEEELibrary(flavor)
 
         self._loadDefaultLibraryTime = time.perf_counter() - t1
 
     def Analyze(self):
         t1 = time.perf_counter()
 
-        super().Analyze()
+        with WarningCollector(self._warnings) as warnings:
+            super().Analyze()
 
         self._analyzeTime = time.perf_counter() - t1
 
@@ -140,6 +148,8 @@ class Library(VHDLModel_Library):
 @export
 class Document(VHDLModel_Document):
     _filename: Path
+    _warnings: List
+
     __ghdlFileID: Any
     __ghdlSourceFileEntry: Any
     __ghdlFile: Any
@@ -154,10 +164,11 @@ class Document(VHDLModel_Document):
         vhdlVersion: VHDLVersion = VHDLVersion.VHDL2008,
         dontParse: bool = False,
         dontTranslate: bool = False,
-    ):
-        super().__init__(path)
+    ) -> None:
+        super().__init__(path, parent=None)
 
         self._filename = path
+        self._warnings = []
 
         if sourceCode is None:
             self.__loadFromPath()
@@ -181,23 +192,30 @@ class Document(VHDLModel_Document):
 
             if not dontTranslate:
                 t1 = time.perf_counter()
-                self.translate()
+                with WarningCollector(self._warnings) as warnings:
+                    self.translate()
                 self.__domTranslateTime = time.perf_counter() - t1
 
     def __loadFromPath(self):
-        with self._filename.open("r", encoding=ENCODING) as file:
-            self.__loadFromString(file.read())
+        try:
+            with self._filename.open("r", encoding=ENCODING) as file:
+                self.__loadFromString(file.read())
+        except FileNotFoundError as ex:
+            raise DOMException(f"Sourcefile '{self._filename}' not found.") from ex
 
     def __loadFromString(self, sourceCode: str):
         sourcesBytes = sourceCode.encode(ENCODING)
         sourceLength = len(sourcesBytes)
         bufferLength = sourceLength + 128
-        self.__ghdlFileID = name_table.Get_Identifier(str(self._filename))
         dirId = name_table.Null_Identifier
-        self.__ghdlSourceFileEntry = files_map.Reserve_Source_File(dirId, self.__ghdlFileID, bufferLength)
-        files_map_editor.Fill_Text(self.__ghdlSourceFileEntry, ctypes.c_char_p(sourcesBytes), sourceLength)
+        self.__ghdlFileID = name_table.Get_Identifier(str(self._filename))
+        if files_map.Find_Source_File(dirId, self.__ghdlFileID) == files_map.No_Source_File_Entry:
+            self.__ghdlSourceFileEntry = files_map.Reserve_Source_File(dirId, self.__ghdlFileID, bufferLength)
+            files_map_editor.Fill_Text(self.__ghdlSourceFileEntry, ctypes.c_char_p(sourcesBytes), sourceLength)
 
-        CheckForErrors()
+            CheckForErrors()
+        else:
+            raise DOMException(f"Source file '{self._filename}' already loaded.")
 
     def translate(self):
         firstUnit = nodes.Get_First_Design_Unit(self.__ghdlFile)
@@ -274,10 +292,10 @@ class Document(VHDLModel_Document):
             else:
                 raise DOMException(f"Unknown design unit kind '{nodeKind.name}'.")
 
-    @property
+    @readonly
     def LibGHDLProcessingTime(self) -> float:
         return self.__ghdlProcessingTime
 
-    @property
+    @readonly
     def DOMTranslationTime(self) -> float:
         return self.__domTranslateTime

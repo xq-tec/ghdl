@@ -23,6 +23,7 @@ with Mutils;
 with Grt.Algos;
 
 with Netlists.Gates; use Netlists.Gates;
+with Netlists.Gates_Ports; use Netlists.Gates_Ports;
 with Netlists.Utils; use Netlists.Utils;
 with Netlists.Locations; use Netlists.Locations;
 with Netlists.Errors; use Netlists.Errors;
@@ -172,12 +173,12 @@ package body Netlists.Memories is
                when Id_Dyn_Extract =>
                   --  Extract step from memidx gate.
                   Idx := Get_Net_Parent (Get_Input_Net (Extr_Inst, 1));
-                  while Get_Id (Idx) = Id_Addidx loop
+                  if Get_Id (Idx) = Id_Addidx then
                      --  Multi-dim arrays, lowest index is the last one.
-                     Idx := Get_Net_Parent (Get_Input_Net (Idx, 1));
-                  end loop;
+                     Idx := Get_Net_Parent (Get_Input_Net (Idx, 0));
+                  end if;
                   pragma Assert (Get_Id (Idx) = Id_Memidx);
-                  Step := Get_Param_Uns32 (Idx, 0);
+                  Step := Get_Memidx_Step (Idx);
 
                   --  Check offset
                   if Get_Param_Uns32 (Extr_Inst, 0) /= 0 then
@@ -224,12 +225,10 @@ package body Netlists.Memories is
          end loop;
       end;
 
-      if Data_W = 0 then
-         Info_Msg_Synth (+Orig, "memory %n is never read", (1 => +Orig));
-         Data_W := 0;
-      else
-         Size := Get_Width (Orig_Net) / Data_W;
-      end if;
+      --  Memory must be read.
+      pragma Assert (Data_W /= 0);
+
+      Size := Get_Width (Orig_Net) / Data_W;
    end Check_Memory_Read_Ports;
 
    --  Count the number of memidx in a memory address.
@@ -247,237 +246,246 @@ package body Netlists.Memories is
             when Id_Memidx =>
                return Res + 1;
             when Id_Addidx =>
-               if Get_Id (Get_Input_Instance (Inst, 1)) /= Id_Memidx then
-                  raise Internal_Error;
-               end if;
+               pragma Assert
+                 (Get_Id (Get_Input_Instance (Inst, 0)) = Id_Memidx);
                Res := Res + 1;
-               N := Get_Input_Net (Inst, 0);
+               N := Get_Input_Net (Inst, 1);
             when Id_Const_X =>
                --  For a null wire.
                pragma Assert (Res = 0);
                pragma Assert (Get_Width (N) = 0);
                return 0;
-            when others =>
-               raise Internal_Error;
+            when others => raise Internal_Error;
          end case;
       end loop;
    end Count_Memidx;
 
+   --  Extract Memidx from ADDR_NET.
+   --  Memidx are ordered from the one with the largest step to the one
+   --   with the smallest step.
+   procedure Gather_Memidx (Addr_Net : Net; Memidx_Arr : out Instance_Array)
+   is
+      N : Net;
+      P : Nat32;
+      Ninst : Instance;
+      Memidx : Instance;
+      Inp_Net : Net;
+   begin
+      N := Addr_Net;
+      P := Memidx_Arr'First;
+      if P = 0 then
+         return;
+      end if;
+      loop
+         Ninst := Get_Net_Parent (N);
+         case Get_Id (Ninst) is
+            when Id_Memidx =>
+               Memidx := Ninst;
+            when Id_Addidx =>
+               --  Extract memidx.
+               Inp_Net := Get_Input_Net (Ninst, 0);
+               Memidx := Get_Net_Parent (Inp_Net);
+               pragma Assert (Get_Id (Memidx) = Id_Memidx);
+               --  Extract next element in the chain
+               N := Get_Input_Net (Ninst, 1);
+            when others => raise Internal_Error;
+         end case;
+
+         Memidx_Arr (P) := Memidx;
+
+         --  Check memidx are ordered by increasing step.
+         pragma Assert
+           (P = Memidx_Arr'First
+              or else (Get_Memidx_Step (Memidx)
+                         >= Get_Memidx_Step (Memidx_Arr (P - 1))));
+
+         P := P + 1;
+
+         exit when Memidx = Ninst;
+      end loop;
+   end Gather_Memidx;
+
+   procedure Remove_Memidx (Addr_Net : Net)
+   is
+      Inst : Instance;
+   begin
+      Inst := Get_Net_Parent (Addr_Net);
+
+      --  Still used by another dyn_insert/dyn_extract (subprogram interface)
+      if Is_Connected (Addr_Net) then
+         return;
+      end if;
+
+      loop
+         case Get_Id (Inst) is
+            when Id_Memidx =>
+               Disconnect (Get_Input (Inst, 0));
+               Remove_Instance (Inst);
+               exit;
+            when Id_Addidx =>
+               declare
+                  Inp_Net : Net;
+                  Memidx : Instance;
+               begin
+                  --  Extract memidx.
+                  Inp_Net := Disconnect_And_Get (Inst, 0);
+                  Memidx := Get_Net_Parent (Inp_Net);
+                  pragma Assert (Get_Id (Memidx) = Id_Memidx);
+
+                  Disconnect (Get_Input (Memidx, 0));
+                  Remove_Instance (Memidx);
+
+                  --  Extract next element in the chain
+                  Inp_Net := Disconnect_And_Get (Inst, 1);
+                  Remove_Instance (Inst);
+
+                  Inst := Get_Net_Parent (Inp_Net);
+               end;
+            when others => raise Internal_Error;
+         end case;
+      end loop;
+   end Remove_Memidx;
+
+   --  Extract address from memidx/addidx.
+   --  If IS_PARALLEL is set, each step is divided by the step of the first
+   --  memidx.  This is to handle memories, where the output is parallel and
+   --  the address is a word address.
+   --  When IS_PARALLEL is not set, the address is a bit address.
+   procedure Lower_Memidx_Address (Ctxt : Context_Acc;
+                                   Memidx_Arr : Instance_Array;
+                                   Mode : Lower_Mode;
+                                   Addr : out Net)
+   is
+      Inst : Instance;
+      Part_Addr : Net;
+      Step, Step0 : Uns32;
+   begin
+      --  Avoid warnings
+      Step0 := 1;
+      Addr := No_Net;
+
+      --  Dimension 1 is the least significant part of the address
+      for I in Memidx_Arr'Range loop
+         Inst := Memidx_Arr (I);
+
+         Part_Addr := Get_Input_Net (Inst, 0);
+         case Mode is
+            when Lower_Memory =>
+               --  In memory mode, the step of the first index corresponds
+               --  to the data width.
+               --  The address is the word address, so the steps should be
+               --  divided by the data width (= the first step).
+               Step := Get_Memidx_Step (Inst);
+               if I = Memidx_Arr'First then
+                  --  Extract data width from the first step.
+                  Step0 := Step;
+                  Step := 1;
+               else
+                  Step := Step / Step0;
+               end if;
+            when Lower_Extract =>
+               --  In extract mode, the offset is a bit offset.  Each index
+               --  must be multiplied by the step.
+               Step := Get_Memidx_Step (Inst);
+            when Lower_Insert =>
+               --  In insert mode, the address is an index, so there must be
+               --  no hole.  Each memidx index must be multiplied by the
+               --  product of the length of previous dimensions.
+               Step := Step0;
+               Step0 := Step0 * (Get_Memidx_Max (Inst) + 1);
+         end case;
+
+         Addr := Build2_Addmul
+           (Ctxt, Part_Addr, Step, Addr, Get_Location (Inst));
+      end loop;
+   end Lower_Memidx_Address;
+
+   --  Get the address of memidx INST, after possible truncation.
+   function Extract_Memidx_Addr (Ctxt : Context_Acc; Inst : Instance)
+                                return Net
+   is
+      Addr : constant Net := Get_Input_Net (Inst, 0);
+      Addr_W : constant Width := Get_Width (Addr);
+      Max : constant Uns32 := Get_Memidx_Max (Inst);
+      Max_W : constant Width := Clog2 (Max + 1);
+   begin
+      --  Check addr width.
+      pragma Assert (Addr_W /= 0);
+      if Addr_W > Max_W then
+         --  Need to truncate.
+         return Build2_Trunc
+           (Ctxt, Id_Utrunc, Addr, Max_W, Get_Location (Inst));
+      else
+         return Addr;
+      end if;
+   end Extract_Memidx_Addr;
+
    --  Lower memidx/addidx to simpler gates (concat).
-   --  MEM_SIZE: size of the memory (in bits).
    --  ADDR is the address net with memidx/addidx gates.
    --  VAL_WD is the width of the data port.
-   procedure Convert_Memidx (Ctxt : Context_Acc;
-                             Mem_Size : Uns32;
-                             Addr : in out Net;
-                             Val_Wd : Width)
+   procedure Convert_Memidx (Ctxt : Context_Acc; Addr : in out Net)
    is
       --  Number of memidx.
-      Nbr_Idx : constant Positive := Count_Memidx (Addr);
-      Can_Free : constant Boolean := not Is_Connected (Addr);
+      Nbr_Idx : constant Nat32 := Nat32 (Count_Memidx (Addr));
 
-      Mem_Depth : Uns32;
-      Last_Size : Uns32;
       Low_Addr : Net;
       Is_Pow2 : Boolean;
 
-      type Idx_Data is record
-         Inst : Instance;
-         Addr : Net;
-         Step : Uns32;
-      end record;
-      type Idx_Array is array (Natural range <>) of Idx_Data;
-      Indexes : Idx_Array (1 .. Nbr_Idx);
-   begin
-      --  Fill the INDEXES array.
-      --  The convention is that input 0 of addidx is a memidx.
-      declare
-         P : Natural;
-         N : Net;
-         Inst : Instance;
-         Inst2 : Instance;
-      begin
-         N := Addr;
-         P := 0;
-         loop
-            Inst := Get_Net_Parent (N);
-            case Get_Id (Inst) is
-               when Id_Memidx =>
-                  P := P + 1;
-                  Indexes (P) := (Inst => Inst, Addr => No_Net, Step => 0);
-                  exit;
-               when Id_Addidx =>
-                  Inst2 := Get_Input_Instance (Inst, 0);
-                  if Get_Id (Inst2) /= Id_Memidx then
-                     --  That's the convention.
-                     raise Internal_Error;
-                  end if;
-                  P := P + 1;
-                  Indexes (P) := (Inst => Inst2, Addr => No_Net, Step => 0);
-                  N := Get_Input_Net (Inst, 1);
-               when others =>
-                  raise Internal_Error;
-            end case;
-         end loop;
-         pragma Assert (P = Nbr_Idx);
-      end;
+      Indexes : Instance_Array (1 .. Nbr_Idx);
 
-      --  Memory size is a multiple of data width.
-      --  FIXME: doesn't work if only a part of the reg is a memory.
-      if Mem_Size mod Val_Wd /= 0 then
-         raise Internal_Error;
-      end if;
-      Mem_Depth := Mem_Size / Val_Wd;
-      pragma Unreferenced (Mem_Depth);
+      Step1 : Uns32;
+   begin
+      Gather_Memidx (Addr, Indexes);
+
+      Step1 := Get_Memidx_Step (Indexes (1));
 
       --  Do checks on memidx.
-      Last_Size := Mem_Size;
       Is_Pow2 := True;
       for I in Indexes'Range loop
          declare
-            Inst : constant Instance := Indexes (I).Inst;
-            Step : constant Uns32 := Get_Param_Uns32 (Inst, 0);
-            Sub_Addr : constant Net := Get_Input_Net (Inst, 0);
-            Addr_W : constant Width := Get_Width (Sub_Addr);
-            Max : constant Uns32 := Get_Param_Uns32 (Inst, 1);
-            Max_W : constant Width := Clog2 (Max + 1);
-            Sub_Addr1 : Net;
-            Sz : Uns32;
+            Inst : constant Instance := Indexes (I);
+            Step : constant Uns32 := Get_Memidx_Step (Inst);
+
+            Step_Addr : constant Uns32 := Step / Step1;
          begin
-            --  Check max (from previous dimension).
-            --  Check the memidx can index its whole input.
-            pragma Assert (Max /= 0);
-            Sz := (Max + 1) * Step;
-            if Sz /= Last_Size then
-               raise Internal_Error;
-            end if;
-            Last_Size := Step;
+            --  Check the step is a multiple of data width.
+            pragma Assert (Step_Addr * Step1 = Step);
 
-            if I = Indexes'Last then
-               if Step /= Val_Wd then
-                  raise Internal_Error;
-               end if;
-            else
-               --  As the addresses are concatenated, the step must be
-               --  a power of 2.
-               if not Mutils.Is_Power2 (Uns64 (Step)) then
-                  Is_Pow2 := False;
-                  Info_Msg_Synth
-                    (+Inst, "internal width %v of memory is not a power of 2",
-                     (1 => +Step));
-               end if;
+            --  For the addresses to be concatenated, the step must be
+            --  a power of 2.
+            --  The step of the first index is ignored as this is the width
+            --  of the data.
+            if Is_Pow2 and then not Mutils.Is_Power2 (Uns64 (Step_Addr)) then
+               Is_Pow2 := False;
+               Info_Msg_Synth
+                 (+Inst, "internal width %v of memory is not a power of 2",
+                 (1 => +Step_Addr));
             end if;
-
-            --  Check addr width.
-            if Addr_W = 0 then
-               raise Internal_Error;
-            end if;
-            if Addr_W > Max_W then
-               --  Need to truncate.
-               Sub_Addr1 := Build2_Trunc
-                 (Ctxt, Id_Utrunc, Sub_Addr, Max_W, Get_Location (Inst));
-            else
-               Sub_Addr1 := Sub_Addr;
-            end if;
-            Indexes (I).Addr := Sub_Addr1;
-            Indexes (I).Step := Max + 1;
          end;
       end loop;
 
       --  Lower
       if Nbr_Idx = 1 then
-         Low_Addr := Indexes (1).Addr;
+         Low_Addr := Extract_Memidx_Addr (Ctxt, Indexes (1));
       elsif Is_Pow2 then
          --  (just concat addresses)
          declare
             use Netlists.Concats;
             Concat : Concat_Type;
          begin
-            for I in reverse Indexes'Range loop
-               Append (Concat, Indexes (I).Addr);
+            for I in Indexes'Range loop
+               Append (Concat, Extract_Memidx_Addr (Ctxt, Indexes (I)));
             end loop;
 
-            Build (Ctxt, Concat, Low_Addr);
+            Build (Ctxt, Concat,
+                   Get_Location (Get_Net_Parent (Addr)), Low_Addr);
          end;
       else
-         declare
-            Step, Nstep : Uns32;
-            Addr_W : Width;
-            Addr : Net;
-            Loc : Location_Type;
-         begin
-            for I in reverse Indexes'Range loop
-               if I = Indexes'Last then
-                  Low_Addr := Indexes (I).Addr;
-                  Step := Indexes (I).Step;
-               else
-                  Nstep := Step * Indexes (I).Step;
-                  if Mutils.Is_Power2 (Uns64 (Step)) then
-                     Low_Addr := Build_Concat2
-                       (Ctxt, Indexes (I).Addr, Low_Addr);
-                  else
-                     --  Compute the new width
-                     Addr_W := Clog2 (Nstep);
-                     Loc := Get_Location (Indexes (I).Inst);
-                     --  Extend low_addr and addr
-                     Addr := Indexes (I).Addr;
-                     Low_Addr := Build2_Uresize (Ctxt, Low_Addr, Addr_W, Loc);
-                     Addr := Build2_Uresize (Ctxt, Addr, Addr_W, Loc);
-                     --  multiply addr
-                     Addr := Build_Dyadic
-                       (Ctxt, Id_Umul, Addr,
-                        Build2_Const_Uns (Ctxt, Uns64 (Step), Addr_W));
-                     Set_Location (Addr, Loc);
-                     --  Add
-                     Low_Addr := Build_Dyadic (Ctxt, Id_Add, Low_Addr, Addr);
-                     Set_Location (Low_Addr, Loc);
-                  end if;
-                  Step := Nstep;
-               end if;
-            end loop;
-         end;
+         Lower_Memidx_Address (Ctxt, Indexes, Lower_Memory, Low_Addr);
       end if;
 
       --  Free addidx and memidx.
-      if Can_Free then
-         declare
-            N : Net;
-            Inp : Input;
-            Inst : Instance;
-            Inst2 : Instance;
-         begin
-            N := Addr;
-            loop
-               Inst := Get_Net_Parent (N);
-               case Get_Id (Inst) is
-                  when Id_Memidx =>
-                     Inp := Get_Input (Inst, 0);
-                     Disconnect (Inp);
-                     Remove_Instance (Inst);
-                     exit;
-                  when Id_Addidx =>
-                     --  Remove the first input (a memidx).
-                     Inp := Get_Input (Inst, 0);
-                     Inst2 := Get_Net_Parent (Get_Driver (Inp));
-                     pragma Assert (Get_Id (Inst2) = Id_Memidx);
-                     Disconnect (Inp);
-                     Inp := Get_Input (Inst2, 0);
-                     Disconnect (Inp);
-                     Remove_Instance (Inst2);
-
-                     --  Continue with the second input.
-                     Inp := Get_Input (Inst, 1);
-                     N := Get_Driver (Inp);
-                     Disconnect (Inp);
-
-                     --  Remove the addidx.
-                     Remove_Instance (Inst);
-                  when others =>
-                     raise Internal_Error;
-               end case;
-            end loop;
-         end;
-      end if;
+      Remove_Memidx (Addr);
 
       Addr := Low_Addr;
    end Convert_Memidx;
@@ -489,7 +497,11 @@ package body Netlists.Memories is
    is
       Mem_Size : constant Uns32 := Get_Width (Get_Output (Mem, 0));
    begin
-      Convert_Memidx (Ctxt, Mem_Size, Addr, Val_Wd);
+      --  Memory size is a multiple of data width.
+      --  FIXME: doesn't work if only a part of the reg is a memory.
+      pragma Assert (Mem_Size mod Val_Wd = 0);
+
+      Convert_Memidx (Ctxt, Addr);
    end Convert_Memidx;
 
    --  Return True iff MUX_INP is a mux2 input whose output is connected to a
@@ -902,8 +914,7 @@ package body Netlists.Memories is
                                  pragma Assert (N_Inst = No_Instance);
                                  N_Inst := In_Inst;
                               end if;
-                           when others =>
-                              raise Internal_Error;
+                           when others => raise Internal_Error;
                         end case;
                         Inp := Get_Next_Sink (Inp);
                      end loop;
@@ -911,12 +922,111 @@ package body Netlists.Memories is
                      exit when Inst = Sig;
                   end;
                end loop;
-            when others =>
-               raise Internal_Error;
+            when others => raise Internal_Error;
          end case;
          Inp2 := Get_Next_Sink (Inp2);
       end loop;
    end Foreach_Port;
+
+   --  Physical dimension of the memory.
+   type Mem_Dim_Type is record
+      Data_Wd : Width;
+      Depth : Uns32;
+      --  Number of dimensions.
+      Dim : Natural;
+   end record;
+
+   --  Subroutine of Convert_To_Memory.
+   --
+   --  Compute the number of ports (dyn_extract and dyn_insert) and the width
+   --  of the memory.  Just walk all the gates.
+   procedure Compute_Ports_And_Dim
+     (Sig : Instance; Nbr_Ports : out Int32; Dim : out Mem_Dim_Type)
+   is
+      type Ports_And_Dim_Data is record
+         Nbr_Ports : Int32;
+         Dim : Mem_Dim_Type;
+         Sig : Instance;
+      end record;
+
+      procedure Ports_And_Dim_Cb (Dyn_Inst : Instance;
+                                  Data : in out Ports_And_Dim_Data;
+                                  Fail : out Boolean)
+      is
+         Res : Mem_Dim_Type;
+         Inst : Instance;
+         Idx : Instance;
+      begin
+         Fail := False;
+
+         case Get_Id (Dyn_Inst) is
+            when Id_Dyn_Extract =>
+               Inst := Get_Input_Instance (Dyn_Inst, 1);
+            when Id_Dyn_Insert
+              | Id_Dyn_Insert_En =>
+               Inst := Get_Input_Instance (Dyn_Inst, 2);
+            when others => raise Internal_Error;
+         end case;
+
+         Data.Nbr_Ports := Data.Nbr_Ports + 1;
+
+         --  Extract the dim (equivalent to data width) of a dyn_insert or
+         --  dyn_extract address.  This is either a memidx or an addidx gate.
+         Res := (Data_Wd => 0, Depth => 1, Dim => 0);
+         loop
+            case Get_Id (Inst) is
+               when Id_Addidx =>
+                  --  Handle the memidx, ...
+                  Idx := Get_Input_Instance (Inst, 0);
+                  --  ..  and continue with the chain.
+                  Inst := Get_Input_Instance (Inst, 1);
+               when Id_Memidx =>
+                  --  Just handle the memidx.
+                  Idx := Inst;
+                  Inst := No_Instance;
+               when others => raise Internal_Error;
+            end case;
+            if Res.Dim = 0 then
+               Res.Data_Wd := Get_Memidx_Step (Idx);
+            end if;
+            Res.Dim := Res.Dim + 1;
+            Res.Depth := Res.Depth * (Get_Memidx_Max (Idx) + 1);
+
+            exit when Inst = No_Instance;
+         end loop;
+
+         if Data.Nbr_Ports = 1 then
+            Data.Dim := Res;
+         else
+            --  TODO: handle different width and depth.
+            if Res.Data_Wd /= Data.Dim.Data_Wd then
+               Info_Msg_Synth (+Data.Sig, "memory %n uses different widths",
+                               (1 => +Data.Sig));
+               Data.Nbr_Ports := 0;
+               Fail := True;
+            elsif Res.Depth /= Data.Dim.Depth then
+               Info_Msg_Synth (+Data.Sig, "memory %n uses different depth",
+                               (1 => +Data.Sig));
+               Data.Nbr_Ports := 0;
+               Fail := True;
+            end if;
+         end if;
+      end Ports_And_Dim_Cb;
+
+      procedure Ports_And_Dim_Foreach_Port is new Foreach_Port
+        (Data_Type => Ports_And_Dim_Data, Cb => Ports_And_Dim_Cb);
+
+      Data : Ports_And_Dim_Data;
+   begin
+      Data := (Nbr_Ports => 0,
+               Dim => (Data_Wd => 0, Depth => 0, Dim => 0),
+               Sig => Sig);
+
+      Ports_And_Dim_Foreach_Port (Sig, Data);
+
+      Nbr_Ports := Data.Nbr_Ports;
+      Dim := Data.Dim;
+   end Compute_Ports_And_Dim;
 
    type Gather_Ports_Type is record
       Ports : Instance_Array_Acc;
@@ -945,6 +1055,231 @@ package body Netlists.Memories is
       pragma Assert (Data.Nports = Ports'Last);
    end Gather_Ports;
 
+
+   type Copy_Mode_Type is (Copy_Mode_Bit, Copy_Mode_Val, Copy_Mode_Zx);
+
+   --  Copy DEPTH*DST_WD bits from SRC, starting from SRC_OFF and every SRC_WD
+   --  bits to DST.
+   procedure Copy_Const_Content (Src : Instance;
+                                 Src_Off : Width;
+                                 Dst : Instance;
+                                 Dst_Off : Width;
+                                 Wd : Width;
+                                 Mode : Copy_Mode_Type)
+   is
+      function Off_To_Param (Off : Uns32) return Param_Idx
+      is
+         Res : constant Param_Idx := Param_Idx (Off / 32);
+      begin
+         case Mode is
+            when Copy_Mode_Bit =>
+               return Res;
+            when Copy_Mode_Val =>
+               return Res * 2;
+            when Copy_Mode_Zx =>
+               return Res * 2 + 1;
+         end case;
+      end Off_To_Param;
+
+      Nbits : Uns32;
+      Word_Idx : Param_Idx;
+      Word_Off : Uns32;
+
+      Soff : Uns32;
+      Slen : Uns32;
+      Sval : Uns32;
+
+      Doff : Uns32;
+      Dlen : Uns32;
+      Dval : Uns32;
+   begin
+      Doff := Dst_Off;
+      Nbits := Wd;
+      Soff := Src_Off;
+      while Nbits > 0 loop
+         --  Try to read as much as possible.
+         Word_Idx := Off_To_Param (Soff);
+         Word_Off := Soff mod 32;
+         Slen := 32 - Word_Off;
+         if Slen > Nbits then
+            Slen := Nbits;
+         end if;
+         Sval := Get_Param_Uns32 (Src, Word_Idx);
+         --  Reframe (put at bit 0, mask extra bits).
+         Sval := Shift_Right (Sval, Natural (Word_Off));
+         Sval := Sval and Shift_Right (16#ffff_ffff#, Natural (32 - Slen));
+
+         Soff := Soff + Slen;
+         Nbits := Nbits - Slen;
+
+         --  Store.
+         while Slen > 0 loop
+            Word_Idx := Off_To_Param (Doff);
+            Word_Off := Doff mod 32;
+            Dlen := 32 - Word_Off;
+            if Dlen > Slen then
+               Dlen := Slen;
+            end if;
+            Dval := Sval and Shift_Right (16#ffff_ffff#, Natural (32 - Dlen));
+            Dval := Shift_Left (Dval, Natural (Word_Off));
+            Dval := Dval or Get_Param_Uns32 (Dst, Word_Idx);
+            Set_Param_Uns32 (Dst, Word_Idx, Dval);
+
+            Sval := Shift_Right (Sval, Natural (Dlen));
+            Slen := Slen - Dlen;
+            Doff := Doff + Dlen;
+         end loop;
+      end loop;
+   end Copy_Const_Content;
+
+   --  Copy DEPTH*DST_WD bits from SRC, starting from SRC_OFF and every SRC_WD
+   --  bits to DST.
+   procedure Copy_Sub_Content (Src : Instance;
+                                 Src_Off : Width;
+                                 Src_Wd : Width;
+                                 Dst : Instance;
+                                 Dst_Wd : Width;
+                                 Depth : Uns32;
+                                 Mode : Copy_Mode_Type)
+   is
+      Soff : Uns32;
+      Doff : Uns32;
+   begin
+      Soff := Src_Off;
+      Doff := 0;
+      for I in 0 .. Depth - 1 loop
+         Copy_Const_Content (Src, Soff, Dst, Doff, Dst_Wd, Mode);
+         Soff := Soff + Src_Wd;
+         Doff := Doff + Dst_Wd;
+      end loop;
+   end Copy_Sub_Content;
+
+   --  From constant net CST (used to initialize a memory), extract DEPTH sub
+   --  words (bits OFF:OFF + WD - 1).
+   --  Used when memories are split.
+   function Extract_Sub_Constant (Ctxt : Context_Acc;
+                                  Cst : Instance;
+                                  Cst_Wd : Uns32;
+                                  Off : Uns32;
+                                  Wd : Uns32;
+                                  Depth : Uns32) return Net
+   is
+      pragma Assert (Depth /= 0);
+      Mem_Wd : constant Width := Wd * Depth;
+      Cst_Out : constant Net := Get_Output (Cst, 0);
+      Res : Instance;
+   begin
+      if Off = 0 and then Get_Width (Cst_Out) = Mem_Wd then
+         --  Whole memory, nothing to extract.
+         return Cst_Out;
+      end if;
+
+      case Get_Id (Cst) is
+         when Id_Const_Bit =>
+            Res := Build_Const_Bit (Ctxt, Mem_Wd);
+            Copy_Sub_Content (Cst, Off, Cst_Wd, Res, Wd, Depth, Copy_Mode_Bit);
+            return Get_Output (Res, 0);
+         when Id_Const_Log =>
+            Res := Build_Const_Log (Ctxt, Mem_Wd);
+            Copy_Sub_Content (Cst, Off, Cst_Wd, Res, Wd, Depth, Copy_Mode_Val);
+            Copy_Sub_Content (Cst, Off, Cst_Wd, Res, Wd, Depth, Copy_Mode_Zx);
+            return Get_Output (Res, 0);
+         when Id_Const_UB32 =>
+            declare
+               N : Net;
+            begin
+               N := Build_Const_UB32 (Ctxt, 0, Mem_Wd);
+               --  Optimize: no need to copy if the value is 0.
+               if Get_Param_Uns32 (Cst, 0) /= 0 then
+                  Res := Get_Net_Parent (N);
+                  Copy_Sub_Content (Cst, Off, Cst_Wd, Res, Wd, Depth,
+                                    Copy_Mode_Bit);
+               end if;
+               return N;
+            end;
+         when Id_Const_UL32 =>
+            declare
+               N : Net;
+            begin
+               N := Build_Const_UL32 (Ctxt, 0, 0, Mem_Wd);
+               --  Optimize: no need to copy if the value is 0.
+               Res := Get_Net_Parent (N);
+               Copy_Sub_Content (Cst, Off, Cst_Wd, Res, Wd, Depth,
+                                 Copy_Mode_Val);
+               Copy_Sub_Content (Cst, Off, Cst_Wd, Res, Wd, Depth,
+                                 Copy_Mode_Zx);
+               return N;
+            end;
+         when Id_Const_X =>
+            return Build_Const_X (Ctxt, Mem_Wd);
+         when others => raise Internal_Error;
+      end case;
+   end Extract_Sub_Constant;
+
+   --  From constant net CST (used to initialize a memory), extract DEPTH sub
+   --  words (bits OFF:OFF + WD - 1).
+   --  Used when memories are split.
+   function Reverse_Mem_Constant (Ctxt : Context_Acc;
+                                  Cst : Instance;
+                                  Wd : Uns32;
+                                  Depth : Uns32) return Instance
+   is
+      pragma Assert (Depth /= 0);
+      Mem_Wd : constant Width := Wd * Depth;
+      Is_Logic : Boolean;
+      Res : Instance;
+      Soff, Doff : Width;
+   begin
+      case Get_Id (Cst) is
+         when Id_Const_Bit =>
+            Res := Build_Const_Bit (Ctxt, Mem_Wd);
+            Is_Logic := False;
+         when Id_Const_UB32 =>
+            declare
+               N : Net;
+            begin
+               N := Build_Const_UB32 (Ctxt, 0, Mem_Wd);
+               Res := Get_Net_Parent (N);
+               --  Optimize: no need to copy if the value is 0.
+               if Get_Param_Uns32 (Cst, 0) = 0 then
+                  return Res;
+               end if;
+               Is_Logic := False;
+            end;
+         when Id_Const_UL32 =>
+            declare
+               N : Net;
+            begin
+               N := Build_Const_UL32 (Ctxt, 0, 0, Mem_Wd);
+               Res := Get_Net_Parent (N);
+               Is_Logic := True;
+            end;
+         when Id_Const_Log =>
+            Res := Build_Const_Log (Ctxt, Mem_Wd);
+            Is_Logic := True;
+         when Id_Const_X =>
+            return Cst;
+         when others => raise Internal_Error;
+      end case;
+
+      --  Copy content in reverse order.
+      Soff := 0;
+      Doff := Mem_Wd;
+      for I in 0 .. Depth - 1 loop
+         Doff := Doff - Wd;
+         if Is_Logic then
+            Copy_Const_Content (Cst, Soff, Res, Doff, Wd, Copy_Mode_Val);
+            Copy_Const_Content (Cst, Soff, Res, Doff, Wd, Copy_Mode_Zx);
+         else
+            Copy_Const_Content (Cst, Soff, Res, Doff, Wd, Copy_Mode_Bit);
+         end if;
+         Soff := Soff + Wd;
+      end loop;
+      pragma Assert (Soff = Mem_Wd);
+      pragma Assert (Doff = 0);
+      return Res;
+   end Reverse_Mem_Constant;
+
    --  Check if the index of Memidx MIDX is of the form: MAX - off,
    --  where MAX is the maximum value of off.
    function Is_Reverse_Range (Midx : Instance) return Boolean
@@ -960,24 +1295,33 @@ package body Netlists.Memories is
       if Get_Id (Val) /= Id_Const_UB32 then
          return False;
       end if;
-      return Get_Param_Uns32 (Val, 0) = Get_Param_Uns32 (Midx, 1);
+      return Get_Param_Uns32 (Val, 0) = Get_Memidx_Max (Midx);
    end Is_Reverse_Range;
 
    --  Direction TO in address port generates a sub (as vectors are normalized
    --  on the DOWNTO direction).  Simply remap the memory by removing all the
    --  subs.
-   procedure Maybe_Remap_Address
-     (Ctxt : Context_Acc; Sig : Instance; Nbr_Ports : Nat32)
+   procedure Maybe_Remap_Address (Ctxt : Context_Acc;
+                                  Sig : in out Instance;
+                                  Nbr_Ports : Nat32;
+                                  Dim : Natural)
    is
-      pragma Unreferenced (Ctxt);
+      type Cell_Type is record
+         W : Width;
+         Step : Uns32;
+         Max : Uns32;
+         Reversed : Boolean;
+      end record;
+
       Ports : Instance_Array_Acc;
+      Cell : Cell_Type;
    begin
       Ports := new Instance_Array (1 .. Nbr_Ports);
 
       --  1. Gather all ports.
       Gather_Ports (Sig, Ports);
 
-      --  2. From ports, get the index.
+      --  2. From ports, get the memidx instance.
       for I in Ports'Range loop
          declare
             P   : constant Instance := Ports (I);
@@ -989,8 +1333,7 @@ package body Netlists.Memories is
                when Id_Dyn_Insert
                   | Id_Dyn_Insert_En =>
                   Idx := Get_Input (P, 2);
-               when others =>
-                  raise Internal_Error;
+               when others => raise Internal_Error;
             end case;
             Ports (I) := Get_Net_Parent (Get_Driver (Idx));
          end;
@@ -1017,20 +1360,25 @@ package body Netlists.Memories is
                   when Id_Addidx =>
                      M := Get_Input_Instance (M, 0);
                      pragma Assert (Get_Id (M) = Id_Memidx);
-                  when others =>
-                     raise Internal_Error;
+                  when others => raise Internal_Error;
                end case;
 
+               --  Check the steps, max and directions match.
                Idx := Get_Input_Net (M, 0);
                if I = 1 then
                   W := Get_Width (Idx);
-                  Step := Get_Param_Uns32 (M, 0);
-                  Max := Get_Param_Uns32 (M, 1);
+                  Step := Get_Memidx_Step (M);
+                  Max := Get_Memidx_Max (M);
                   Is_Reverse := Is_Reverse_Range (M);
+
+                  Cell := (W => W,
+                           Step => Step,
+                           Max => Max,
+                           Reversed => Is_Reverse);
                else
                   if Get_Width (Idx) /= W
-                    or else Get_Param_Uns32 (M, 0) /= Step
-                    or else Get_Param_Uns32 (M, 1) /= Max
+                    or else Get_Memidx_Step (M) /= Step
+                    or else Get_Memidx_Max (M) /= Max
                     or else Is_Reverse_Range (M) /= Is_Reverse
                   then
                      --  Different width, steps or direction.
@@ -1044,17 +1392,18 @@ package body Netlists.Memories is
 
             --  Update ports.
             for I in Ports'Range loop
+               --  Get the Memidx gate
                M := Ports (I);
                case Get_Id (M) is
                   when Id_Memidx =>
                      Ports (I) := No_Instance;
+                     --  No more dimensions.
                      Done := True;
                   when Id_Addidx =>
                      Ports (I) := Get_Input_Instance (M, 1);
                      M := Get_Input_Instance (M, 0);
                      pragma Assert (Get_Id (M) = Id_Memidx);
-                  when others =>
-                     raise Internal_Error;
+                  when others => raise Internal_Error;
                end case;
 
                if Is_Reverse then
@@ -1078,6 +1427,45 @@ package body Netlists.Memories is
             exit when Done;
          end;
       end loop;
+
+      if Cell.Reversed then
+         case Get_Id (Sig) is
+            when Constant_Module_Id =>
+               declare
+                  Nsig : Instance;
+               begin
+                  --  For pure ROM
+                  pragma Assert (Dim = 1);
+                  Nsig := Reverse_Mem_Constant
+                    (Ctxt, Sig, Cell.Step, Cell.Max + 1);
+                  Copy_Instance_Attributes (Nsig, Sig);
+                  Sig := Nsig;
+               end;
+            when Id_Isignal =>
+               --  For RAM
+               pragma Assert (Dim = 1);
+               declare
+                  Val : Net;
+                  Nval : Instance;
+               begin
+                  --  Reverse bits of the init value.
+                  Val := Disconnect_And_Get (Sig, 1);
+                  Nval := Reverse_Mem_Constant
+                    (Ctxt, Get_Net_Parent (Val), Cell.Step, Cell.Max + 1);
+                  Connect (Get_Input (Sig, 1), Get_Output (Nval, 0));
+
+                  --  If the input of the isignal is also the init value
+                  --  (ie a ROM), replace the input.
+                  if Get_Input_Net (Sig, 0) = Val then
+                     Disconnect (Get_Input (Sig, 0));
+                     Connect (Get_Input (Sig, 0), Get_Output (Nval, 0));
+                  end if;
+               end;
+            when Id_Signal =>
+               null;
+            when others => raise Internal_Error;
+         end case;
+      end if;
 
       Free_Instance_Array (Ports);
    end Maybe_Remap_Address;
@@ -1117,7 +1505,7 @@ package body Netlists.Memories is
 
       --  Slice the output.
       N := Get_Output (Res, 1);
-      N := Build2_Extract (Ctxt, N, 0, W);
+      N := Build2_Extract (Ctxt, N, 0, W, Get_Location (Extr_Inst));
 
       if Dff_Inst /= Extr_Inst then
          Redirect_Inputs (Get_Output (Dff_Inst, 0), N);
@@ -1173,8 +1561,7 @@ package body Netlists.Memories is
                Remove_Instance (Extr_Inst);
 
                Last := Get_Output (Port_Inst, 0);
-            when others =>
-               raise Internal_Error;
+            when others => raise Internal_Error;
          end case;
          Inp := Next_Inp;
       end loop;
@@ -1183,17 +1570,31 @@ package body Netlists.Memories is
       Connect (Get_Input (Mem_Inst, 0), Last);
    end Replace_ROM_Read_Ports;
 
-   --  ORIG (the memory) must be Const.
+   --  SIG (the memory) must be a Const or a Isignal (which is never written).
    procedure Replace_ROM_Memory
-     (Ctxt : Context_Acc; Orig : Instance; Step : Width)
+     (Ctxt : Context_Acc; Sig : Instance; Step : Width)
    is
-      Orig_Net : constant Net := Get_Output (Orig, 0);
       Name : constant Sname := New_Internal_Name (Ctxt);
+      Nsig : Instance;
+      Sig_Net : Net;
       Inst : Instance;
+      Nbr_Ports : Int32;
+      Dim : Mem_Dim_Type;
    begin
-      Inst := Build_Memory_Init (Ctxt, Name, Get_Width (Orig_Net), Orig_Net);
+      Compute_Ports_And_Dim (Sig, Nbr_Ports, Dim);
 
-      Replace_ROM_Read_Ports (Ctxt, Orig, Inst, Step);
+      Nsig := Sig;
+
+      if Dim.Dim = 1 then
+         Maybe_Remap_Address (Ctxt, Nsig, Nbr_Ports, Dim.Dim);
+      end if;
+
+      Sig_Net := Get_Output (Nsig, 0);
+
+      Inst := Build_Memory_Init (Ctxt, Name, Get_Width (Sig_Net), Sig_Net);
+      Copy_Instance_Attributes (Inst, Sig);
+
+      Replace_ROM_Read_Ports (Ctxt, Sig, Inst, Step);
    end Replace_ROM_Memory;
 
    type Get_Next_Status is
@@ -1364,7 +1765,8 @@ package body Netlists.Memories is
             when Id_Isignal
                | Id_Signal
                | Id_Const_Bit
-               | Id_Const_Log =>
+               | Id_Const_Log
+               | Id_Const_UB32 =>
                return Inst;
             when others =>
                if Flag_Memory_Verbose then
@@ -1649,248 +2051,6 @@ package body Netlists.Memories is
       Len := Idx2 - Idx;
    end Off_Array_To_Idx;
 
-   type Copy_Mode_Type is (Copy_Mode_Bit, Copy_Mode_Val, Copy_Mode_Zx);
-
-   procedure Copy_Const_Content (Src : Instance;
-                                 Src_Off : Width;
-                                 Src_Wd : Width;
-                                 Dst : Instance;
-                                 Dst_Wd : Width;
-                                 Depth : Uns32;
-                                 Mode : Copy_Mode_Type)
-   is
-      function Off_To_Param (Off : Uns32) return Param_Idx
-      is
-         Res : constant Param_Idx := Param_Idx (Off / 32);
-      begin
-         case Mode is
-            when Copy_Mode_Bit =>
-               return Res;
-            when Copy_Mode_Val =>
-               return Res * 2;
-            when Copy_Mode_Zx =>
-               return Res * 2 + 1;
-         end case;
-      end Off_To_Param;
-
-      Boff : Uns32;
-      Nbits : Uns32;
-      Word_Idx : Param_Idx;
-      Word_Off : Uns32;
-
-      Soff : Uns32;
-      Slen : Uns32;
-      Sval : Uns32;
-
-      Doff : Uns32;
-      Dlen : Uns32;
-      Dval : Uns32;
-   begin
-      Boff := Src_Off;
-      Doff := 0;
-      for I in 0 .. Depth - 1 loop
-         Nbits := Dst_Wd;
-         Soff := Boff;
-         while Nbits > 0 loop
-            --  Try to read as much as possible.
-            Word_Idx := Off_To_Param (Soff);
-            Word_Off := Soff mod 32;
-            Slen := 32 - Word_Off;
-            if Slen > Nbits then
-               Slen := Nbits;
-            end if;
-            Sval := Get_Param_Uns32 (Src, Word_Idx);
-            --  Reframe (put at bit 0, mask extra bits).
-            Sval := Shift_Right (Sval, Natural (Word_Off));
-            Sval := Sval and Shift_Right (16#ffff_ffff#,
-                                          Natural (32 - Slen));
-
-            Soff := Soff + Slen;
-            Nbits := Nbits - Slen;
-
-            --  Store.
-            while Slen > 0 loop
-               Word_Idx := Off_To_Param (Doff);
-               Word_Off := Doff mod 32;
-               Dlen := 32 - Word_Off;
-               if Dlen > Slen then
-                  Dlen := Slen;
-               end if;
-               Dval := Sval and Shift_Right (16#ffff_ffff#,
-                                             Natural (32 - Dlen));
-               Dval := Shift_Left (Dval, Natural (Word_Off));
-               Dval := Dval or Get_Param_Uns32 (Dst, Word_Idx);
-               Set_Param_Uns32 (Dst, Word_Idx, Dval);
-
-               Sval := Shift_Right (Sval, Natural (Dlen));
-               Slen := Slen - Dlen;
-               Doff := Doff + Dlen;
-            end loop;
-         end loop;
-         Boff := Boff + Src_Wd;
-      end loop;
-   end Copy_Const_Content;
-
-   --  From constant net CST (used to initialize a memory), extract DEPTH sub
-   --  words (bits OFF:OFF + WD - 1).
-   --  Used when memories are split.
-   function Extract_Sub_Constant (Ctxt : Context_Acc;
-                                  Cst : Instance;
-                                  Cst_Wd : Uns32;
-                                  Off : Uns32;
-                                  Wd : Uns32;
-                                  Depth : Uns32) return Net
-   is
-      pragma Assert (Depth /= 0);
-      Mem_Wd : constant Width := Wd * Depth;
-      Res : Instance;
-   begin
-      case Get_Id (Cst) is
-         when Id_Const_Bit =>
-            Res := Build_Const_Bit (Ctxt, Mem_Wd);
-            Copy_Const_Content (Cst, Off, Cst_Wd, Res, Wd, Depth,
-                                Copy_Mode_Bit);
-            return Get_Output (Res, 0);
-         when Id_Const_Log =>
-            Res := Build_Const_Log (Ctxt, Mem_Wd);
-            Copy_Const_Content (Cst, Off, Cst_Wd, Res, Wd, Depth,
-                                Copy_Mode_Val);
-            Copy_Const_Content (Cst, Off, Cst_Wd, Res, Wd, Depth,
-                                Copy_Mode_Zx);
-            return Get_Output (Res, 0);
-         when Id_Const_UB32 =>
-            declare
-               N : Net;
-            begin
-               N := Build_Const_UB32 (Ctxt, 0, Mem_Wd);
-               --  Optimize: no need to copy if the value is 0.
-               if Get_Param_Uns32 (Cst, 0) /= 0 then
-                  Res := Get_Net_Parent (N);
-                  Copy_Const_Content (Cst, Off, Cst_Wd, Res, Wd, Depth,
-                                      Copy_Mode_Bit);
-               end if;
-               return N;
-            end;
-         when Id_Const_UL32 =>
-            declare
-               N : Net;
-            begin
-               N := Build_Const_UL32 (Ctxt, 0, 0, Mem_Wd);
-               --  Optimize: no need to copy if the value is 0.
-               Res := Get_Net_Parent (N);
-               Copy_Const_Content (Cst, Off, Cst_Wd, Res, Wd, Depth,
-                                   Copy_Mode_Val);
-               Copy_Const_Content (Cst, Off, Cst_Wd, Res, Wd, Depth,
-                                   Copy_Mode_Zx);
-               return N;
-            end;
-         when Id_Const_X =>
-            return Build_Const_X (Ctxt, Mem_Wd);
-         when others =>
-            raise Internal_Error;
-      end case;
-   end Extract_Sub_Constant;
-
-   --  Physical dimension of the memory.
-   type Mem_Dim_Type is record
-      Data_Wd : Width;
-      Depth : Uns32;
-      --  Number of dimensions.
-      Dim : Natural;
-   end record;
-
-   --  Subroutine of Convert_To_Memory.
-   --
-   --  Compute the number of ports (dyn_extract and dyn_insert) and the width
-   --  of the memory.  Just walk all the gates.
-   procedure Compute_Ports_And_Dim
-     (Sig : Instance; Nbr_Ports : out Int32; Dim : out Mem_Dim_Type)
-   is
-      type Ports_And_Dim_Data is record
-         Nbr_Ports : Int32;
-         Dim : Mem_Dim_Type;
-         Sig : Instance;
-      end record;
-
-      procedure Ports_And_Dim_Cb (Dyn_Inst : Instance;
-                                  Data : in out Ports_And_Dim_Data;
-                                  Fail : out Boolean)
-      is
-         Res : Mem_Dim_Type;
-         Inst : Instance;
-         Idx : Instance;
-      begin
-         Fail := False;
-
-         case Get_Id (Dyn_Inst) is
-            when Id_Dyn_Extract =>
-               Inst := Get_Input_Instance (Dyn_Inst, 1);
-            when Id_Dyn_Insert
-              | Id_Dyn_Insert_En =>
-               Inst := Get_Input_Instance (Dyn_Inst, 2);
-            when others =>
-               raise Internal_Error;
-         end case;
-
-         Data.Nbr_Ports := Data.Nbr_Ports + 1;
-
-         --  Extract the dim (equivalent to data width) of a dyn_insert or
-         --  dyn_extract address.  This is either a memidx or an addidx gate.
-         Res := (Data_Wd => 0, Depth => 1, Dim => 0);
-         loop
-            case Get_Id (Inst) is
-               when Id_Addidx =>
-                  --  Handle the memidx, ...
-                  Idx := Get_Input_Instance (Inst, 0);
-                  --  ..  and continue with the chain.
-                  Inst := Get_Input_Instance (Inst, 1);
-               when Id_Memidx =>
-                  --  Just handle the memidx.
-                  Idx := Inst;
-                  Inst := No_Instance;
-               when others =>
-                  raise Internal_Error;
-            end case;
-            Res.Dim := Res.Dim + 1;
-            Res.Data_Wd := Get_Param_Uns32 (Idx, 0);
-            Res.Depth := Res.Depth * (Get_Param_Uns32 (Idx, 1) + 1);
-
-            exit when Inst = No_Instance;
-         end loop;
-
-         if Data.Nbr_Ports = 1 then
-            Data.Dim := Res;
-         else
-            --  TODO: handle different width and depth.
-            if Res.Data_Wd /= Data.Dim.Data_Wd then
-               Info_Msg_Synth (+Data.Sig, "memory %n uses different widths",
-                               (1 => +Data.Sig));
-               Data.Nbr_Ports := 0;
-               Fail := True;
-            elsif Res.Depth /= Data.Dim.Depth then
-               Info_Msg_Synth (+Data.Sig, "memory %n uses different depth",
-                               (1 => +Data.Sig));
-               Data.Nbr_Ports := 0;
-               Fail := True;
-            end if;
-         end if;
-      end Ports_And_Dim_Cb;
-
-      procedure Ports_And_Dim_Foreach_Port is new Foreach_Port
-        (Data_Type => Ports_And_Dim_Data, Cb => Ports_And_Dim_Cb);
-
-      Data : Ports_And_Dim_Data;
-   begin
-      Data := (Nbr_Ports => 0,
-               Dim => (Data_Wd => 0, Depth => 0, Dim => 0),
-               Sig => Sig);
-
-      Ports_And_Dim_Foreach_Port (Sig, Data);
-
-      Nbr_Ports := Data.Nbr_Ports;
-      Dim := Data.Dim;
-   end Compute_Ports_And_Dim;
-
    --  Subroutine of Convert_To_Memory.
    --
    --  Extract offsets/width of each port.
@@ -1918,8 +2078,7 @@ package body Netlists.Memories is
               | Id_Dyn_Insert =>
                Off := Get_Param_Uns32 (Inst, 0);
                Wd := Get_Width (Get_Input_Net (Inst, 1));
-            when others =>
-               raise Internal_Error;
+            when others => raise Internal_Error;
          end case;
 
          Ow := (Off, Off + Wd);
@@ -1945,14 +2104,13 @@ package body Netlists.Memories is
    --  IN_INST is the Dyn_Extract gate.
    procedure Convert_RAM_Read_Port (Ctxt : Context_Acc;
                                     In_Inst : Instance;
-                                    Mem_Sz : Uns32;
-                                    Mem_W : Width;
                                     Offs : Off_Array_Acc;
                                     Tails : Net_Array_Acc;
                                     Outs : Net_Array_Acc)
    is
       Off : constant Uns32 := Get_Param_Uns32 (In_Inst, 0);
       Wd : constant Width := Get_Width (Get_Output (In_Inst, 0));
+      Loc : constant Location_Type := Get_Location (In_Inst);
       Idx : Int32;
       Len : Int32;
       Addr : Net;
@@ -1971,7 +2129,7 @@ package body Netlists.Memories is
       Disconnect (Inp2);
 
       --  Build the address net.
-      Convert_Memidx (Ctxt, Mem_Sz, Addr, Mem_W);
+      Convert_Memidx (Ctxt, Addr);
 
       --  Optimize the network.
       Maybe_Swap_Concat_Mux_Dff (Ctxt, In_Inst);
@@ -1985,15 +2143,15 @@ package body Netlists.Memories is
       for I in Idx .. Idx + Len - 1 loop
          if Clk /= No_Net then
             Rd_Inst := Build_Mem_Rd_Sync (Ctxt, Tails (I), Addr, Clk, En,
-                                          Offs (Idx + 1) - Offs (Idx));
+                                          Offs (I + 1) - Offs (I));
          else
             Rd_Inst := Build_Mem_Rd (Ctxt, Tails (I), Addr,
-                                     Offs (Idx + 1) - Offs (Idx));
+                                     Offs (I + 1) - Offs (I));
          end if;
          Tails (I) := Get_Output (Rd_Inst, 0);
          Outs (I) := Get_Output (Rd_Inst, 1);
       end loop;
-      Rd := Build2_Concat (Ctxt, Outs (Idx .. Idx + Len - 1));
+      Rd := Build2_Concat (Ctxt, Outs (Idx .. Idx + Len - 1), Loc);
       Redirect_Inputs (Get_Output (Last_Inst, 0), Rd);
       if Last_Inst /= In_Inst then
          Remove_Instance (Last_Inst);
@@ -2008,8 +2166,6 @@ package body Netlists.Memories is
    --  OUTS is a temporary array.
    procedure Create_RAM_Ports (Ctxt : Context_Acc;
                                Sig : Instance;
-                               Mem_Sz : Uns32;
-                               Mem_W : Width;
                                Offs : Off_Array_Acc;
                                Tails : Net_Array_Acc;
                                Outs : Net_Array_Acc;
@@ -2030,15 +2186,13 @@ package body Netlists.Memories is
          Inst2 := Get_Input_Parent (Inp2);
          case Get_Id (Inst2) is
             when Id_Dyn_Extract =>
-               Convert_RAM_Read_Port
-                 (Ctxt, Inst2, Mem_Sz, Mem_W, Offs, Tails, Outs);
+               Convert_RAM_Read_Port (Ctxt, Inst2, Offs, Tails, Outs);
                Disconnect (Get_Input (Inst2, 0));
                Remove_Instance (Inst2);
             when Id_Dyn_Insert_En
               | Id_Dyn_Insert =>
                null;
-            when others =>
-               raise Internal_Error;
+            when others => raise Internal_Error;
          end case;
          Inp2 := N_Inp2;
       end loop;
@@ -2075,7 +2229,7 @@ package body Netlists.Memories is
                      Inp2 := Get_Input (Inst, 2);
                      Addr := Get_Driver (Inp2);
                      Disconnect (Inp2);
-                     Convert_Memidx (Ctxt, Mem_Sz, Addr, Mem_W);
+                     Convert_Memidx (Ctxt, Addr);
                      if Get_Id (Inst) = Id_Dyn_Insert_En then
                         Inp2 := Get_Input (Inst, 3);
                         En := Get_Driver (Inp2);
@@ -2089,7 +2243,8 @@ package body Netlists.Memories is
                         Wr_Inst := Build_Mem_Wr_Sync
                           (Ctxt, Tails (I), Addr, No_Net, En,
                            Build2_Extract (Ctxt, Dat, Offs (I) - Offs (Idx),
-                                           Offs (I + 1) - Offs (I)));
+                                           Offs (I + 1) - Offs (I),
+                                           Get_Location (Sig)));
                         --  Keep instance to add clock.
                         N_Ports := N_Ports + 1;
                         Ports (N_Ports) := Wr_Inst;
@@ -2107,8 +2262,7 @@ package body Netlists.Memories is
                      Clk : Net;
                   begin
                      Inp2 := Get_Input (Inst, 0);
-                     Inference.Extract_Clock
-                       (Ctxt, Get_Driver (Inp2), Clk, En);
+                     Inference.Extract_Clock (Get_Driver (Inp2), Clk, En);
                      Disconnect (Inp2);
                      --  Assign clock.
                      for I in Ports'First .. N_Ports loop
@@ -2141,8 +2295,7 @@ package body Netlists.Memories is
                when Id_Signal
                   | Id_Isignal =>
                   null;
-               when others =>
-                  raise Internal_Error;
+               when others => raise Internal_Error;
             end case;
 
             --  Check gates connected to the output.
@@ -2155,8 +2308,7 @@ package body Netlists.Memories is
                N_Inp := Get_Next_Sink (Inp);
                case Get_Id (In_Inst) is
                   when Id_Dyn_Extract =>
-                     Convert_RAM_Read_Port
-                       (Ctxt, In_Inst, Mem_Sz, Mem_W, Offs, Tails, Outs);
+                     Convert_RAM_Read_Port (Ctxt, In_Inst, Offs, Tails, Outs);
                      pragma Assert (Inp = Get_Input (In_Inst, 0));
                      Disconnect (Inp);
                      Remove_Instance (In_Inst);
@@ -2205,8 +2357,7 @@ package body Netlists.Memories is
                         pragma Assert (N_Inst = No_Instance);
                         N_Inst := In_Inst;
                      end if;
-                  when others =>
-                     raise Internal_Error;
+                  when others => raise Internal_Error;
                end case;
                Inp := N_Inp;
             end loop;
@@ -2231,8 +2382,7 @@ package body Netlists.Memories is
                when Id_Signal
                   | Id_Isignal =>
                   null;
-               when others =>
-                  raise Internal_Error;
+               when others => raise Internal_Error;
             end case;
 
             Inst := N_Inst;
@@ -2249,24 +2399,6 @@ package body Netlists.Memories is
       end loop;
    end Create_RAM_Ports;
 
-   --  Return True iff the initial value of SIG is uniform (same value for
-   --  all bits).
-   function Is_Simple_Init (Sig : Instance) return Boolean
-   is
-      pragma Assert (Get_Id (Sig) = Id_Isignal);
-      Cst : constant Instance := Get_Input_Instance (Sig, 1);
-   begin
-      case Get_Id (Cst) is
-         when Id_Const_0
-            | Id_Const_X =>
-            return True;
-         when Id_Const_UB32 =>
-            return Get_Param_Uns32 (Cst, 0) = 0;
-         when others =>
-            return False;
-      end case;
-   end Is_Simple_Init;
-
    --  SIG is the signal/isignal.
    procedure Convert_To_Memory (Ctxt : Context_Acc; Sig : Instance)
    is
@@ -2274,6 +2406,8 @@ package body Netlists.Memories is
       Mem_Sz : constant Uns32 := Get_Width (Get_Output (Sig, 0));
 
       Sig_Name : constant Sname := Get_Instance_Name (Sig);
+
+      Nsig : Instance;
 
       Dim : Mem_Dim_Type;
 
@@ -2326,9 +2460,11 @@ package body Netlists.Memories is
       --  Change the address (convert 'to' direction to 'downto'), to simplify
       --  the logic.
       if Get_Id (Sig) = Id_Signal
-        or else (Get_Id (Sig) = Id_Isignal and then Is_Simple_Init (Sig))
+        or else (Get_Id (Sig) = Id_Isignal and then Dim.Dim = 1)
       then
-         Maybe_Remap_Address (Ctxt, Sig, Nbr_Ports);
+         Nsig := Sig;
+         Maybe_Remap_Address (Ctxt, Nsig, Nbr_Ports, Dim.Dim);
+         pragma Assert (Sig = Nsig);
       end if;
 
       --  2. Walk to extract offsets/width
@@ -2415,8 +2551,7 @@ package body Netlists.Memories is
                         Mem_W, Offs (I), Data_Wd, Mem_Depth));
                when Id_Signal =>
                   Heads (I) := Build_Memory (Ctxt, Name, Mem_Wd);
-               when others =>
-                  raise Internal_Error;
+               when others => raise Internal_Error;
             end case;
             Copy_Instance_Attributes (Heads (I), Sig);
             Tails (I) := Get_Output (Heads (I), 0);
@@ -2424,7 +2559,7 @@ package body Netlists.Memories is
       end loop;
 
       --  5. For each part of the data, create memory ports
-      Create_RAM_Ports (Ctxt, Sig, Mem_Sz, Mem_W, Offs, Tails, Outs, Ports);
+      Create_RAM_Ports (Ctxt, Sig, Offs, Tails, Outs, Ports);
 
       --  Close loops.
       for I in Heads'Range loop
@@ -2437,8 +2572,7 @@ package body Netlists.Memories is
             Disconnect (Get_Input (Inst, 1));
          when Id_Signal =>
             null;
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
 
       declare
@@ -2539,8 +2673,7 @@ package body Netlists.Memories is
                   Inst := Walk_From_Insert (Inst);
                when Id_Dyn_Extract =>
                   Inst := Walk_From_Extract (Inst);
-               when others =>
-                  raise Internal_Error;
+               when others => raise Internal_Error;
             end case;
             if Inst /= No_Instance
               and then not Get_Mark_Flag (Inst)
@@ -2571,10 +2704,10 @@ package body Netlists.Memories is
                when Id_Isignal
                  | Id_Signal
                  | Id_Const_Bit
-                 | Id_Const_Log =>
+                 | Id_Const_Log
+                 | Id_Const_UB32 =>
                   null;
-               when others =>
-                  raise Internal_Error;
+               when others => raise Internal_Error;
             end case;
 
             if Is_Const_Input (Inst) then
@@ -2645,7 +2778,6 @@ package body Netlists.Memories is
    end One_Write_Connection;
 
    procedure Reduce_Muxes_Mux2 (Ctxt : Context_Acc;
-                                Clk  : Net;
                                 Psel : Net;
                                 Head : in out Instance;
                                 Tail : out Instance);
@@ -2653,7 +2785,6 @@ package body Netlists.Memories is
    --  Remove the mux2 MUX (by adding enable to dyn_insert).
    --  Return the new head.
    procedure Reduce_Muxes (Ctxt : Context_Acc;
-                           Clk : Net;
                            Sel : Net;
                            Head_In : Net;
                            Tail_In : Net;
@@ -2674,26 +2805,12 @@ package body Netlists.Memories is
          case Get_Id (Inst) is
             when Id_Mux2 =>
                --  Recurse on the mux.
-               Reduce_Muxes_Mux2 (Ctxt, Clk, Sel, Inst, Tail_Out);
+               Reduce_Muxes_Mux2 (Ctxt, Sel, Inst, Tail_Out);
             when Id_Dyn_Insert =>
                --  Transform dyn_insert to dyn_insert_en.
-               declare
-                  En : Net;
-               begin
-                  if Clk /= No_Net then
-                     if Sel /= No_Net then
-                        En := Build_Dyadic (Ctxt, Id_And, Clk, Sel);
-                        Copy_Location (En, Sel);
-                     else
-                        En := Clk;
-                     end if;
-                  else
-                     En := Sel;
-                  end if;
-                  if En /= No_Net then
-                     Inst := Add_Enable_To_Dyn_Insert (Ctxt, Inst, En);
-                  end if;
-               end;
+               if Sel /= No_Net then
+                  Inst := Add_Enable_To_Dyn_Insert (Ctxt, Inst, Sel);
+               end if;
                Tail_Out := Inst;
             when Id_Dyn_Insert_En =>
                --  Simply add SEL to the enable input.
@@ -2707,10 +2824,6 @@ package body Netlists.Memories is
                      En := Build_Dyadic (Ctxt, Id_And, En, Sel);
                      Copy_Location (En, Sel);
                   end if;
-                  if Clk /= No_Net then
-                     En := Build_Dyadic (Ctxt, Id_And, Clk, En);
-                     Copy_Location (En, Inst);
-                  end if;
                   Connect (En_Inp, En);
                end;
                Tail_Out := Inst;
@@ -2719,8 +2832,7 @@ package body Netlists.Memories is
                pragma Assert (Tail_In = No_Net);
                Tail_Out := Inst;
                exit;
-            when others =>
-               raise Internal_Error;
+            when others => raise Internal_Error;
          end case;
          --  If this is the head, keep it.
          if Head_Out = No_Instance then
@@ -2771,7 +2883,6 @@ package body Netlists.Memories is
    --  Remove the mux2 HEAD (by adding enable to dyn_insert).
    --  Return the new head.
    procedure Reduce_Muxes_Mux2 (Ctxt : Context_Acc;
-                                Clk : Net;
                                 Psel : Net;
                                 Head : in out Instance;
                                 Tail : out Instance)
@@ -2845,7 +2956,7 @@ package body Netlists.Memories is
       --  Transform dyn_insert to dyn_insert_en by adding SEL, or simply add
       --  SEL to existing dyn_insert_en.
       --  RES is the head of the result chain.
-      Reduce_Muxes (Ctxt, Clk, Sel, Drv, Src, Res, Tail);
+      Reduce_Muxes (Ctxt, Sel, Drv, Src, Res, Tail);
 
       Redirect_Inputs (Muxout, Get_Output (Res, 0));
       Remove_Instance (Mux);
@@ -2853,9 +2964,8 @@ package body Netlists.Memories is
       Head := Res;
    end Reduce_Muxes_Mux2;
 
-   function Infere_RAM
-     (Ctxt : Context_Acc; Val : Net; Tail : Net; Clk : Net; En : Net)
-      return Net
+   function Infere_RAM (Ctxt : Context_Acc; Val : Net; Tail : Net; En : Net)
+                       return Net
    is
       --  pragma Assert (not Is_Connected (Val));
       New_Tail : Instance;
@@ -2865,7 +2975,7 @@ package body Netlists.Memories is
       --  be transformed to dyn_insert_en.
       --  At the end, the loop is linear and without muxes.
       --  Return the new head.
-      Reduce_Muxes (Ctxt, Clk, En, Val, Tail, Res, New_Tail);
+      Reduce_Muxes (Ctxt, En, Val, Tail, Res, New_Tail);
       return Get_Output (Res, 0);
    end Infere_RAM;
 
