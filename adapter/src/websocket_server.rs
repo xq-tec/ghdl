@@ -47,7 +47,10 @@ extern "C" fn remove_server_marker_atexit() {
 }
 
 /// Creates an empty `{port}-{simulation_id:014x}.server` file and registers a one-time `atexit` handler to remove it.
-fn create_server_marker_and_register_cleanup(port: u16, simulation_id: SimulationId) -> io::Result<()> {
+fn create_server_marker_and_register_cleanup(
+    port: u16,
+    simulation_id: SimulationId,
+) -> io::Result<()> {
     let dir = server_marker::markers_directory();
     std::fs::create_dir_all(&dir)?;
     let path = server_marker::marker_path(port, simulation_id);
