@@ -12,6 +12,7 @@ use crossbeam_channel::Sender;
 use futures_util::SinkExt;
 use futures_util::StreamExt;
 use futures_util::stream::SplitStream;
+use hdl_simulation_protocol::SimulationId;
 use hdl_simulation_protocol::SimulationStatus;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchy;
 use hdl_simulation_protocol::design_hierarchy::SignalElementId;
@@ -46,7 +47,10 @@ extern "C" fn remove_server_marker_atexit() {
 }
 
 /// Creates an empty `{port}-{simulation_id:014x}.server` file and registers a one-time `atexit` handler to remove it.
-fn create_server_marker_and_register_cleanup(port: u16, simulation_id: u64) -> io::Result<()> {
+fn create_server_marker_and_register_cleanup(
+    port: u16,
+    simulation_id: SimulationId,
+) -> io::Result<()> {
     let dir = server_marker::markers_directory();
     std::fs::create_dir_all(&dir)?;
     let path = server_marker::marker_path(port, simulation_id);
@@ -56,18 +60,6 @@ fn create_server_marker_and_register_cleanup(port: u16, simulation_id: u64) -> i
         libc::atexit(remove_server_marker_atexit);
     });
     Ok(())
-}
-
-/// Returns a uniform random 53-bit simulation instance identifier.
-fn random_simulation_id() -> u64 {
-    let mut bytes = [0u8; 8];
-    if getrandom::fill(&mut bytes).is_err() {
-        let time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(1u64, |d| d.as_nanos() as u64);
-        bytes = time.to_ne_bytes();
-    }
-    u64::from_ne_bytes(bytes) & ((1u64 << 53) - 1)
 }
 
 type WsSink = futures_util::stream::SplitSink<WebSocketStream<TcpStream>, Message>;
@@ -111,16 +103,12 @@ impl ClientSession {
                 Some(WsSimulationUpdate::SimulationStopped)
             },
             Command::PauseSimulation => {
-                // Not implemented yet, just confirm
+                warn!("PauseSimulation is not implemented yet");
                 Some(WsSimulationUpdate::SimulationPaused)
             },
             Command::ResumeSimulation => {
-                // Not implemented yet, just confirm
+                warn!("ResumeSimulation is not implemented yet");
                 Some(WsSimulationUpdate::SimulationResumed)
-            },
-            Command::RestartSimulation => {
-                let _ = command_tx.send(SimulationCommand::Start);
-                Some(WsSimulationUpdate::SimulationStarted)
             },
             Command::TrackSignals(request) => {
                 let mut to_subscribe: SmallVec<[SignalElementId; 1]> = SmallVec::new();
@@ -194,7 +182,7 @@ pub(crate) async fn run_websocket_server(
         },
     };
 
-    let simulation_id = random_simulation_id();
+    let simulation_id = SimulationId::new_random();
     if let Err(e) = create_server_marker_and_register_cleanup(addr.port(), simulation_id) {
         error!(%addr, "failed to create server marker file: {e}");
         return;

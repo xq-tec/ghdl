@@ -1,12 +1,12 @@
 use std::io;
 
+use opentelemetry::KeyValue;
 use opentelemetry::global;
 use opentelemetry::trace::TracerProvider;
-use opentelemetry::KeyValue;
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
+use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::trace::SdkTracerProvider;
-use opentelemetry_sdk::Resource;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -14,10 +14,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 fn resource() -> Resource {
     Resource::builder()
         .with_service_name("ghdl-adapter")
-        .with_attributes([KeyValue::new(
-            "service.version",
-            env!("CARGO_PKG_VERSION"),
-        )])
+        .with_attributes([KeyValue::new("service.version", env!("CARGO_PKG_VERSION"))])
         .build()
 }
 
