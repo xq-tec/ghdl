@@ -66,6 +66,8 @@ package Adapter is
    procedure Process_Commands (Block : Boolean);
    function Requested_Simulation_Status return Simulation_Status;
    procedure Set_Next_Event_Time (Physical_Time : Std_Time; Delta_Cycle : Integer);
+   --  Notifies the adapter that the current simulation cycle (one iteration of the simulation loop)
+   --  has finished.
    procedure Update_Simulation_Time;
    procedure Notify_Simulation_Status (Status : Simulation_Status);
 

@@ -26,6 +26,7 @@ use tracing::warn;
 use crate::SimulationCommand;
 use crate::SimulationUpdate;
 use crate::design::Signal;
+use crate::websocket_server::EVENTS_PER_UPDATE_THRESHOLD;
 use crate::websocket_server::run_websocket_server;
 
 unsafe extern "C" {
@@ -63,8 +64,9 @@ pub struct AdapterState {
 }
 
 impl AdapterState {
-    /// Flushes accumulated signal events up to `end_time` to the WebSocket thread.
+    /// Flushes accumulated signal events to the WebSocket thread.
     fn transmit_events(&mut self) {
+        // Transmit an update if there are new events or if the time range has changed.
         if let Some(events_update) = self.subscriptions.extract_events() {
             self.update_tx
                 .send(SimulationUpdate::Events(events_update))
@@ -104,6 +106,7 @@ struct SubscriptionTracker {
     element_indices: FxHashMap<SignalElementId, SubscriptionIndex>,
 
     events: EventsUpdate,
+    event_count: usize,
 }
 
 impl SubscriptionTracker {
@@ -115,6 +118,7 @@ impl SubscriptionTracker {
                 time_range: LogicalTime::ZERO..LogicalTime::ZERO,
                 signals: Vec::new(),
             },
+            event_count: 0,
         }
     }
 
@@ -141,6 +145,7 @@ impl SubscriptionTracker {
                     value: RawValue(initial_value),
                 });
                 self.events.signals.push(signal_events);
+                self.event_count += 1;
 
                 next_index += 1;
             }
@@ -162,27 +167,33 @@ impl SubscriptionTracker {
             time,
             value: RawValue(value),
         });
+        self.event_count += 1;
     }
 
+    /// Extracts and returns any accumulated events.
+    ///
+    /// Returns `None` if there are no events **and** the time range is empty.
     fn extract_events(&mut self) -> Option<EventsUpdate> {
-        if !self.events.time_range.is_empty() {
-            let end_time = self.events.time_range.end;
-            let signals = self
-                .events
-                .signals
-                .iter()
-                .map(SignalEvents::clone_empty)
-                .collect();
-            Some(replace(
-                &mut self.events,
-                EventsUpdate {
-                    time_range: end_time..end_time,
-                    signals,
-                },
-            ))
-        } else {
-            None
+        if self.events.time_range.is_empty() {
+            return None;
         }
+
+        let end_time = self.events.time_range.end;
+        let signals = self
+            .events
+            .signals
+            .iter()
+            .map(SignalEvents::clone_empty)
+            .collect();
+        let events = replace(
+            &mut self.events,
+            EventsUpdate {
+                time_range: end_time..end_time,
+                signals,
+            },
+        );
+        self.event_count = 0;
+        Some(events)
     }
 }
 
@@ -296,9 +307,14 @@ extern "C" fn adapter_set_next_event_time(
     trace!(%state.time_for_events, "set next event time");
 }
 
+/// Notifies the adapter that the current simulation cycle (one iteration of the simulation loop)
+/// has finished.
 #[unsafe(no_mangle)]
 extern "C" fn adapter_update_simulation_time(state: &mut AdapterState) {
     state.subscriptions.update_time_range(state.time_for_events);
+    if state.subscriptions.event_count >= EVENTS_PER_UPDATE_THRESHOLD {
+        state.transmit_events();
+    }
     trace!(%state.time_for_events, "updated simulation time");
 }
 

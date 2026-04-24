@@ -35,6 +35,13 @@ use tracing::warn;
 use crate::SimulationCommand;
 use crate::SimulationUpdate;
 
+/// The soft maximum on the number of events per update.
+///
+/// A WebSocket message is limited to 16MiB, and one event takes at most 24 bytes
+/// (less in practice due to efficient encoding).
+/// The threshold should be set well below `16 * 2**20 / 24 = 699050` for a safety margin.
+pub const EVENTS_PER_UPDATE_THRESHOLD: usize = 500_000;
+
 /// Path for `libc::atexit` cleanup. Stale files may remain after `SIGKILL` or crash.
 static SERVER_MARKER_PATH: OnceLock<PathBuf> = OnceLock::new();
 
