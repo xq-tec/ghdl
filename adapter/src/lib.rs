@@ -1,3 +1,5 @@
+use std::sync::mpsc::SyncSender;
+
 use hdl_simulation_protocol::SimulationStatus;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchy;
 use hdl_simulation_protocol::design_hierarchy::SignalElementId;
@@ -29,5 +31,5 @@ enum SimulationUpdate {
     ///
     /// If the optional sender is present, the WebSocket thread sends an
     /// acknowledgment after the notification has been flushed to all connections.
-    StatusChanged(SimulationStatus, Option<std::sync::mpsc::SyncSender<()>>),
+    StatusChanged(SimulationStatus, Option<SyncSender<()>>),
 }

@@ -1,6 +1,8 @@
 use std::mem::replace;
 use std::num::NonZeroU32;
 use std::sync::OnceLock;
+use std::sync::mpsc::sync_channel;
+use std::time::Duration;
 
 use crossbeam_channel::Receiver;
 use hdl_simulation_protocol::SimulationStatus;
@@ -320,29 +322,25 @@ extern "C" fn adapter_notify_simulation_status(state: &mut AdapterState, status:
 
     let (ack_tx, ack_rx) = if status == SimulationStatus::Stopped {
         state.transmit_events();
-        let (tx, rx) = std::sync::mpsc::sync_channel(0);
+        // Tell the WebSocket thread to acknowledge the transmission of the stop notification.
+        let (tx, rx) = sync_channel(0);
         (Some(tx), Some(rx))
     } else {
         (None, None)
     };
-    if let Err(e) = state
+    let _ignore = state
         .update_tx
-        .send(SimulationUpdate::StatusChanged(status, ack_tx))
-    {
-        error!("failed to send simulation status update: {e}");
-        return;
-    }
+        .send(SimulationUpdate::StatusChanged(status, ack_tx));
 
     if let Some(rx) = ack_rx {
-        match rx.recv_timeout(std::time::Duration::from_secs(2)) {
+        // If the simulation has stopped, the simulator process will exit. We until the WebSocket
+        // thread acknowledges that it sent the stop notification, otherwise it would get lost.
+        match rx.recv_timeout(Duration::from_secs(2)) {
             Ok(()) => {
                 debug!("stopped notification acknowledged by WebSocket thread");
             },
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            Err(_) => {
                 warn!("timed out waiting for stopped notification acknowledgment");
-            },
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                warn!("WebSocket thread dropped the acknowledgment channel");
             },
         }
     }
