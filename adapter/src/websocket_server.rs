@@ -181,6 +181,7 @@ pub(crate) async fn run_websocket_server(
             return;
         },
     };
+    info!("WebSocket server started");
 
     let addr = match listener.local_addr() {
         Ok(a) => a,

@@ -71,9 +71,9 @@ impl AdapterState {
     fn transmit_events(&mut self) {
         // Transmit an update if there are new events or if the time range has changed.
         if let Some(events_update) = self.subscriptions.extract_events() {
-            self.update_tx
-                .blocking_send(SimulationUpdate::Events(events_update))
-                .expect("Failed to send simulation update"); // TODO handle error
+            let _ignore = self
+                .update_tx
+                .blocking_send(SimulationUpdate::Events(events_update));
         }
     }
 
@@ -169,11 +169,15 @@ impl SubscriptionTracker {
         value: u64,
     ) {
         let index = subscription_index.0 as usize;
-        self.events.signals[index].events.push(Event {
-            time,
-            value: RawValue(value),
-        });
-        self.event_count += 1;
+        // get_mut(index) should never fail, this would be a bug. But just in case we do have a bug,
+        // we ignore this error so that the simulation can continue.
+        if let Some(signal) = self.events.signals.get_mut(index) {
+            signal.events.push(Event {
+                time,
+                value: RawValue(value),
+            });
+            self.event_count += 1;
+        }
     }
 
     /// Extracts and returns any accumulated events.
@@ -215,14 +219,15 @@ static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 #[unsafe(no_mangle)]
 extern "C" fn adapter_init_websocket(wait_for_gui: bool) -> *mut AdapterState {
     let rt = RUNTIME.get_or_init(|| {
-        // TODO should we use a single-threaded runtime for the WebSocket server?
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
+            .worker_threads(2)
             .build()
             .expect("failed to create tokio runtime")
     });
     let _rt_guard = rt.enter();
 
+    // The looger uses the tokio runtime
     crate::logging::init_logging();
 
     let (command_tx, command_rx) = sync_unbounded::<SimulationCommand>();
@@ -230,8 +235,6 @@ extern "C" fn adapter_init_websocket(wait_for_gui: bool) -> *mut AdapterState {
     let (update_tx, update_rx) = async_bounded::<SimulationUpdate>(30);
 
     rt.spawn(run_websocket_server(command_tx, update_rx));
-
-    info!("WebSocket server thread started");
 
     Box::into_raw(Box::new(AdapterState {
         command_rx,
