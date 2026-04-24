@@ -8,7 +8,7 @@ use std::sync::Once;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use crossbeam_channel::Sender;
+use crossbeam_channel::Sender as SyncSender;
 use futures_util::SinkExt;
 use futures_util::StreamExt;
 use futures_util::stream::SplitStream;
@@ -22,6 +22,7 @@ use hdl_simulation_protocol::to_simulator::Command;
 use smallvec::SmallVec;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
+use tokio::sync::mpsc::Receiver as AsyncReceiver;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite;
 use tokio_tungstenite::tungstenite::Message;
@@ -98,7 +99,7 @@ impl ClientSession {
     fn handle_command(
         &mut self,
         command: Command,
-        command_tx: &Sender<SimulationCommand>,
+        command_tx: &SyncSender<SimulationCommand>,
     ) -> Option<WsSimulationUpdate> {
         match command {
             Command::StartSimulation => {
@@ -169,8 +170,8 @@ async fn send_to_client(
 /// Runs the async WebSocket server with a single client handled in one event loop.
 #[instrument(skip_all)]
 pub(crate) async fn run_websocket_server(
-    command_tx: Sender<SimulationCommand>,
-    mut update_rx: tokio::sync::mpsc::UnboundedReceiver<SimulationUpdate>,
+    command_tx: SyncSender<SimulationCommand>,
+    mut update_rx: AsyncReceiver<SimulationUpdate>,
 ) {
     let bind_addr = "127.0.0.1:0";
     let listener = match TcpListener::bind(bind_addr).await {

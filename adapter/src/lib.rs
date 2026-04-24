@@ -1,5 +1,4 @@
-use std::sync::mpsc::SyncSender;
-
+use crossbeam_channel::Sender as SyncSender;
 use hdl_simulation_protocol::SimulationStatus;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchy;
 use hdl_simulation_protocol::design_hierarchy::SignalElementId;

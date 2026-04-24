@@ -1,10 +1,11 @@
 use std::mem::replace;
 use std::num::NonZeroU32;
 use std::sync::OnceLock;
-use std::sync::mpsc::sync_channel;
 use std::time::Duration;
 
-use crossbeam_channel::Receiver;
+use crossbeam_channel::Receiver as SyncReceiver;
+use crossbeam_channel::bounded as sync_bounded;
+use crossbeam_channel::unbounded as sync_unbounded;
 use hdl_simulation_protocol::SimulationStatus;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchy;
 use hdl_simulation_protocol::design_hierarchy::SignalElementId;
@@ -16,6 +17,8 @@ use hdl_simulation_protocol::time::Delta;
 use hdl_simulation_protocol::time::LogicalTime;
 use hdl_simulation_protocol::time::PhysicalTime;
 use rustc_hash::FxHashMap;
+use tokio::sync::mpsc::Sender as AsyncSender;
+use tokio::sync::mpsc::channel as async_bounded;
 use tracing::debug;
 use tracing::error;
 use tracing::info;
@@ -48,12 +51,12 @@ struct SubscriptionIndex(u32);
 /// that are called from the GHDL simulation thread.
 pub struct AdapterState {
     /// Receiver for simulation commands (from the WebSocket thread).
-    command_rx: Receiver<SimulationCommand>,
+    command_rx: SyncReceiver<SimulationCommand>,
     /// Sender for simulation updates (to the WebSocket thread).
     ///
-    /// `UnboundedSender::send()` is synchronous, so it can be called from the
-    /// non-async FFI context.
-    update_tx: tokio::sync::mpsc::UnboundedSender<SimulationUpdate>,
+    /// This is a bounded channel to put backpressure on the simulation thread when the
+    /// WebSocket thread is getting behind in transmitting updates.
+    update_tx: AsyncSender<SimulationUpdate>,
 
     signals: Vec<Signal>,
     subscriptions: SubscriptionTracker,
@@ -69,7 +72,7 @@ impl AdapterState {
         // Transmit an update if there are new events or if the time range has changed.
         if let Some(events_update) = self.subscriptions.extract_events() {
             self.update_tx
-                .send(SimulationUpdate::Events(events_update))
+                .blocking_send(SimulationUpdate::Events(events_update))
                 .expect("Failed to send simulation update"); // TODO handle error
         }
     }
@@ -92,7 +95,10 @@ impl AdapterState {
         assert!(self.signals.is_empty(), "design hierarchy already set");
 
         self.signals = signals;
-        if let Err(e) = self.update_tx.send(SimulationUpdate::Design(hierarchy)) {
+        if let Err(e) = self
+            .update_tx
+            .blocking_send(SimulationUpdate::Design(hierarchy))
+        {
             error!("failed to broadcast design hierarchy: {e}");
         }
     }
@@ -219,8 +225,9 @@ extern "C" fn adapter_init_websocket(wait_for_gui: bool) -> *mut AdapterState {
 
     crate::logging::init_logging();
 
-    let (command_tx, command_rx) = crossbeam_channel::unbounded::<SimulationCommand>();
-    let (update_tx, update_rx) = tokio::sync::mpsc::unbounded_channel::<SimulationUpdate>();
+    let (command_tx, command_rx) = sync_unbounded::<SimulationCommand>();
+    // At a 10 Hz update rate, this buffer size allows for ~3 seconds of buffering.
+    let (update_tx, update_rx) = async_bounded::<SimulationUpdate>(30);
 
     rt.spawn(run_websocket_server(command_tx, update_rx));
 
@@ -339,7 +346,7 @@ extern "C" fn adapter_notify_simulation_status(state: &mut AdapterState, status:
     let (ack_tx, ack_rx) = if status == SimulationStatus::Stopped {
         state.transmit_events();
         // Tell the WebSocket thread to acknowledge the transmission of the stop notification.
-        let (tx, rx) = sync_channel(0);
+        let (tx, rx) = sync_bounded(0);
         (Some(tx), Some(rx))
     } else {
         (None, None)
