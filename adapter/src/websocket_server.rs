@@ -111,11 +111,11 @@ impl ClientSession {
                 Some(WsSimulationUpdate::SimulationStopped)
             },
             Command::PauseSimulation => {
-                warn!("PauseSimulation is not implemented yet");
+                let _ = command_tx.send(SimulationCommand::Pause);
                 Some(WsSimulationUpdate::SimulationPaused)
             },
             Command::ResumeSimulation => {
-                warn!("ResumeSimulation is not implemented yet");
+                let _ = command_tx.send(SimulationCommand::Resume);
                 Some(WsSimulationUpdate::SimulationResumed)
             },
             Command::TrackSignals(request) => {

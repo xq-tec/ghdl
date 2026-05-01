@@ -15,6 +15,8 @@ mod websocket_server;
 #[derive(Debug)]
 enum SimulationCommand {
     Start,
+    Pause,
+    Resume,
     Stop,
 
     Subscribe(SmallVec<[SignalElementId; 1]>),

@@ -277,11 +277,19 @@ extern "C" fn adapter_process_commands(state: &mut AdapterState, block: bool) {
 fn process_command(state: &mut AdapterState, command: SimulationCommand) {
     match command {
         SimulationCommand::Start => {
-            info!("received Start command");
+            debug!("received Start command");
+            state.requested_status = SimulationStatus::Running;
+        },
+        SimulationCommand::Pause => {
+            debug!("received Pause command");
+            state.requested_status = SimulationStatus::Paused;
+        },
+        SimulationCommand::Resume => {
+            debug!("received Resume command");
             state.requested_status = SimulationStatus::Running;
         },
         SimulationCommand::Stop => {
-            info!("received Stop command");
+            debug!("received Stop command");
             state.requested_status = SimulationStatus::Stopped;
         },
         SimulationCommand::Subscribe(signal_ids) => {
