@@ -356,7 +356,7 @@ extern "C" fn adapter_notify_simulation_status(state: &mut AdapterState, status:
     };
     let _ignore = state
         .update_tx
-        .send(SimulationUpdate::StatusChanged(status, ack_tx));
+        .blocking_send(SimulationUpdate::StatusChanged(status, ack_tx));
 
     if let Some(rx) = ack_rx {
         // If the simulation has stopped, the simulator process will exit. We until the WebSocket
