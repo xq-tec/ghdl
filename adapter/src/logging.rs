@@ -2,14 +2,15 @@ use std::io;
 
 use opentelemetry::KeyValue;
 use opentelemetry::global;
-use opentelemetry::trace::TracerProvider;
+use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::trace::SdkTracerProvider;
+use tracing_core::LevelFilter;
 use tracing_opentelemetry::OpenTelemetryLayer;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::util::SubscriberInitExt as _;
 
 fn resource() -> Resource {
     Resource::builder()
@@ -59,13 +60,17 @@ pub(crate) fn init_logging() {
     let otel_trace_layer = OpenTelemetryLayer::new(tracer);
     let otel_log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
 
+    let log_target = tracing_subscriber::EnvFilter::builder()
+        .with_default_directive(LevelFilter::WARN.into())
+        .with_env_var("GHDL_LOG_LEVEL")
+        .from_env_lossy();
     tracing_subscriber::registry()
+        .with(log_target)
         .with(
             tracing_subscriber::fmt::layer()
                 .with_target(true)
                 .with_writer(io::stderr),
         )
-        .with(tracing_subscriber::EnvFilter::new("info"))
         .with(otel_trace_layer)
         .with(otel_log_layer)
         .init();

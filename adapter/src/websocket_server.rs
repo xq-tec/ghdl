@@ -168,7 +168,7 @@ async fn send_to_client(
 }
 
 /// Runs the async WebSocket server with a single client handled in one event loop.
-#[instrument(skip_all)]
+#[instrument(name = "websocket_server", skip_all)]
 pub(crate) async fn run_websocket_server(
     command_tx: SyncSender<SimulationCommand>,
     mut update_rx: AsyncReceiver<SimulationUpdate>,
@@ -266,8 +266,8 @@ pub(crate) async fn run_websocket_server(
                     None => pending::<Option<Result<Message, tungstenite::Error>>>().await,
                 }
             } => {
-                let connection_span = info_span!("client");
-                let _enter = connection_span.enter();
+                let client_recv_span = info_span!("client_recv");
+                let _enter_span = client_recv_span.enter();
 
                 let Some(result) = ws_item else {
                     info!("WebSocket stream ended");
