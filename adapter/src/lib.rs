@@ -1,4 +1,7 @@
+use std::sync::LazyLock;
+
 use crossbeam_channel::Sender as SyncSender;
+use hdl_simulation_protocol::SimulationId;
 use hdl_simulation_protocol::SimulationStatus;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchy;
 use hdl_simulation_protocol::design_hierarchy::SignalElementId;
@@ -10,6 +13,9 @@ mod json_buffer;
 mod logging;
 mod sim_interface;
 mod websocket_server;
+
+/// The randomly generated ID for this simulation instance.
+static SIMULATION_ID: LazyLock<SimulationId> = LazyLock::new(SimulationId::new_random);
 
 /// Commands that can be sent from the WebSocket thread to the main simulation thread
 #[derive(Debug)]

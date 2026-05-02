@@ -33,6 +33,7 @@ use tracing::info_span;
 use tracing::instrument;
 use tracing::warn;
 
+use crate::SIMULATION_ID;
 use crate::SimulationCommand;
 use crate::SimulationUpdate;
 
@@ -191,8 +192,7 @@ pub(crate) async fn run_websocket_server(
         },
     };
 
-    let simulation_id = SimulationId::new_random();
-    if let Err(e) = create_server_marker_and_register_cleanup(addr.port(), simulation_id) {
+    if let Err(e) = create_server_marker_and_register_cleanup(addr.port(), *SIMULATION_ID) {
         error!(%addr, "failed to create server marker file: {e}");
         return;
     }
@@ -311,8 +311,7 @@ pub(crate) async fn run_websocket_server(
             // Handle simulation updates from the simulator thread
             Some(update) = update_rx.recv() => {
                 match update {
-                    SimulationUpdate::Design(mut hierarchy) => {
-                        hierarchy.simulation_id = simulation_id;
+                    SimulationUpdate::Design(hierarchy) => {
                         current_hierarchy = Some(hierarchy.clone());
 
                         // Clear subscriptions since signal IDs may have changed

@@ -13,6 +13,8 @@ use serde::Deserialize;
 use tracing::info;
 use tracing::instrument;
 
+use crate::SIMULATION_ID;
+
 #[derive(Debug, Deserialize)]
 pub struct Signal {
     decl: Option<ast::GenericNodeId>,
@@ -233,7 +235,7 @@ extern "C" fn adapter_register_design(
 
     let name = unsafe { get_string_opt(name_str, name_len) };
     let hierarchy = hierarchy::DesignHierarchy {
-        simulation_id: SimulationId::ZERO,
+        simulation_id: *SIMULATION_ID,
         name,
         root_modules,
     };
