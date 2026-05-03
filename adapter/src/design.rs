@@ -2,6 +2,8 @@
 
 use std::fmt;
 use std::num::NonZeroU32;
+use std::time::Duration;
+use std::time::UNIX_EPOCH;
 
 use compact_str::CompactString;
 use compact_str::format_compact;
@@ -234,9 +236,12 @@ extern "C" fn adapter_register_design(
     let root_modules = root_module.into_iter().collect();
 
     let name = unsafe { get_string_opt(name_str, name_len) };
+    // TODO take time at program start, instead of after elaboration
+    let start_time = UNIX_EPOCH.elapsed().unwrap_or(Duration::ZERO).as_secs_f64();
     let hierarchy = hierarchy::DesignHierarchy {
         simulation_id: *SIMULATION_ID,
         name,
+        start_time,
         root_modules,
     };
     state.set_design_hierarchy(hierarchy, signals);
