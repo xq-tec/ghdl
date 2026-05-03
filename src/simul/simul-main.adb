@@ -122,8 +122,11 @@ package body Simul.Main is
 
          Sim_Loop: loop
             Command_Loop: loop
+               -- Fetch commands from the WebSocket thread;
+               -- if the simulation is paused, do a blocking wait until a command is received.
                Process_Commands (Block => Requested_Simulation_Status = Paused);
-
+               -- `Requested_Simulation_Status` must be called again here, because the status
+               -- may have changed since the last call.
                case Requested_Simulation_Status is
                   when Paused =>
                      Notify_Simulation_Status (Paused);

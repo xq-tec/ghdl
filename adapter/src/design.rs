@@ -12,6 +12,7 @@ use hdl_simulation_protocol::SimulationId;
 use hdl_simulation_protocol::design_hierarchy as hierarchy;
 use hdl_simulation_protocol::design_hierarchy::SignalInstanceId;
 use serde::Deserialize;
+use tracing::debug;
 use tracing::info;
 use tracing::instrument;
 
@@ -245,7 +246,7 @@ extern "C" fn adapter_register_design(
         root_modules,
     };
     state.set_design_hierarchy(hierarchy, signals);
-    info!("design hierarchy built successfully");
+    debug!("design hierarchy built successfully");
 }
 
 unsafe fn get_string_opt(str: *const u8, len: u64) -> Option<CompactString> {
