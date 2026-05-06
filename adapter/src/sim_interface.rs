@@ -23,7 +23,6 @@ use tracing::debug;
 use tracing::error;
 use tracing::info;
 use tracing::instrument;
-use tracing::trace;
 use tracing::warn;
 
 use crate::SimulationCommand;
@@ -62,7 +61,7 @@ pub struct AdapterState {
     subscriptions: SubscriptionTracker,
     time_for_events: LogicalTime,
 
-    current_status: SimulationStatus,
+    current_status: Option<SimulationStatus>,
     requested_status: SimulationStatus,
 }
 
@@ -228,7 +227,7 @@ extern "C" fn adapter_init_websocket(wait_for_gui: bool) -> *mut AdapterState {
     let _rt_guard = rt.enter();
 
     // The looger uses the tokio runtime
-    crate::logging::init_logging();
+    crate::logging::init_logging(wait_for_gui);
 
     let (command_tx, command_rx) = sync_unbounded::<SimulationCommand>();
     // At a 10 Hz update rate, this buffer size allows for ~3 seconds of buffering.
@@ -242,7 +241,7 @@ extern "C" fn adapter_init_websocket(wait_for_gui: bool) -> *mut AdapterState {
         signals: Vec::new(),
         subscriptions: SubscriptionTracker::new(),
         time_for_events: LogicalTime::ZERO,
-        current_status: SimulationStatus::Paused,
+        current_status: None,
         requested_status: if wait_for_gui {
             SimulationStatus::Paused
         } else {
@@ -255,7 +254,7 @@ extern "C" fn adapter_init_websocket(wait_for_gui: bool) -> *mut AdapterState {
 ///
 /// When `block` is non-zero, blocks until at least one command is received.
 /// When `block` is zero, returns immediately if no commands are pending.
-#[instrument(skip(state), level = "debug")]
+#[instrument(level = "debug", skip(state))]
 #[unsafe(no_mangle)]
 extern "C" fn adapter_process_commands(state: &mut AdapterState, block: bool) {
     if block {
@@ -322,7 +321,6 @@ extern "C" fn adapter_set_next_event_time(
         physical: PhysicalTime(physical_time as u64),
         delta: Delta(delta_cycle as u64),
     };
-    trace!(%state.time_for_events, "set next event time");
 }
 
 /// Notifies the adapter that the current simulation cycle (one iteration of the simulation loop)
@@ -333,7 +331,6 @@ extern "C" fn adapter_update_simulation_time(state: &mut AdapterState) {
     if state.subscriptions.event_count >= EVENTS_PER_UPDATE_THRESHOLD {
         state.transmit_events();
     }
-    trace!(%state.time_for_events, "updated simulation time");
 }
 
 /// Sends a status update to the WebSocket client if the status has changed.
@@ -341,18 +338,18 @@ extern "C" fn adapter_update_simulation_time(state: &mut AdapterState) {
 /// When the status is [`SimulationStatus::Stopped`], blocks until the
 /// notification has been flushed to the client or skipped (no client), with a
 /// two-second timeout.
-#[instrument(skip(state), level = "debug")]
+#[instrument(level = "debug", skip(state))]
 #[unsafe(no_mangle)]
 extern "C" fn adapter_notify_simulation_status(state: &mut AdapterState, status: SimulationStatus) {
-    if state.current_status == status {
+    if state.current_status == Some(status) {
         return;
     }
-    info!(
-        previous = ?state.current_status,
-        new = ?status,
-        "simulation status changed",
-    );
-    state.current_status = status;
+    state.current_status = Some(status);
+    match status {
+        SimulationStatus::Paused => info!("simulation paused"),
+        SimulationStatus::Running => info!("simulation running"),
+        SimulationStatus::Stopped => info!("simulation stopped"),
+    };
 
     let (ack_tx, ack_rx) = if status == SimulationStatus::Stopped {
         state.transmit_events();
@@ -371,17 +368,16 @@ extern "C" fn adapter_notify_simulation_status(state: &mut AdapterState, status:
         // thread acknowledges that it sent the stop notification, otherwise it would get lost.
         match rx.recv_timeout(Duration::from_secs(2)) {
             Ok(()) => {
-                debug!("stopped notification acknowledged by WebSocket thread");
+                debug!("notification acknowledged by WebSocket thread");
             },
             Err(_) => {
-                warn!("timed out waiting for stopped notification acknowledgment");
+                warn!("timed out waiting for notification acknowledgment");
             },
         }
     }
 }
 
 /// Records a signal value change at the given simulation time.
-#[instrument(level = "trace", skip(state))]
 #[unsafe(no_mangle)]
 extern "C" fn adapter_notify_signal_event(
     state: &mut AdapterState,

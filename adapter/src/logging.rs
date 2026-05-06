@@ -16,9 +16,14 @@ use tracing_subscriber::util::SubscriberInitExt as _;
 /// The `GHDL_LOG_LEVEL` environment variable is used to set the logging level and filters.
 /// The default log destination is *stderr*;
 /// this can be overridden by setting the `GHDL_LOG_OTLP` environment variable to select OpenTelemetry.
-pub(crate) fn init_logging() {
+pub(crate) fn init_logging(is_interactive: bool) {
+    let default_level = if is_interactive {
+        LevelFilter::INFO
+    } else {
+        LevelFilter::WARN
+    };
     let mut log_target = tracing_subscriber::EnvFilter::builder()
-        .with_default_directive(LevelFilter::WARN.into())
+        .with_default_directive(default_level.into())
         .with_env_var("GHDL_LOG_LEVEL")
         .from_env_lossy();
 
@@ -33,12 +38,12 @@ pub(crate) fn init_logging() {
         opentelemetry::global::set_tracer_provider(tracer_provider.clone());
 
         let tracer = tracer_provider.tracer("ghdl-adapter");
-        let otel_trace_layer = OpenTelemetryLayer::new(tracer);
-        let otel_log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
+        let otlp_trace_layer = OpenTelemetryLayer::new(tracer);
+        let otlp_log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
         tracing_subscriber::registry()
             .with(log_target)
-            .with(otel_trace_layer)
-            .with(otel_log_layer)
+            .with(otlp_trace_layer)
+            .with(otlp_log_layer)
             .init();
     } else {
         let stderr_layer = tracing_subscriber::fmt::layer()

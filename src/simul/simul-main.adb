@@ -120,6 +120,7 @@ package body Simul.Main is
          --  Register the design hierarchy with the adapter
          Grt.Export.Register_Design;
 
+         Notify_Simulation_Status (Requested_Simulation_Status);
          Sim_Loop: loop
             Command_Loop: loop
                -- Fetch commands from the WebSocket thread;

@@ -220,7 +220,7 @@ where
 }
 
 /// Registers the design hierarchy with the WebSocket server.
-#[instrument(skip(state))]
+#[instrument(level = "debug", skip(state))]
 #[unsafe(no_mangle)]
 extern "C" fn adapter_register_design(
     state: &mut crate::sim_interface::AdapterState,
@@ -230,7 +230,6 @@ extern "C" fn adapter_register_design(
     name_str: *const u8,
     name_len: u64,
 ) {
-    info!("Registering design");
     let signals = collect_signals(signal_count);
     let instances = collect_instances(instance_count);
     let root_module = build_module(root_instance, &instances, &signals);
@@ -246,7 +245,6 @@ extern "C" fn adapter_register_design(
         root_modules,
     };
     state.set_design_hierarchy(hierarchy, signals);
-    debug!("design hierarchy built successfully");
 }
 
 unsafe fn get_string_opt(str: *const u8, len: u64) -> Option<CompactString> {

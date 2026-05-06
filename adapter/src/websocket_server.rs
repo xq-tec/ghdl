@@ -28,7 +28,6 @@ use tokio_tungstenite::tungstenite;
 use tokio_tungstenite::tungstenite::Message;
 use tracing::debug;
 use tracing::error;
-use tracing::info;
 use tracing::info_span;
 use tracing::instrument;
 use tracing::warn;
@@ -79,7 +78,6 @@ struct ClientSession {
 
 impl ClientSession {
     /// Encodes and sends a protocol message over the WebSocket.
-    #[instrument(skip(self, message), level = "debug")]
     async fn send(
         &mut self,
         message: &WsSimulationUpdate,
@@ -91,7 +89,7 @@ impl ClientSession {
 
     /// Processes a client command, forwarding simulation commands to the simulator
     /// thread and returning an optional response notification.
-    #[instrument(skip(self, command_tx), level = "debug")]
+    #[instrument(level = "debug", skip(self, command_tx))]
     fn handle_command(
         &mut self,
         command: Command,
@@ -143,7 +141,6 @@ impl ClientSession {
 }
 
 /// Sends a notification to the connected client, clearing the slot on failure.
-#[instrument(skip_all, level = "debug")]
 async fn send_to_client(session: &mut Option<ClientSession>, update: &WsSimulationUpdate) {
     let Some(client) = session.as_mut() else {
         return;
@@ -155,7 +152,7 @@ async fn send_to_client(session: &mut Option<ClientSession>, update: &WsSimulati
 }
 
 /// Runs the async WebSocket server with a single client handled in one event loop.
-#[instrument(name = "websocket_server", skip_all)]
+#[instrument(level = "debug", skip_all)]
 pub(crate) async fn run_websocket_server(
     command_tx: SyncSender<SimulationCommand>,
     mut update_rx: AsyncReceiver<SimulationUpdate>,
@@ -182,13 +179,13 @@ pub(crate) async fn run_websocket_server(
         return;
     }
 
-    info!(%addr, "WebSocket server listening");
+    debug!(%addr, "WebSocket server listening");
 
     let mut client_session: Option<ClientSession> = None;
     let mut design_hierarchy: Option<DesignHierarchy> = None;
     let mut update_interval = tokio::time::interval(Duration::from_millis(100));
     update_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
-    let mut is_running = false;
+    let mut simulation_status = None;
 
     loop {
         /// Stores the result of the select!, so that we can put the actual logic outside of the
@@ -202,7 +199,9 @@ pub(crate) async fn run_websocket_server(
 
         let selected = tokio::select! {
             // Periodically request a signal-value flush from the simulator
-            _ = update_interval.tick(), if client_session.is_some() && is_running => {
+            _ = update_interval.tick(),
+                if client_session.is_some() && simulation_status == Some(SimulationStatus::Running) =>
+            {
                 SelectBranch::UpdateTick
             },
 
@@ -245,7 +244,7 @@ pub(crate) async fn run_websocket_server(
 
                 {
                     let _enter = connection_span.enter();
-                    info!("WebSocket connection established");
+                    debug!("WebSocket connection established");
 
                     // Send design hierarchy to the newly connected client
                     if let Some(hierarchy) = &design_hierarchy {
@@ -270,7 +269,7 @@ pub(crate) async fn run_websocket_server(
                 let text = match message {
                     Message::Text(text) => text,
                     Message::Close(_) => {
-                        info!("connection closed by client");
+                        debug!("connection closed by client");
                         client_session = None;
                         continue;
                     },
@@ -302,7 +301,7 @@ pub(crate) async fn run_websocket_server(
                 client_session = None;
             },
             SelectBranch::ClientRecv(None) => {
-                info!("WebSocket stream ended");
+                debug!("WebSocket stream ended");
                 client_session = None;
             },
 
@@ -319,13 +318,18 @@ pub(crate) async fn run_websocket_server(
                 send_to_client(&mut client_session, &WsSimulationUpdate::Events(values)).await;
             },
             SelectBranch::SimulationUpdate(SimulationUpdate::StatusChanged(status, ack_tx)) => {
-                debug!(?status, "simulation status changed");
-                is_running = status == SimulationStatus::Running;
                 let update = match status {
                     SimulationStatus::Paused => WsSimulationUpdate::SimulationPaused,
-                    SimulationStatus::Running => WsSimulationUpdate::SimulationResumed,
+                    SimulationStatus::Running => {
+                        if simulation_status.is_none() {
+                            WsSimulationUpdate::SimulationStarted
+                        } else {
+                            WsSimulationUpdate::SimulationResumed
+                        }
+                    },
                     SimulationStatus::Stopped => WsSimulationUpdate::SimulationStopped,
                 };
+                simulation_status = Some(status);
                 send_to_client(&mut client_session, &update).await;
                 if let Some(tx) = ack_tx {
                     let _ = tx.send(());
