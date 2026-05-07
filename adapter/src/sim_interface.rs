@@ -259,7 +259,7 @@ static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 /// Returns a pointer to the adapter state that must be passed to other
 /// `adapter_*` functions.
 #[unsafe(no_mangle)]
-extern "C" fn adapter_init_websocket(wait_for_gui: bool) -> *mut AdapterState {
+extern "C" fn adapter_init_websocket(is_interactive: bool) -> *mut AdapterState {
     let rt = RUNTIME.get_or_init(|| {
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -270,7 +270,7 @@ extern "C" fn adapter_init_websocket(wait_for_gui: bool) -> *mut AdapterState {
     let _rt_guard = rt.enter();
 
     // The looger uses the tokio runtime
-    crate::logging::init_logging(wait_for_gui);
+    crate::logging::init_logging(is_interactive);
 
     let (command_tx, command_rx) = sync_unbounded::<SimulationCommand>();
     // At a 10 Hz update rate, this buffer size allows for ~3 seconds of buffering.
@@ -285,7 +285,7 @@ extern "C" fn adapter_init_websocket(wait_for_gui: bool) -> *mut AdapterState {
         subscriptions: SubscriptionTracker::new(),
         time_for_events: LogicalTime::ZERO,
         current_status: None,
-        requested_status: if wait_for_gui {
+        requested_status: if is_interactive {
             SimulationStatus::Paused
         } else {
             SimulationStatus::Running

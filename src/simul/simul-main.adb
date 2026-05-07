@@ -69,7 +69,7 @@ package body Simul.Main is
       Ok : C_Boolean;
       Status : Integer;
    begin
-      Init_Websocket (Flag_Gui);
+      Init_Websocket (Flag_Wait);
 
       Break_Time := Std_Time'Last;
       Break_Step := False;

@@ -499,8 +499,8 @@ package body Ghdlrun is
          Run_Mode := Run_Elab_Jit;
       elsif Option = "--interp" then
          Run_Mode := Run_Interp;
-      elsif Option = "--gui" then
-         Simul.Main.Flag_Gui := True;
+      elsif Option = "--wait" then
+         Simul.Main.Flag_Wait := True;
       elsif Option'Last > 7 and then Option (1 .. 7) = "--name="
       then
          Grt.Options.Sim_Name := new String'(Option (8 .. Option'Last));
@@ -530,7 +530,7 @@ package body Ghdlrun is
    begin
       Ortho_Jit.Disp_Help;
       Simple_IO.Put_Line (" --debug        Run with debugger");
-      Simple_IO.Put_Line (" --gui          Wait for GUI before starting simulation");
+      Simple_IO.Put_Line (" --wait         Wait for command before starting simulation");
    end Disp_Help;
 
    procedure Register_Commands is

@@ -30,7 +30,7 @@ package Simul.Main is
 
    Flag_Interractive : Boolean := False;
    Flag_Debug_Elab : Boolean := False;
-   Flag_Gui : Boolean := False;
+   Flag_Wait : Boolean := False;
 
    --  Start and run simulation.
    procedure Simulation;

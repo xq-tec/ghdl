@@ -107,11 +107,11 @@ package body Adapter is
 
    Adapter_State : System.Address := System.Null_Address;
 
-   procedure Init_Websocket (Wait_For_Gui : Boolean) is
-      function Adapter_Init_Websocket (Wait : RustBool) return System.Address;
+   procedure Init_Websocket (Is_Interactive : Boolean) is
+      function Adapter_Init_Websocket (Is_Interactive : RustBool) return System.Address;
       pragma Import (C, Adapter_Init_Websocket, "adapter_init_websocket");
 
-      Wait : constant RustBool := (if Wait_For_Gui then True else False);
+      Wait : constant RustBool := (if Is_Interactive then True else False);
    begin
       Adapter_State := Adapter_Init_Websocket (Wait);
    end Init_Websocket;
