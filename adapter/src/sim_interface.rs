@@ -23,6 +23,7 @@ use tracing::debug;
 use tracing::error;
 use tracing::info;
 use tracing::instrument;
+use tracing::trace;
 use tracing::warn;
 
 use crate::SimulationCommand;
@@ -43,6 +44,10 @@ unsafe extern "C" {
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 struct SubscriptionIndex(u32);
+
+impl SubscriptionIndex {
+    const INVALID: Self = Self(u32::MAX);
+}
 
 /// Simulator-facing adapter state.
 ///
@@ -80,6 +85,12 @@ impl AdapterState {
     fn subscribe(&mut self, element_ids: &[SignalElementId]) {
         self.transmit_events();
         self.subscriptions.subscribe(element_ids);
+    }
+
+    /// Unsubscribes from the given signals, flushing any pending events first.
+    fn unsubscribe(&mut self, element_ids: &[SignalElementId]) {
+        self.transmit_events();
+        self.subscriptions.unsubscribe(element_ids);
     }
 
     /// Sets the design hierarchy to be sent to WebSocket clients.
@@ -133,8 +144,8 @@ impl SubscriptionTracker {
 
         let mut next_index = self.subscriptions.len();
         for &element_id in element_ids {
-            debug!(?element_id, "subscribing to signal");
             if let Entry::Vacant(entry) = self.element_indices.entry(element_id) {
+                trace!(?element_id, "subscribing to signal");
                 let subscription_index = SubscriptionIndex(next_index as u32);
                 entry.insert(subscription_index);
                 self.subscriptions.push(element_id);
@@ -153,6 +164,38 @@ impl SubscriptionTracker {
                 self.event_count += 1;
 
                 next_index += 1;
+            }
+        }
+    }
+
+    /// Unsubscribes from the given signal elements.
+    fn unsubscribe(&mut self, element_ids: &[SignalElementId]) {
+        for element_id in element_ids {
+            if let Some(SubscriptionIndex(index)) = self.element_indices.remove(element_id) {
+                trace!(?element_id, "unsubscribing from signal");
+
+                let index = index as usize;
+                // Mark signal as unsubscribed in GHDL.
+                let _ignore = ghdl_set_signal_subscription(
+                    element_id.signal_id.0,
+                    element_id.element_index,
+                    SubscriptionIndex::INVALID,
+                );
+
+                self.subscriptions.swap_remove(index);
+                self.events.signals.swap_remove(index);
+
+                // If we removed from the middle, the former tail element moved into this slot.
+                // Update both our index map and subscription index in GHDL accordingly.
+                if let Some(&moved_element_id) = self.subscriptions.get(index) {
+                    let moved_index = SubscriptionIndex(index as u32);
+                    self.element_indices.insert(moved_element_id, moved_index);
+                    let _ignore = ghdl_set_signal_subscription(
+                        moved_element_id.signal_id.0,
+                        moved_element_id.element_index,
+                        moved_index,
+                    );
+                }
             }
         }
     }
@@ -294,9 +337,8 @@ fn process_command(state: &mut AdapterState, command: SimulationCommand) {
         SimulationCommand::Subscribe(signal_ids) => {
             state.subscribe(&signal_ids);
         },
-        SimulationCommand::Unsubscribe(_signal_ids) => {
-            state.transmit_events();
-            // TODO remove subscription from GHDL data structures
+        SimulationCommand::Unsubscribe(signal_ids) => {
+            state.unsubscribe(&signal_ids);
         },
         SimulationCommand::SendUpdate => {
             state.transmit_events();

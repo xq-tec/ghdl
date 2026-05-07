@@ -40,6 +40,4 @@ Any panic triggers an abort of the process, to avoid UB from panics propagating 
 
 ## 5. Limitations and TODOs
 
-- **Unsubscribe**: Not yet implemented in GHDL data structures
-- **Pause/Resume**: Acknowledged but not fully implemented
 - **Some object kinds**: Not all GHDL object types are handled yet

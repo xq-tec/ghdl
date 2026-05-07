@@ -360,7 +360,6 @@ dependencies = [
  "rustc-hash",
  "serde",
  "serde_json",
- "smallvec",
  "tokio",
  "tokio-tungstenite",
  "tracing",

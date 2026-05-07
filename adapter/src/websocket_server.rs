@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::fs::File;
 use std::future::pending;
 use std::io;
@@ -14,11 +13,9 @@ use futures_util::StreamExt;
 use hdl_simulation_protocol::SimulationId;
 use hdl_simulation_protocol::SimulationStatus;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchy;
-use hdl_simulation_protocol::design_hierarchy::SignalElementId;
 use hdl_simulation_protocol::from_simulator::SimulationUpdate as WsSimulationUpdate;
 use hdl_simulation_protocol::server_marker;
 use hdl_simulation_protocol::to_simulator::Command;
-use smallvec::SmallVec;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::Receiver as AsyncReceiver;
@@ -73,7 +70,6 @@ fn create_server_marker_and_register_cleanup(
 /// Send half and subscription state for the single allowed WebSocket client.
 struct ClientSession {
     stream: WebSocketStream<TcpStream>,
-    subscribed_signals: HashSet<SignalElementId>,
 }
 
 impl ClientSession {
@@ -85,58 +81,6 @@ impl ClientSession {
         let encoded = postcard::to_allocvec(message)?;
         self.stream.send(Message::Binary(encoded.into())).await?;
         Ok(())
-    }
-
-    /// Processes a client command, forwarding simulation commands to the simulator
-    /// thread and returning an optional response notification.
-    #[instrument(level = "debug", skip(self, command_tx))]
-    fn handle_command(
-        &mut self,
-        command: Command,
-        command_tx: &SyncSender<SimulationCommand>,
-    ) -> Option<WsSimulationUpdate> {
-        match command {
-            Command::StartSimulation => {
-                let _ = command_tx.send(SimulationCommand::Start);
-                Some(WsSimulationUpdate::SimulationStarted)
-            },
-            Command::StopSimulation => {
-                let _ = command_tx.send(SimulationCommand::Stop);
-                Some(WsSimulationUpdate::SimulationStopped)
-            },
-            Command::PauseSimulation => {
-                let _ = command_tx.send(SimulationCommand::Pause);
-                Some(WsSimulationUpdate::SimulationPaused)
-            },
-            Command::ResumeSimulation => {
-                let _ = command_tx.send(SimulationCommand::Resume);
-                Some(WsSimulationUpdate::SimulationResumed)
-            },
-            Command::TrackSignals(request) => {
-                let mut to_subscribe: SmallVec<[SignalElementId; 1]> = SmallVec::new();
-                for &element_id in &request.signal_element_ids {
-                    if request.subscribe && request.enabled {
-                        if self.subscribed_signals.insert(element_id) {
-                            to_subscribe.push(element_id);
-                        }
-                        debug!(?element_id, "subscribed to signal");
-                    } else {
-                        self.subscribed_signals.remove(&element_id);
-                        debug!(?element_id, "unsubscribed from signal");
-                    }
-                }
-                if !to_subscribe.is_empty() {
-                    command_tx
-                        .send(SimulationCommand::Subscribe(to_subscribe))
-                        .unwrap();
-                }
-                debug!(
-                    count = self.subscribed_signals.len(),
-                    "signal subscription count updated",
-                );
-                None
-            },
-        }
     }
 }
 
@@ -228,7 +172,7 @@ pub(crate) async fn run_websocket_server(
             },
 
             SelectBranch::AcceptConnection(Ok((stream, _))) => {
-                let ws_stream = match tokio_tungstenite::accept_async(stream).await {
+                let stream = match tokio_tungstenite::accept_async(stream).await {
                     Ok(ws) => ws,
                     Err(error) => {
                         error!(%error, "error during WebSocket handshake");
@@ -237,10 +181,7 @@ pub(crate) async fn run_websocket_server(
                 };
 
                 let connection_span = info_span!("client");
-                let mut session = ClientSession {
-                    stream: ws_stream,
-                    subscribed_signals: HashSet::new(),
-                };
+                let mut session = ClientSession { stream };
 
                 {
                     let _enter = connection_span.enter();
@@ -283,18 +224,17 @@ pub(crate) async fn run_websocket_server(
                         continue;
                     },
                 };
+                debug!(?command, "received command from client");
 
-                let Some(session) = client_session.as_mut() else {
-                    continue;
+                let tx = match command {
+                    Command::StartSimulation => SimulationCommand::Start,
+                    Command::StopSimulation => SimulationCommand::Stop,
+                    Command::PauseSimulation => SimulationCommand::Pause,
+                    Command::ResumeSimulation => SimulationCommand::Resume,
+                    Command::Subscribe(signals) => SimulationCommand::Subscribe(signals),
+                    Command::Unsubscribe(signals) => SimulationCommand::Unsubscribe(signals),
                 };
-                let response = session.handle_command(command, &command_tx);
-
-                if let Some(update) = response
-                    && let Err(error) = session.send(&update).await
-                {
-                    error!(%error, "failed to send response");
-                    client_session = None;
-                }
+                let _ = command_tx.send(tx);
             },
             SelectBranch::ClientRecv(Some(Err(error))) => {
                 error!(%error, "WebSocket error");
