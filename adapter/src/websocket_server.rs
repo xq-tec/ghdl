@@ -258,6 +258,7 @@ pub(crate) async fn run_websocket_server(
                 send_to_client(&mut client_session, &WsSimulationUpdate::Events(values)).await;
             },
             SelectBranch::SimulationUpdate(SimulationUpdate::StatusChanged(status, ack_tx)) => {
+                debug!(?status, "simulation status changed");
                 let update = match status {
                     SimulationStatus::Paused => WsSimulationUpdate::SimulationPaused,
                     SimulationStatus::Running => {

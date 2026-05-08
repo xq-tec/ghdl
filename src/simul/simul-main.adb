@@ -120,17 +120,15 @@ package body Simul.Main is
          --  Register the design hierarchy with the adapter
          Grt.Export.Register_Design;
 
-         Notify_Simulation_Status (Requested_Simulation_Status);
+         Notify_Simulation_Ready;
+
          Sim_Loop: loop
             Command_Loop: loop
-               -- Fetch commands from the WebSocket thread;
-               -- if the simulation is paused, do a blocking wait until a command is received.
-               Process_Commands (Block => Requested_Simulation_Status = Paused);
-               -- `Requested_Simulation_Status` must be called again here, because the status
-               -- may have changed since the last call.
-               case Requested_Simulation_Status is
+               -- Fetch commands from the WebSocket thread; if the simulation is paused,
+               -- this will do a blocking wait until a command is received.
+               case Process_Commands is
                   when Paused =>
-                     Notify_Simulation_Status (Paused);
+                     null;
                      -- Continue looping
                   when Running =>
                      exit Command_Loop;
@@ -138,7 +136,6 @@ package body Simul.Main is
                      exit Sim_Loop;
                end case;
             end loop Command_Loop;
-            Notify_Simulation_Status (Running);
 
             if Break_Time < Grt.Processes.Next_Time then
                Grt.Processes.Next_Time := Break_Time;
@@ -173,11 +170,11 @@ package body Simul.Main is
       end if;
 
       Grt.Main.Run_Finish (Status);
-      Notify_Simulation_Status (Stopped);
+      Notify_Simulation_Stopped;
    exception
 --      when Debugger_Quit =>
 --         null;
       when Simulation_Finished =>
-         Notify_Simulation_Status (Stopped);
+         Notify_Simulation_Stopped;
    end Simulation;
 end Simul.Main;

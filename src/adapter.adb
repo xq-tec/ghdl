@@ -116,23 +116,13 @@ package body Adapter is
       Adapter_State := Adapter_Init_Websocket (Wait);
    end Init_Websocket;
 
-   procedure Process_Commands (Block : Boolean)
+   function Process_Commands return Simulation_Status
    is
-      procedure Adapter_Process_Commands (Adapter_State : System.Address; Block : RustBool);
+      function Adapter_Process_Commands (Adapter_State : System.Address) return Simulation_Status;
       pragma Import (C, Adapter_Process_Commands, "adapter_process_commands");
-
-      Blocking : constant RustBool := (if Block then True else False);
    begin
-      Adapter_Process_Commands (Adapter_State, Blocking);
+      return Adapter_Process_Commands (Adapter_State);
    end Process_Commands;
-
-   function Requested_Simulation_Status return Simulation_Status is
-      function Adapter_Requested_Simulation_Status (Adapter_State : System.Address)
-         return Simulation_Status;
-      pragma Import (C, Adapter_Requested_Simulation_Status, "adapter_requested_simulation_status");
-   begin
-      return Adapter_Requested_Simulation_Status (Adapter_State);
-   end Requested_Simulation_Status;
 
    procedure Set_Next_Event_Time (Physical_Time : Std_Time; Delta_Cycle : Integer) is
       procedure Adapter_Set_Next_Event_Time (Adapter_State : System.Address;
@@ -152,13 +142,19 @@ package body Adapter is
       Adapter_Update_Simulation_Time (Adapter_State);
    end Update_Simulation_Time;
 
-   procedure Notify_Simulation_Status (Status : Simulation_Status) is
-      procedure Adapter_Notify_Simulation_Status (Adapter_State : System.Address;
-         Status : Simulation_Status);
-      pragma Import (C, Adapter_Notify_Simulation_Status, "adapter_notify_simulation_status");
+   procedure Notify_Simulation_Ready is
+      procedure Adapter_Notify_Simulation_Ready (Adapter_State : System.Address);
+      pragma Import (C, Adapter_Notify_Simulation_Ready, "adapter_notify_simulation_ready");
    begin
-      Adapter_Notify_Simulation_Status (Adapter_State, Status);
-   end Notify_Simulation_Status;
+      Adapter_Notify_Simulation_Ready (Adapter_State);
+   end Notify_Simulation_Ready;
+
+   procedure Notify_Simulation_Stopped is
+      procedure Adapter_Notify_Simulation_Stopped (Adapter_State : System.Address);
+      pragma Import (C, Adapter_Notify_Simulation_Stopped, "adapter_notify_simulation_stopped");
+   begin
+      Adapter_Notify_Simulation_Stopped (Adapter_State);
+   end Notify_Simulation_Stopped;
 
    function Get_Adapter_State return System.Address is
    begin

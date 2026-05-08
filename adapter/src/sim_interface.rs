@@ -23,7 +23,6 @@ use tracing::debug;
 use tracing::error;
 use tracing::info;
 use tracing::instrument;
-use tracing::trace;
 use tracing::warn;
 
 use crate::SimulationCommand;
@@ -66,8 +65,7 @@ pub struct AdapterState {
     subscriptions: SubscriptionTracker,
     time_for_events: LogicalTime,
 
-    current_status: Option<SimulationStatus>,
-    requested_status: SimulationStatus,
+    current_status: SimulationStatus,
 }
 
 impl AdapterState {
@@ -112,6 +110,74 @@ impl AdapterState {
             error!("failed to broadcast design hierarchy: {e}");
         }
     }
+
+    /// Processes a single simulation command.
+    fn process_command(&mut self, command: SimulationCommand) {
+        match command {
+            SimulationCommand::Start => {
+                debug!("received Start command");
+                self.set_simulation_status(SimulationStatus::Running);
+            },
+            SimulationCommand::Pause => {
+                debug!("received Pause command");
+                self.set_simulation_status(SimulationStatus::Paused);
+            },
+            SimulationCommand::Resume => {
+                debug!("received Resume command");
+                self.set_simulation_status(SimulationStatus::Running);
+            },
+            SimulationCommand::Stop => {
+                debug!("received Stop command");
+                self.set_simulation_status(SimulationStatus::Stopped);
+            },
+            SimulationCommand::Subscribe(signal_ids) => {
+                self.subscribe(&signal_ids);
+            },
+            SimulationCommand::Unsubscribe(signal_ids) => {
+                self.unsubscribe(&signal_ids);
+            },
+            SimulationCommand::SendUpdate => {
+                self.transmit_events();
+            },
+        }
+    }
+
+    fn set_simulation_status(&mut self, status: SimulationStatus) {
+        if self.current_status == status {
+            return;
+        }
+        self.current_status = status;
+        match status {
+            SimulationStatus::Paused => info!("simulation paused"),
+            SimulationStatus::Running => info!("simulation running"),
+            SimulationStatus::Stopped => info!("simulation stopped"),
+        };
+
+        let (ack_tx, ack_rx) = if status == SimulationStatus::Stopped {
+            self.transmit_events();
+            // Tell the WebSocket thread to acknowledge the transmission of the stop notification.
+            let (tx, rx) = sync_bounded(0);
+            (Some(tx), Some(rx))
+        } else {
+            (None, None)
+        };
+        let _ignore = self
+            .update_tx
+            .blocking_send(SimulationUpdate::StatusChanged(status, ack_tx));
+
+        if let Some(rx) = ack_rx {
+            // If the simulation has stopped, the simulator process will exit. We until the WebSocket
+            // thread acknowledges that it sent the stop notification, otherwise it would get lost.
+            match rx.recv_timeout(Duration::from_secs(2)) {
+                Ok(()) => {
+                    debug!("notification acknowledged by WebSocket thread");
+                },
+                Err(_) => {
+                    warn!("timed out waiting for notification acknowledgment");
+                },
+            }
+        }
+    }
 }
 
 struct SubscriptionTracker {
@@ -145,7 +211,7 @@ impl SubscriptionTracker {
         let mut next_index = self.subscriptions.len();
         for &element_id in element_ids {
             if let Entry::Vacant(entry) = self.element_indices.entry(element_id) {
-                trace!(?element_id, "subscribing to signal");
+                debug!(?element_id, "subscribing to signal");
                 let subscription_index = SubscriptionIndex(next_index as u32);
                 entry.insert(subscription_index);
                 self.subscriptions.push(element_id);
@@ -172,7 +238,7 @@ impl SubscriptionTracker {
     fn unsubscribe(&mut self, element_ids: &[SignalElementId]) {
         for element_id in element_ids {
             if let Some(SubscriptionIndex(index)) = self.element_indices.remove(element_id) {
-                trace!(?element_id, "unsubscribing from signal");
+                debug!(?element_id, "unsubscribing from signal");
 
                 let index = index as usize;
                 // Mark signal as unsubscribed in GHDL.
@@ -270,7 +336,7 @@ extern "C" fn adapter_init_websocket(is_interactive: bool) -> *mut AdapterState 
     let _rt_guard = rt.enter();
 
     // The looger uses the tokio runtime
-    crate::logging::init_logging(is_interactive);
+    crate::logging::init_logging();
 
     let (command_tx, command_rx) = sync_unbounded::<SimulationCommand>();
     // At a 10 Hz update rate, this buffer size allows for ~3 seconds of buffering.
@@ -284,8 +350,7 @@ extern "C" fn adapter_init_websocket(is_interactive: bool) -> *mut AdapterState 
         signals: Vec::new(),
         subscriptions: SubscriptionTracker::new(),
         time_for_events: LogicalTime::ZERO,
-        current_status: None,
-        requested_status: if is_interactive {
+        current_status: if is_interactive {
             SimulationStatus::Paused
         } else {
             SimulationStatus::Running
@@ -299,56 +364,31 @@ extern "C" fn adapter_init_websocket(is_interactive: bool) -> *mut AdapterState 
 /// When `block` is zero, returns immediately if no commands are pending.
 #[instrument(level = "debug", skip(state))]
 #[unsafe(no_mangle)]
-extern "C" fn adapter_process_commands(state: &mut AdapterState, block: bool) {
+extern "C" fn adapter_process_commands(state: &mut AdapterState) -> SimulationStatus {
+    let block = state.current_status == SimulationStatus::Paused;
     if block {
         match state.command_rx.recv() {
-            Ok(cmd) => process_command(state, cmd),
-            Err(e) => {
-                error!("channel error in process_commands: {e}");
-                return;
+            Ok(cmd) => state.process_command(cmd),
+            Err(_) => {
+                error!("channel from WebSocket thread disconnected");
+                return SimulationStatus::Stopped;
             },
         }
     };
 
-    while let Ok(command) = state.command_rx.try_recv() {
-        process_command(state, command);
+    loop {
+        use crossbeam_channel::TryRecvError::*;
+        match state.command_rx.try_recv() {
+            Ok(command) => state.process_command(command),
+            Err(Empty) => break,
+            Err(Disconnected) => {
+                error!("channel from WebSocket thread disconnected");
+                return SimulationStatus::Stopped;
+            },
+        }
     }
-}
 
-/// Processes a single simulation command and returns the updated request code.
-fn process_command(state: &mut AdapterState, command: SimulationCommand) {
-    match command {
-        SimulationCommand::Start => {
-            debug!("received Start command");
-            state.requested_status = SimulationStatus::Running;
-        },
-        SimulationCommand::Pause => {
-            debug!("received Pause command");
-            state.requested_status = SimulationStatus::Paused;
-        },
-        SimulationCommand::Resume => {
-            debug!("received Resume command");
-            state.requested_status = SimulationStatus::Running;
-        },
-        SimulationCommand::Stop => {
-            debug!("received Stop command");
-            state.requested_status = SimulationStatus::Stopped;
-        },
-        SimulationCommand::Subscribe(signal_ids) => {
-            state.subscribe(&signal_ids);
-        },
-        SimulationCommand::Unsubscribe(signal_ids) => {
-            state.unsubscribe(&signal_ids);
-        },
-        SimulationCommand::SendUpdate => {
-            state.transmit_events();
-        },
-    }
-}
-
-#[unsafe(no_mangle)]
-extern "C" fn adapter_requested_simulation_status(state: &AdapterState) -> SimulationStatus {
-    state.requested_status
+    state.current_status
 }
 
 #[unsafe(no_mangle)]
@@ -375,48 +415,23 @@ extern "C" fn adapter_update_simulation_time(state: &mut AdapterState) {
     }
 }
 
-/// Sends a status update to the WebSocket client if the status has changed.
-///
-/// When the status is [`SimulationStatus::Stopped`], blocks until the
-/// notification has been flushed to the client or skipped (no client), with a
-/// two-second timeout.
+/// Notifies the adapter that the simulation is ready.
 #[instrument(level = "debug", skip(state))]
 #[unsafe(no_mangle)]
-extern "C" fn adapter_notify_simulation_status(state: &mut AdapterState, status: SimulationStatus) {
-    if state.current_status == Some(status) {
-        return;
+extern "C" fn adapter_notify_simulation_ready(state: &mut AdapterState) {
+    if state.current_status == SimulationStatus::Paused {
+        eprintln!("Simulation ready; waiting for start command from frontend");
     }
-    state.current_status = Some(status);
-    match status {
-        SimulationStatus::Paused => info!("simulation paused"),
-        SimulationStatus::Running => info!("simulation running"),
-        SimulationStatus::Stopped => info!("simulation stopped"),
-    };
-
-    let (ack_tx, ack_rx) = if status == SimulationStatus::Stopped {
-        state.transmit_events();
-        // Tell the WebSocket thread to acknowledge the transmission of the stop notification.
-        let (tx, rx) = sync_bounded(0);
-        (Some(tx), Some(rx))
-    } else {
-        (None, None)
-    };
     let _ignore = state
         .update_tx
-        .blocking_send(SimulationUpdate::StatusChanged(status, ack_tx));
+        .blocking_send(SimulationUpdate::StatusChanged(state.current_status, None));
+}
 
-    if let Some(rx) = ack_rx {
-        // If the simulation has stopped, the simulator process will exit. We until the WebSocket
-        // thread acknowledges that it sent the stop notification, otherwise it would get lost.
-        match rx.recv_timeout(Duration::from_secs(2)) {
-            Ok(()) => {
-                debug!("notification acknowledged by WebSocket thread");
-            },
-            Err(_) => {
-                warn!("timed out waiting for notification acknowledgment");
-            },
-        }
-    }
+/// Notifies the adapter that the simulation has stopped.
+#[instrument(level = "debug", skip(state))]
+#[unsafe(no_mangle)]
+extern "C" fn adapter_notify_simulation_stopped(state: &mut AdapterState) {
+    state.set_simulation_status(SimulationStatus::Stopped);
 }
 
 /// Records a signal value change at the given simulation time.
