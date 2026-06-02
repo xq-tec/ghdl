@@ -460,18 +460,3 @@ jobs:
       os_image:      ubuntu-${{ inputs.ubuntu_version }}
       ghdl_artifact: ${{ needs.Build.outputs.ghdl_artifact }}
       testsuites:    ${{ inputs.testsuites }}
-
-  Docker:
-    uses: ./.github/workflows/Package-Docker.yml
-    needs:
-      - Build
-    if: inputs.ubuntu_artifact != ''
-    with:
-      ubuntu_image:   ubuntu-${{ inputs.ubuntu_version }}
-      ghdl_artifact:  ${{ needs.Build.outputs.ghdl_artifact }}
-      ubuntu_version: ${{ inputs.ubuntu_version }}
-      ghdl_backend:   ${{ inputs.ghdl_backend }}
-      ghdl_version:   ${{ inputs.ghdl_version }}
-      publish:        ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || contains(github.ref, 'refs/tags/')) }}
-      testsuites:     ${{ inputs.testsuites }}
-    secrets: inherit

@@ -39,9 +39,9 @@ on:
         default: 'testing'
         type: string
       release_tag_pattern:
-        description: 'Pattern for release tags on the main branch. Usually: vXX.YY.ZZ'
+        description: 'Pattern for release tags on the main branch. Usually: vXX.YY.ZZ-risim'
         required: false
-        default: '(v|r)?[0-9]+(\.[0-9]+){0,2}(-(dev|alpha|beta|rc)([0-9]*))?'
+        default: 'v[0-9]+\.[0-9]+\.[0-9]+-risim'
         type: string
       # End of integration
 
