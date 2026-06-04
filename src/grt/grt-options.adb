@@ -95,6 +95,7 @@ package body Grt.Options is
       P (" --expect-failure  invert exit status");
       P (" --max-stack-alloc=X  error if variables are larger than X KB");
       P (" --no-run          do not simulate, only elaborate");
+      P (" --name=NAME       name for the exported design hierarchy");
       P (" --wait            wait for command before starting simulation");
       P (" --unbuffered      disable buffering on stdout, stderr and");
       P ("                   files opened in write or append mode (TEXTIO).");
@@ -339,6 +340,11 @@ package body Grt.Options is
          Flag_No_Run := True;
       elsif Option = "--wait" then
          Flag_Wait := True;
+      elsif Len > 7 and then Option (1 .. 7) = "--name=" then
+         if Sim_Name /= null then
+            Grt.Types.Unchecked_Deallocation (Sim_Name);
+         end if;
+         Sim_Name := new String'(Option (8 .. Len));
       elsif Len > 12 and then Option (1 .. 12) = "--stop-time=" then
          Stop_Time := Parse_Time (Option (13 .. Len));
          if Stop_Time = -1 then
