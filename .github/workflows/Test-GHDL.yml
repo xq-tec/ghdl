@@ -81,14 +81,12 @@ jobs:
         if: startsWith(inputs.os_image, 'ubuntu') || startsWith(inputs.os_image, 'windows')
         run: |
           ldd ./install/bin/risim-ghdl*
-          ldd ./install/lib/libghdl-*
           ldd ./install/lib/libghdlvpi*
 
       - name: Dependency check (macOS)
         if: startsWith(inputs.os_image, 'macos')
         run: |
           otool -L ./install/bin/risim-ghdl*
-          otool -L ./install/lib/libghdl-*
           otool -L ./install/lib/libghdlvpi*
 
       - name: Version check
