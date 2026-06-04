@@ -87,6 +87,8 @@ jobs:
   Build:
     name: Build GHDL on Windows Server + MSYS2
     runs-on: windows-${{ inputs.windows_version }}
+    env:
+      CARGO_NET_GIT_FETCH_WITH_CLI: true
     outputs:
       ghdl_artifact:    ${{ steps.artifact_name.outputs.ghdl_artifact }}
       pacman_artifact:  ${{ steps.artifact_name.outputs.pacman_artifact }}
@@ -102,8 +104,6 @@ jobs:
         with:
           # The command 'git describe' (used for version) needs the history.
           fetch-depth: 0
-          # adapter/ is built with Cargo and depends on path crates (git submodules).
-          submodules: recursive
 
       # GNU target matches MinGW GNAT when linking the static adapter library.
       - name: 🦀 Install Rust toolchain (x86_64-pc-windows-gnu)

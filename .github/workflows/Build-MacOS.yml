@@ -82,8 +82,6 @@ jobs:
         with:
           # The command 'git describe' (used for version) needs the history.
           fetch-depth: 0
-          # adapter/ is built with Cargo and depends on path crates (git submodules).
-          submodules: recursive
 
       - name: 🦀 Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
