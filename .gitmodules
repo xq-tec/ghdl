@@ -1,8 +1,0 @@
-[submodule "hdl-simulation-protocol"]
-	path = hdl-simulation-protocol
-	url = https://github.com/xq-tec/hdl-simulation-protocol.git
-	branch = master
-[submodule "ghdl-ast"]
-	path = ghdl-ast
-	url = https://github.com/xq-tec/ghdl-ast.git
-	branch = master
