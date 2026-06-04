@@ -95,6 +95,7 @@ package body Grt.Options is
       P (" --expect-failure  invert exit status");
       P (" --max-stack-alloc=X  error if variables are larger than X KB");
       P (" --no-run          do not simulate, only elaborate");
+      P (" --wait            wait for command before starting simulation");
       P (" --unbuffered      disable buffering on stdout, stderr and");
       P ("                   files opened in write or append mode (TEXTIO).");
       P (" --read-wave-opt=FILENAME  read a wave option file.");
@@ -336,6 +337,8 @@ package body Grt.Options is
          Flag_Stats := True;
       elsif Option = "--no-run" then
          Flag_No_Run := True;
+      elsif Option = "--wait" then
+         Flag_Wait := True;
       elsif Len > 12 and then Option (1 .. 12) = "--stop-time=" then
          Stop_Time := Parse_Time (Option (13 .. Len));
          if Stop_Time = -1 then

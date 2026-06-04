@@ -325,7 +325,7 @@ static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 /// Returns a pointer to the adapter state that must be passed to other
 /// `adapter_*` functions.
 #[unsafe(no_mangle)]
-extern "C" fn adapter_init_websocket(is_interactive: bool) -> *mut AdapterState {
+extern "C" fn adapter_init_websocket() -> *mut AdapterState {
     let rt = RUNTIME.get_or_init(|| {
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -350,12 +350,18 @@ extern "C" fn adapter_init_websocket(is_interactive: bool) -> *mut AdapterState 
         signals: Vec::new(),
         subscriptions: SubscriptionTracker::new(),
         time_for_events: LogicalTime::ZERO,
-        current_status: if is_interactive {
-            SimulationStatus::Paused
-        } else {
-            SimulationStatus::Running
-        },
+        current_status: SimulationStatus::Running,
     }))
+}
+
+/// Sets the initial state of the simulation: paused if interactive, running otherwise.
+#[unsafe(no_mangle)]
+extern "C" fn adapter_set_interactive(state: &mut AdapterState, is_interactive: bool) {
+    state.current_status = if is_interactive {
+        SimulationStatus::Paused
+    } else {
+        SimulationStatus::Running
+    };
 }
 
 /// Processes commands from the WebSocket thread.

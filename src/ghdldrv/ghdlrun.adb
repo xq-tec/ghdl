@@ -500,7 +500,7 @@ package body Ghdlrun is
       elsif Option = "--interp" then
          Run_Mode := Run_Interp;
       elsif Option = "--wait" then
-         Simul.Main.Flag_Wait := True;
+         Grt.Options.Flag_Wait := True;
       elsif Option'Last > 7 and then Option (1 .. 7) = "--name="
       then
          Grt.Options.Sim_Name := new String'(Option (8 .. Option'Last));

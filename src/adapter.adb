@@ -107,14 +107,19 @@ package body Adapter is
 
    Adapter_State : System.Address := System.Null_Address;
 
-   procedure Init_Websocket (Is_Interactive : Boolean) is
-      function Adapter_Init_Websocket (Is_Interactive : RustBool) return System.Address;
+   procedure Init_Websocket is
+      function Adapter_Init_Websocket return System.Address;
       pragma Import (C, Adapter_Init_Websocket, "adapter_init_websocket");
-
-      Wait : constant RustBool := (if Is_Interactive then True else False);
    begin
-      Adapter_State := Adapter_Init_Websocket (Wait);
+      Adapter_State := Adapter_Init_Websocket;
    end Init_Websocket;
+
+   procedure Set_Interactive (Is_Interactive : Boolean) is
+      procedure Adapter_Set_Interactive (Adapter_State : System.Address; Is_Interactive : RustBool);
+      pragma Import (C, Adapter_Set_Interactive, "adapter_set_interactive");
+   begin
+      Adapter_Set_Interactive (Adapter_State, (if Is_Interactive then True else False));
+   end Set_Interactive;
 
    function Process_Commands return Simulation_Status
    is

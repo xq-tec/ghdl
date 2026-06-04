@@ -58,7 +58,8 @@ package Adapter is
    procedure Flush (Buffer : System.Address)
       with Inline;
 
-   procedure Init_Websocket (Is_Interactive : Boolean);
+   procedure Init_Websocket;
+   procedure Set_Interactive (Is_Interactive : Boolean);
 
    --  Processes all commands in the queue from the WebSocket.
    --  If the simulation is paused, blocks until at least one command has been received.

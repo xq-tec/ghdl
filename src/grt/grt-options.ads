@@ -161,6 +161,10 @@ package Grt.Options is
    --  If set, do not simulate, only elaborate.
    Flag_No_Run : Boolean := False;
 
+   --  Set by --wait
+   --  Wait for command before starting simulation.
+   Flag_Wait : Boolean := False;
+
    type Activity_Mode is (Activity_All, Activity_Minimal, Activity_None);
    Flag_Activity : Activity_Mode := Activity_Minimal;
 
