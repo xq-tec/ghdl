@@ -6,6 +6,7 @@ use hdl_simulation_protocol::SimulationStatus;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchy;
 use hdl_simulation_protocol::design_hierarchy::SignalElementId;
 use hdl_simulation_protocol::from_simulator::EventsUpdate;
+use hdl_simulation_protocol::to_simulator::RunUntil;
 
 mod design;
 mod json_buffer;
@@ -19,9 +20,8 @@ static SIMULATION_ID: LazyLock<SimulationId> = LazyLock::new(SimulationId::new_r
 /// Commands that can be sent from the WebSocket thread to the main simulation thread
 #[derive(Debug)]
 enum SimulationCommand {
-    Start,
+    Run { until: RunUntil },
     Pause,
-    Resume,
     Stop,
 
     Subscribe(Vec<SignalElementId>),

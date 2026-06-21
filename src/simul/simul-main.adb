@@ -68,6 +68,8 @@ package body Simul.Main is
    is
       Ok : C_Boolean;
       Status : Integer;
+      Run_End_Time : aliased Std_Time;
+      Do_Pause : Boolean := False;
    begin
       Init_Websocket;
 
@@ -127,7 +129,7 @@ package body Simul.Main is
             Command_Loop: loop
                -- Fetch commands from the WebSocket thread; if the simulation is paused,
                -- this will do a blocking wait until a command is received.
-               case Process_Commands is
+               case Process_Commands (Run_End_Time'Access) is
                   when Paused =>
                      null;
                      -- Continue looping
@@ -137,6 +139,13 @@ package body Simul.Main is
                      exit Sim_Loop;
                end case;
             end loop Command_Loop;
+
+            if Run_End_Time < Grt.Processes.Next_Time then
+               Grt.Processes.Next_Time := Run_End_Time;
+               Do_Pause := True;
+            else
+               Do_Pause := False;
+            end if;
 
             if Break_Time < Grt.Processes.Next_Time then
                Grt.Processes.Next_Time := Break_Time;
@@ -164,6 +173,10 @@ package body Simul.Main is
                Break_Time := Std_Time'Last;
                Break_Step := False;
                Elab.Debugger.Debug_Time (Vhdl_Elab.Top_Instance);
+            end if;
+
+            if Do_Pause then
+               Notify_Simulation_Paused;
             end if;
 
             exit Sim_Loop when Grt.Processes.Has_Simulation_Timeout;

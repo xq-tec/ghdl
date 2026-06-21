@@ -63,14 +63,19 @@ package Adapter is
 
    --  Processes all commands in the queue from the WebSocket.
    --  If the simulation is paused, blocks until at least one command has been received.
+   --  Writes the requested end time for the current run to `Run_End_Time`, or
+   --  `Std_Time'Last` for no limit.
    --  Returns the requested simulation status.
-   function Process_Commands return Simulation_Status;
+   function Process_Commands (Run_End_Time : access Std_Time) return Simulation_Status;
    procedure Set_Next_Event_Time (Physical_Time : Std_Time; Delta_Cycle : Integer);
    --  Notifies the adapter that the current simulation cycle (one iteration of the simulation loop)
    --  has finished.
    procedure Update_Simulation_Time;
    procedure Notify_Simulation_Ready;
    procedure Notify_Simulation_Stopped;
+
+   --  Pauses the simulation after a requested end time has been reached.
+   procedure Notify_Simulation_Paused;
 
    function Get_Adapter_State return System.Address;
 

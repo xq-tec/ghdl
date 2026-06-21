@@ -121,12 +121,15 @@ package body Adapter is
       Adapter_Set_Interactive (Adapter_State, (if Is_Interactive then True else False));
    end Set_Interactive;
 
-   function Process_Commands return Simulation_Status
+   function Process_Commands (Run_End_Time : access Std_Time) return Simulation_Status
    is
-      function Adapter_Process_Commands (Adapter_State : System.Address) return Simulation_Status;
+      function Adapter_Process_Commands
+        (Adapter_State : System.Address;
+         Run_End_Time : access Std_Time)
+        return Simulation_Status;
       pragma Import (C, Adapter_Process_Commands, "adapter_process_commands");
    begin
-      return Adapter_Process_Commands (Adapter_State);
+      return Adapter_Process_Commands (Adapter_State, Run_End_Time);
    end Process_Commands;
 
    procedure Set_Next_Event_Time (Physical_Time : Std_Time; Delta_Cycle : Integer) is
@@ -160,6 +163,13 @@ package body Adapter is
    begin
       Adapter_Notify_Simulation_Stopped (Adapter_State);
    end Notify_Simulation_Stopped;
+
+   procedure Notify_Simulation_Paused is
+      procedure Adapter_Notify_Simulation_Paused (Adapter_State : System.Address);
+      pragma Import (C, Adapter_Notify_Simulation_Paused, "adapter_notify_simulation_paused");
+   begin
+      Adapter_Notify_Simulation_Paused (Adapter_State);
+   end Notify_Simulation_Paused;
 
    function Get_Adapter_State return System.Address is
    begin

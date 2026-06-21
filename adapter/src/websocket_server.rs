@@ -227,10 +227,9 @@ pub(crate) async fn run_websocket_server(
                 debug!(?command, "received command from client");
 
                 let tx = match command {
-                    Command::StartSimulation => SimulationCommand::Start,
+                    Command::RunSimulation { until } => SimulationCommand::Run { until },
                     Command::StopSimulation => SimulationCommand::Stop,
                     Command::PauseSimulation => SimulationCommand::Pause,
-                    Command::ResumeSimulation => SimulationCommand::Resume,
                     Command::Subscribe(signals) => SimulationCommand::Subscribe(signals),
                     Command::Unsubscribe(signals) => SimulationCommand::Unsubscribe(signals),
                 };

@@ -16,6 +16,7 @@ use hdl_simulation_protocol::from_simulator::SignalEvents;
 use hdl_simulation_protocol::time::Delta;
 use hdl_simulation_protocol::time::LogicalTime;
 use hdl_simulation_protocol::time::PhysicalTime;
+use hdl_simulation_protocol::to_simulator::RunUntil;
 use rustc_hash::FxHashMap;
 use tokio::sync::mpsc::Sender as AsyncSender;
 use tokio::sync::mpsc::channel as async_bounded;
@@ -66,6 +67,7 @@ pub struct AdapterState {
     time_for_events: LogicalTime,
 
     current_status: SimulationStatus,
+    requested_end_time: Option<PhysicalTime>,
 }
 
 impl AdapterState {
@@ -111,20 +113,34 @@ impl AdapterState {
         }
     }
 
+    /// Sets the physical time limit for the current run.
+    fn set_requested_end_time(&mut self, until: RunUntil) {
+        self.requested_end_time = match until {
+            RunUntil::UntilEnd => None,
+            RunUntil::UntilTime { deadline } => Some(deadline),
+            RunUntil::ForTime { duration } => Some(self.time_for_events.physical + duration),
+        };
+    }
+
+    /// Pauses the simulation and notifies connected clients.
+    fn pause_simulation(&mut self) {
+        self.requested_end_time = None;
+        self.transmit_events();
+        self.set_simulation_status(SimulationStatus::Paused);
+    }
+
     /// Processes a single simulation command.
     fn process_command(&mut self, command: SimulationCommand) {
         match command {
-            SimulationCommand::Start => {
-                debug!("received Start command");
+            SimulationCommand::Run { until } => {
+                debug!(?until, "received Run command");
+                self.set_requested_end_time(until);
                 self.set_simulation_status(SimulationStatus::Running);
             },
             SimulationCommand::Pause => {
                 debug!("received Pause command");
+                self.requested_end_time = None;
                 self.set_simulation_status(SimulationStatus::Paused);
-            },
-            SimulationCommand::Resume => {
-                debug!("received Resume command");
-                self.set_simulation_status(SimulationStatus::Running);
             },
             SimulationCommand::Stop => {
                 debug!("received Stop command");
@@ -177,6 +193,13 @@ impl AdapterState {
                 },
             }
         }
+    }
+
+    fn end_time_to_ghdl_time(&self) -> i64 {
+        let Some(time) = self.requested_end_time else {
+            return i64::MAX;
+        };
+        i64::try_from(time.0).unwrap_or(i64::MAX)
     }
 }
 
@@ -351,6 +374,7 @@ extern "C" fn adapter_init_websocket() -> *mut AdapterState {
         subscriptions: SubscriptionTracker::new(),
         time_for_events: LogicalTime::ZERO,
         current_status: SimulationStatus::Running,
+        requested_end_time: None,
     }))
 }
 
@@ -368,15 +392,21 @@ extern "C" fn adapter_set_interactive(state: &mut AdapterState, is_interactive: 
 ///
 /// When `block` is non-zero, blocks until at least one command is received.
 /// When `block` is zero, returns immediately if no commands are pending.
+///
+/// Writes the current run end time to `run_end_time`.
 #[instrument(level = "debug", skip(state))]
 #[unsafe(no_mangle)]
-extern "C" fn adapter_process_commands(state: &mut AdapterState) -> SimulationStatus {
+extern "C" fn adapter_process_commands(
+    state: &mut AdapterState,
+    run_end_time: &mut i64,
+) -> SimulationStatus {
     let block = state.current_status == SimulationStatus::Paused;
     if block {
         match state.command_rx.recv() {
             Ok(cmd) => state.process_command(cmd),
             Err(_) => {
                 error!("channel from WebSocket thread disconnected");
+                *run_end_time = state.end_time_to_ghdl_time();
                 return SimulationStatus::Stopped;
             },
         }
@@ -389,11 +419,13 @@ extern "C" fn adapter_process_commands(state: &mut AdapterState) -> SimulationSt
             Err(Empty) => break,
             Err(Disconnected) => {
                 error!("channel from WebSocket thread disconnected");
+                *run_end_time = state.end_time_to_ghdl_time();
                 return SimulationStatus::Stopped;
             },
         }
     }
 
+    *run_end_time = state.end_time_to_ghdl_time();
     state.current_status
 }
 
@@ -438,6 +470,12 @@ extern "C" fn adapter_notify_simulation_ready(state: &mut AdapterState) {
 #[unsafe(no_mangle)]
 extern "C" fn adapter_notify_simulation_stopped(state: &mut AdapterState) {
     state.set_simulation_status(SimulationStatus::Stopped);
+}
+
+/// Pauses the simulation after a requested end time has been reached.
+#[unsafe(no_mangle)]
+extern "C" fn adapter_notify_simulation_paused(state: &mut AdapterState) {
+    state.pause_simulation();
 }
 
 /// Records a signal value change at the given simulation time.
