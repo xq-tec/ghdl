@@ -37,8 +37,8 @@ use crate::SimulationUpdate;
 ///
 /// A WebSocket message is limited to 16MiB, and one event takes at most 24 bytes
 /// (less in practice due to efficient encoding).
-/// The threshold should be set well below `16 * 2**20 / 24 = 699050` for a safety margin.
-pub const EVENTS_PER_UPDATE_THRESHOLD: usize = 500_000;
+/// The threshold should be set well below `16 * 2**20` for a safety margin.
+pub const UPDATE_SIZE_THRESHOLD: usize = 8 * 1024 * 1024;
 
 /// Path for `libc::atexit` cleanup. Stale files may remain after `SIGKILL` or crash.
 static SERVER_MARKER_PATH: OnceLock<PathBuf> = OnceLock::new();
@@ -207,8 +207,8 @@ pub(crate) async fn run_websocket_server(
                 let client_recv_span = info_span!("client_recv");
                 let _enter_span = client_recv_span.enter();
 
-                let text = match message {
-                    Message::Text(text) => text,
+                let bytes = match message {
+                    Message::Binary(bytes) => bytes,
                     Message::Close(_) => {
                         debug!("connection closed by client");
                         client_session = None;
@@ -217,10 +217,10 @@ pub(crate) async fn run_websocket_server(
                     _ => continue,
                 };
 
-                let command: Command = match serde_json::from_str(&text) {
+                let command: Command = match postcard::from_bytes(&bytes) {
                     Ok(cmd) => cmd,
                     Err(error) => {
-                        error!(%error, %text, "failed to parse message");
+                        error!(%error, byte_len = bytes.len(), "failed to decode message");
                         continue;
                     },
                 };

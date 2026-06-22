@@ -31,7 +31,7 @@ use tracing::warn;
 use crate::SimulationCommand;
 use crate::SimulationUpdate;
 use crate::design::Signal;
-use crate::websocket_server::EVENTS_PER_UPDATE_THRESHOLD;
+use crate::websocket_server::UPDATE_SIZE_THRESHOLD;
 use crate::websocket_server::run_websocket_server;
 
 unsafe extern "C" {
@@ -213,7 +213,7 @@ struct SubscriptionTracker {
     element_indices: FxHashMap<SignalElementId, SubscriptionIndex>,
 
     events: EventsUpdate,
-    event_count: usize,
+    size_estimate: usize,
 }
 
 impl SubscriptionTracker {
@@ -226,7 +226,7 @@ impl SubscriptionTracker {
                 signals: Vec::new(),
                 reports: Vec::new(),
             },
-            event_count: 0,
+            size_estimate: 0,
         }
     }
 
@@ -253,7 +253,7 @@ impl SubscriptionTracker {
                     value: RawValue(initial_value),
                 });
                 self.events.signals.push(signal_events);
-                self.event_count += 1;
+                self.size_estimate += 24;
 
                 next_index += 1;
             }
@@ -310,7 +310,7 @@ impl SubscriptionTracker {
                 time,
                 value: RawValue(value),
             });
-            self.event_count += 1;
+            self.size_estimate += 24;
         }
     }
 
@@ -323,6 +323,7 @@ impl SubscriptionTracker {
         line: u32,
         column: u32,
     ) {
+        self.size_estimate += 8 + message.len() + 4 + file.len() + 4 + 4 + 1;
         self.events.reports.push(Report {
             time,
             message,
@@ -331,8 +332,6 @@ impl SubscriptionTracker {
             line,
             column,
         });
-        // TODO change this to a better accounting method
-        self.event_count += 1;
     }
 
     /// Extracts and returns any accumulated events.
@@ -358,7 +357,7 @@ impl SubscriptionTracker {
                 reports: Vec::new(),
             },
         );
-        self.event_count = 0;
+        self.size_estimate = 0;
         Some(events)
     }
 }
@@ -507,7 +506,7 @@ extern "C" fn adapter_set_next_event_time(
 #[unsafe(no_mangle)]
 extern "C" fn adapter_update_simulation_time(state: &mut AdapterState) {
     state.subscriptions.update_time_range(state.time_for_events);
-    if state.subscriptions.event_count >= EVENTS_PER_UPDATE_THRESHOLD {
+    if state.subscriptions.size_estimate >= UPDATE_SIZE_THRESHOLD {
         state.transmit_events();
     }
 }
