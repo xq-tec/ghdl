@@ -23,8 +23,6 @@
 
 --  This package provides Ada bindings for Rust adapter functions.
 
-with System;
-
 with Adapter; use Adapter;
 with Elab.Vhdl_Annotations; use Elab.Vhdl_Annotations;
 with Elab.Vhdl_Context; use Elab.Vhdl_Context;
@@ -295,5 +293,18 @@ package body Grt.Export is
    begin
       Adapter_Notify_Signal_Event (Get_Adapter_State, Unsigned_32 (Subscription), Value);
    end Notify_Signal_Event;
+
+   procedure Notify_Report (Msg : System.Address; Len : Unsigned_64; Severity : Unsigned_8;
+                            File : System.Address; Line : Unsigned_32; Column : Unsigned_32)
+   is
+      procedure Adapter_Notify_Report (Adapter_State : System.Address;
+                                       Msg : System.Address; Len : Unsigned_64;
+                                       Severity : Unsigned_8;
+                                       File : System.Address;
+                                       Line : Unsigned_32; Column : Unsigned_32);
+      pragma Import (C, Adapter_Notify_Report, "adapter_notify_report");
+   begin
+      Adapter_Notify_Report(Get_Adapter_State, Msg, Len, Severity, File, Line, Column);
+   end Notify_Report;
 
 end Grt.Export;

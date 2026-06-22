@@ -21,8 +21,13 @@
 --  however invalidate any other reasons why the executable file might be
 --  covered by the GNU Public License.
 
+with System;
+
+with Interfaces; use Interfaces;
+
 with Grt.Errors; use Grt.Errors;
 with Grt.Errors_Exec; use Grt.Errors_Exec;
+with Grt.Export;
 with Grt.Options; use Grt.Options;
 with Grt.Fcvt;
 with Grt.Backtraces;
@@ -82,6 +87,25 @@ package body Grt.Lib is
          Diag_C (Default_Str);
       end if;
       Report_E;
+      declare
+         Msg_Addr : System.Address;
+         Msg_Len : Unsigned_64;
+         File_Addr : System.Address := System.Null_Address;
+      begin
+         if Base /= null then
+            Msg_Addr := Base (0)'Address;
+            Msg_Len := Unsigned_64 (Len);
+         else
+            Msg_Addr := Default_Str (Default_Str'First)'Address;
+            Msg_Len := Unsigned_64 (Default_Str'Length);
+         end if;
+         if Loc.Filename /= null then
+            File_Addr := Loc.Filename (Loc.Filename'First)'Address;
+         end if;
+         Grt.Export.Notify_Report(
+            Msg_Addr, Msg_Len, Unsigned_8 (Severity),
+            File_Addr, Unsigned_32 (Loc.Line), Unsigned_32 (Loc.Col));
+      end;
       if Severity >= Grt.Options.Severity_Stop_Level then
          Save_Backtrace (Bt, 2);
          Error_S (Msg);

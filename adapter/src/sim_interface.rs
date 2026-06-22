@@ -12,6 +12,8 @@ use hdl_simulation_protocol::design_hierarchy::SignalElementId;
 use hdl_simulation_protocol::from_simulator::Event;
 use hdl_simulation_protocol::from_simulator::EventsUpdate;
 use hdl_simulation_protocol::from_simulator::RawValue;
+use hdl_simulation_protocol::from_simulator::Report;
+use hdl_simulation_protocol::from_simulator::Severity;
 use hdl_simulation_protocol::from_simulator::SignalEvents;
 use hdl_simulation_protocol::time::Delta;
 use hdl_simulation_protocol::time::LogicalTime;
@@ -222,6 +224,7 @@ impl SubscriptionTracker {
             events: EventsUpdate {
                 time_range: LogicalTime::ZERO..LogicalTime::ZERO,
                 signals: Vec::new(),
+                reports: Vec::new(),
             },
             event_count: 0,
         }
@@ -311,6 +314,27 @@ impl SubscriptionTracker {
         }
     }
 
+    fn notify_report(
+        &mut self,
+        time: LogicalTime,
+        message: String,
+        severity: Severity,
+        file: String,
+        line: u32,
+        column: u32,
+    ) {
+        self.events.reports.push(Report {
+            time,
+            message,
+            severity,
+            file,
+            line,
+            column,
+        });
+        // TODO change this to a better accounting method
+        self.event_count += 1;
+    }
+
     /// Extracts and returns any accumulated events.
     ///
     /// Returns `None` if there are no events **and** the time range is empty.
@@ -331,10 +355,45 @@ impl SubscriptionTracker {
             EventsUpdate {
                 time_range: end_time..end_time,
                 signals,
+                reports: Vec::new(),
             },
         );
         self.event_count = 0;
         Some(events)
+    }
+}
+
+/// Decodes a VHDL Latin-1 string into a Rust `String`.
+fn latin1_bytes_to_string(bytes: &[u8]) -> String {
+    let mut string = String::with_capacity(bytes.len());
+    string.extend(bytes.iter().map(|&byte| char::from(byte)));
+    string
+}
+
+/// Decodes a null-terminated Latin-1 C string into a Rust `String`.
+///
+/// # Safety
+///
+/// - The memory pointed to by `ptr` must contain a valid nul terminator at the end of the string.
+/// - `ptr` must be [valid] for reads of bytes up to and including the nul terminator.
+/// - The nul terminator must be within `isize::MAX` from `ptr`
+unsafe fn latin1_c_string_to_string(ptr: *const u8) -> String {
+    if ptr.is_null() {
+        String::new()
+    } else {
+        // SAFETY: Valid as per function preconditions, plus the memory won't be mutated.
+        let string = unsafe { std::ffi::CStr::from_ptr(ptr.cast()) };
+        latin1_bytes_to_string(string.to_bytes())
+    }
+}
+
+/// Maps a GHDL severity level to the protocol severity enum.
+fn severity_from_u8(severity: u8) -> Severity {
+    match severity {
+        0 => Severity::Note,
+        1 => Severity::Warning,
+        2 => Severity::Error,
+        _ => Severity::Failure,
     }
 }
 
@@ -488,4 +547,41 @@ extern "C" fn adapter_notify_signal_event(
     state
         .subscriptions
         .notify_signal_event(subscription_index, state.time_for_events, value);
+}
+
+/// Records a report or assertion message at the current simulation time.
+///
+/// # Safety
+///
+/// - When `!msg_ptr.is_null() && msg_len > 0`, `msg_ptr` must point to a memory area
+///   of size `msg_len` bytes that is valid for reads.
+/// - When `!file_ptr.is_null()`, `file_ptr` must point to a valid null-terminated C string.
+#[unsafe(no_mangle)]
+extern "C" fn adapter_notify_report(
+    state: &mut AdapterState,
+    msg_ptr: *const u8,
+    msg_len: u64,
+    severity: u8,
+    file_ptr: *const u8,
+    line: u32,
+    column: u32,
+) {
+    let message = if msg_ptr.is_null() || msg_len == 0 {
+        String::new()
+    } else {
+        let len = usize::try_from(msg_len).unwrap_or(usize::MAX);
+        // SAFETY: valid byte slice as per function precondition.
+        let bytes = unsafe { std::slice::from_raw_parts(msg_ptr, len) };
+        latin1_bytes_to_string(bytes)
+    };
+    // SAFETY: Valid as per function precondition.
+    let file = unsafe { latin1_c_string_to_string(file_ptr) };
+    state.subscriptions.notify_report(
+        state.time_for_events,
+        message,
+        severity_from_u8(severity),
+        file,
+        line,
+        column,
+    );
 }

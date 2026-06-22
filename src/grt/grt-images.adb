@@ -21,7 +21,6 @@
 --  however invalidate any other reasons why the executable file might be
 --  covered by the GNU Public License.
 
-with Ada.Unchecked_Conversion;
 with Grt.Rtis_Utils; use Grt.Rtis_Utils;
 with Grt.Processes; use Grt.Processes;
 with Grt.Errors; use Grt.Errors;

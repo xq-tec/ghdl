@@ -21,6 +21,8 @@
 --  however invalidate any other reasons why the executable file might be
 --  covered by the GNU Public License.
 
+with System;
+
 with Interfaces; use Interfaces;
 
 package Grt.Export is
@@ -36,5 +38,8 @@ package Grt.Export is
    pragma Export (C, Set_Signal_Subscription, "ghdl_set_signal_subscription");
 
    procedure Notify_Signal_Event (Subscription : Subscription_Index; Value : Unsigned_64);
+
+   procedure Notify_Report (Msg : System.Address; Len : Unsigned_64; Severity : Unsigned_8;
+                            File : System.Address; Line : Unsigned_32; Column : Unsigned_32);
 
 end Grt.Export;
