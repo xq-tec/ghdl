@@ -228,6 +228,10 @@ package body Vhdl.Utils is
                --  LRM 4.3.3.1 Object Aliases
                --  2.  The name must be a static name [...]
                return Adecl;
+            when Iir_Kind_External_Signal_Name
+              | Iir_Kind_External_Constant_Name
+              | Iir_Kind_External_Variable_Name =>
+               return Adecl;
             when Iir_Kind_Slice_Name
               | Iir_Kind_Indexed_Name
               | Iir_Kind_Selected_Element =>

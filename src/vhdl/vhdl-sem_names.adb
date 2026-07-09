@@ -5116,6 +5116,26 @@ package body Vhdl.Sem_Names is
       Set_Named_Entity (Name, Name);
 
       Path := Get_External_Pathname (Name);
+      if Path /= Null_Iir
+        and then Get_Kind (Path) = Iir_Kind_Package_Pathname
+      then
+         declare
+            Lib_Id : constant Name_Id := Get_Identifier (Path);
+            Pkg_Path : constant Iir := Get_Pathname_Suffix (Path);
+            Pkg_Id : constant Name_Id := Get_Identifier (Pkg_Path);
+            Lib : Iir_Library_Declaration;
+            Unit : Iir_Design_Unit;
+         begin
+            Lib := Libraries.Get_Library_No_Create (Lib_Id);
+            if Lib /= Null_Iir then
+               Unit := Libraries.Find_Primary_Unit (Lib, Pkg_Id);
+               if Unit /= Null_Iir then
+                  Load_Design_Unit (Unit, Name);
+                  Sem.Add_Dependence (Unit);
+               end if;
+            end if;
+         end;
+      end if;
       while Path /= Null_Iir
          and then Get_Kind (Path) in Iir_Kinds_Pathname
       loop

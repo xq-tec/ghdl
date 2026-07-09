@@ -2457,6 +2457,10 @@ package body Vhdl.Sem_Types is
       Type_Mark: Iir;
       Res : Iir;
    begin
+      if Def = Null_Iir then
+         return Create_Error_Type (Null_Iir);
+      end if;
+
       --  LRM08 6.3 Subtype declarations
       --
       --  If the subtype indication does not include a constraint, the subtype

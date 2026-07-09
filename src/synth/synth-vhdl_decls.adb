@@ -802,7 +802,8 @@ package body Synth.Vhdl_Decls is
          case Res.Val.Kind is
             when Value_Signal
               | Value_Memory
-              | Value_Net =>
+              | Value_Net
+              | Value_Alias =>
                Prev.Val.all := (Kind => Value_Alias,
                                 A_Obj => Res.Val,
                                 A_Typ => Res.Typ,

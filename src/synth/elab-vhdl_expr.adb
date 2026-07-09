@@ -33,6 +33,7 @@ with Elab.Memtype; use Elab.Memtype;
 with Elab.Vhdl_Heap; use Elab.Vhdl_Heap;
 with Elab.Vhdl_Types; use Elab.Vhdl_Types;
 with Elab.Vhdl_Errors; use Elab.Vhdl_Errors;
+with Libraries;
 with Elab.Vhdl_Insts;
 
 with Synth.Vhdl_Expr; use Synth.Vhdl_Expr;
@@ -135,6 +136,23 @@ package body Elab.Vhdl_Expr is
            | Iir_Kind_Package_Declaration
            | Iir_Kind_Package_Instantiation_Declaration =>
             Obj := Find_Name_In_Declaration_Chain (Scope, Id);
+            if Obj = Null_Node then
+               declare
+                  Hdr : Node;
+               begin
+                  case Get_Kind (Scope) is
+                     when Iir_Kind_Package_Declaration =>
+                        Hdr := Get_Package_Header (Scope);
+                     when Iir_Kind_Package_Instantiation_Declaration =>
+                        Hdr := Scope;
+                     when others =>
+                        Hdr := Null_Node;
+                  end case;
+                  if Hdr /= Null_Node then
+                     Obj := Find_Name_In_Chain (Get_Generic_Chain (Hdr), Id);
+                  end if;
+               end;
+            end if;
          when Iir_Kind_Architecture_Body =>
             Obj := Find_Name_In_Declaration_Chain (Scope, Id);
             if Obj = Null_Node then
@@ -166,7 +184,8 @@ package body Elab.Vhdl_Expr is
            | Iir_Kind_Generate_Statement_Body =>
             Res := Find_Name_In_Chain
               (Get_Concurrent_Statement_Chain (Scope), Id);
-         when Iir_Kind_Package_Declaration =>
+         when Iir_Kind_Package_Declaration
+           | Iir_Kind_Package_Instantiation_Declaration =>
             Res := Find_Name_In_Declaration_Chain (Scope, Id);
          when others => Error_Kind ("synth_pathname(scope)", Scope);
       end case;
@@ -367,6 +386,7 @@ package body Elab.Vhdl_Expr is
             | Iir_Kind_If_Generate_Statement
             | Iir_Kind_For_Generate_Statement
             | Iir_Kind_Package_Declaration
+            | Iir_Kind_Package_Instantiation_Declaration
             | Iir_Kind_Block_Statement =>
             if not Is_Elaborated (Cur_Inst, Res) then
                Error_Msg_Synth
@@ -450,8 +470,11 @@ package body Elab.Vhdl_Expr is
                Gen_Inst := Get_Sub_Instance (Cur_Inst, Res);
                Sub_Inst := Get_Generate_Sub_Instance (Gen_Inst, V_Off + 1);
             end;
-         when Iir_Kind_Package_Declaration =>
-            if Is_Uninstantiated_Package (Res) then
+         when Iir_Kind_Package_Declaration
+           | Iir_Kind_Package_Instantiation_Declaration =>
+            if Get_Kind (Res) = Iir_Kind_Package_Declaration
+              and then Is_Uninstantiated_Package (Res)
+            then
                Error_Msg_Synth
                  (Loc_Inst, Path,
                   "pathname element %i designates an uninstantiated package",
@@ -600,29 +623,47 @@ package body Elab.Vhdl_Expr is
       Lib_Id : constant Name_Id := Get_Identifier (Path);
       Pkg_Path : constant Node := Get_Pathname_Suffix (Path);
       Pkg_Id : constant Name_Id := Get_Identifier (Pkg_Path);
-      Cur_Inst : Synth_Instance_Acc;
-      It : Iterator_Top_Level_Type;
-      N : Node;
+      Lib : Iir_Library_Declaration;
+      Unit : Iir_Design_Unit;
+      Lib_Unit : Node;
+      Pkg_Inst : Synth_Instance_Acc;
    begin
-      It := Iterator_Top_Level_Init;
-      loop
-         Iterate_Top_Level (It, Cur_Inst);
-         exit when Cur_Inst = null;
-         N := Get_Source_Scope (Cur_Inst);
-         if Get_Identifier (N) = Pkg_Id
-           and then
-           Get_Identifier (Get_Library (Get_Design_File
-                                          (Get_Design_Unit (N)))) = Lib_Id
-         then
-            return Synth_Pathname
-              (Syn_Inst, Name, Cur_Inst, Get_Pathname_Suffix (Pkg_Path));
-         end if;
-      end loop;
+      Lib := Libraries.Get_Library_No_Create (Lib_Id);
+      if Lib = Null_Iir then
+         Error_Msg_Synth
+           (Syn_Inst, Path, "no library named %i", (+Path));
+         return No_Valtyp;
+      end if;
 
-      Error_Msg_Synth
-        (Syn_Inst, Path, "cannot find package %i.%i in the design",
-         (+Path, +Pkg_Path));
-      return No_Valtyp;
+      Unit := Libraries.Find_Primary_Unit (Lib, Pkg_Id);
+      if Unit = Null_Iir then
+         Error_Msg_Synth
+           (Syn_Inst, Path, "cannot find package %i.%i in the design",
+            (+Path, +Pkg_Path));
+         return No_Valtyp;
+      end if;
+
+      Lib_Unit := Get_Library_Unit (Unit);
+      case Get_Kind (Lib_Unit) is
+         when Iir_Kind_Package_Declaration
+           | Iir_Kind_Package_Instantiation_Declaration =>
+            Pkg_Inst := Get_Package_Object (Root_Instance, Lib_Unit);
+            if Pkg_Inst = null and then Elab.Vhdl_Insts.Top_Instance /= null then
+               Pkg_Inst := Get_Package_Object
+                 (Elab.Vhdl_Insts.Top_Instance, Lib_Unit);
+            end if;
+            if Pkg_Inst = null then
+               Error_Msg_Synth
+                 (Syn_Inst, Path, "package %i is not yet elaborated", +Lib_Unit);
+               return No_Valtyp;
+            end if;
+            return Synth_Pathname
+              (Syn_Inst, Name, Pkg_Inst, Get_Pathname_Suffix (Pkg_Path));
+         when others =>
+            Error_Msg_Synth
+              (Syn_Inst, Path, "unit %i is not a package", +Lib_Unit);
+            return No_Valtyp;
+      end case;
    end Exec_Package_Pathname;
 
 

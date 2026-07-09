@@ -12,8 +12,9 @@ begin
   main : process
   begin
      -- Case 1
-     assert work.ipkg.const = 1; -- Should this result in a 'no declaration of const' error?
-     -- case 2     
-     assert << constant @work.ipkg.const : natural>> = 1; -- Should this be visible?
+     assert work.ipkg2.const = 1; -- Should this result in a 'no declaration of const' error?
+     -- case 2
+     assert << constant @work.ipkg2.const : natural >> = 1; -- Should this be visible?
+     wait;
   end process;
 end architecture;

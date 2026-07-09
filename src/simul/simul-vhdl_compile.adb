@@ -912,10 +912,16 @@ package body Simul.Vhdl_Compile is
       Src_Type : constant Node := Get_Type (Decl);
       Tinfo : constant Type_Info_Acc := Get_Info (Src_Type);
       Src : constant Valtyp := Get_Value (Inst, Decl);
-      Obj : constant Value_Acc := Src.Val.A_Obj;
+      Obj : Value_Acc := Src.Val.A_Obj;
       Var_Mem : Memory_Ptr;
       Src_Ptr : Memory_Ptr;
    begin
+      --  Follow the alias chain (e.g. external name of an external name) down
+      --  to the base object.  Intermediate aliases have no extra offset.
+      while Obj.Kind = Value_Alias loop
+         Obj := Obj.A_Obj;
+      end loop;
+
       Build_Subtype_Indication
         (Mem, Inst, Get_Subtype_Indication (Decl));
 
@@ -999,6 +1005,9 @@ package body Simul.Vhdl_Compile is
 
                   Write_Unbounded (Var_Mem, Tinfo, Mode, Bnd, Src_Ptr);
                end;
+            when Type_Mode_Acc
+              | Type_Mode_Bounds_Acc =>
+               Write_Ptr (Var_Mem, Src_Ptr);
             when others =>
                raise Internal_Error;
          end case;
@@ -1912,12 +1921,14 @@ package body Simul.Vhdl_Compile is
 
    procedure Build_Elab_External_Names is
    begin
+      --  A single pass is enough even when an external name targets another
+      --  external name: Build_Object_Alias follows the alias chain down to the
+      --  base signal or memory, whose storage has already been created.
       for I in External_Names_Table.First .. External_Names_Table.Last loop
          declare
             E : constant External_Name_Record :=
               External_Names_Table.Table (I);
          begin
-            --  TODO: handle external signal name of an external signal name.
             Build_Object_Alias (E.Mem, E.Inst, E.Name);
          end;
       end loop;

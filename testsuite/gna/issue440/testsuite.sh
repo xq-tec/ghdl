@@ -10,6 +10,8 @@ analyze e2.vhdl
 elab_simulate e2
 
 analyze ent.vhdl
+analyze ent2.vhdl
+elab_simulate ent2
 elab_simulate ent
 
 analyze e.vhdl
