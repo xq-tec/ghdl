@@ -33,70 +33,6 @@ with Adapter; use Adapter;
 
 package body Ghdljson is
 
-   procedure Append_Quoted_Attribute (Buffer : System.Address; Attr : String; Value : String) is
-   begin
-      Append (Buffer, ",""");
-      Append (Buffer, Attr);
-      Append (Buffer, """:""");
-      Append (Buffer, Value);
-      Append (Buffer, """");
-   end Append_Quoted_Attribute;
-
-   procedure Append_Attribute (Buffer : System.Address; Attr : String; Value : Uns32) is
-   begin
-      Append (Buffer, ",""");
-      Append (Buffer, Attr);
-      Append (Buffer, """:");
-      Append (Buffer, Unsigned_32 (Value));
-   end Append_Attribute;
-
-   procedure Append_Attribute (Buffer : System.Address; Attr : String; Value : Int32) is
-   begin
-      Append (Buffer, ",""");
-      Append (Buffer, Attr);
-      Append (Buffer, """:");
-      Append (Buffer, Integer_32 (Value));
-   end Append_Attribute;
-
-   procedure Append_Attribute (Buffer : System.Address; Attr : String; Value : Int64) is
-   begin
-      Append (Buffer, ",""");
-      Append (Buffer, Attr);
-      Append (Buffer, """:");
-      Append (Buffer, Integer_64 (Value));
-   end Append_Attribute;
-
-   procedure Append_Attribute (Buffer : System.Address; Attr : String; Value : Fp64) is
-      -- Strip leading blank from result of 'Image
-      function Strip (S : String) return String is
-      begin
-         if S (S'First) = ' ' then
-            return S (S'First + 1 .. S'Last);
-         else
-            return S;
-         end if;
-      end Strip;
-      -- Use 17 digits for printing, to avoid rounding errors
-      type Print_Fp64 is digits 17;
-   begin
-      Append (Buffer, ",""");
-      Append (Buffer, Attr);
-      Append (Buffer, """:");
-      -- TODO use binary representation
-      Append (Buffer, Strip (Print_Fp64'Image (Print_Fp64 (Value))));
-   end Append_Attribute;
-
-   procedure Append_Attribute (Buffer : System.Address; Attr : String; Value : Boolean) is
-   begin
-      Append (Buffer, ",""");
-      Append (Buffer, Attr);
-      if Value then
-         Append (Buffer, """:true");
-      else
-         Append (Buffer, """:false");
-      end if;
-   end Append_Attribute;
-
    procedure Append_Iir_Chain (Buffer : System.Address; Id : String; N : Iir) is
       El : Iir;
       Is_First_Item : Boolean := True;
@@ -358,7 +294,7 @@ package body Ghdljson is
                   if Get_Field_Attribute (F) = Attr_Chain then
                      Append_Iir_Chain (Buffer, Get_Field_Image (F), Val);
                   else
-                     Append_Attribute (Buffer, Get_Field_Image (F), Uns32 (Val));
+                     Append_Attribute (Buffer, Get_Field_Image (F), Unsigned_32 (Val));
                   end if;
                end if;
             end;
@@ -384,17 +320,13 @@ package body Ghdljson is
             end;
 
          when Type_String8_Id =>
-            Append (Buffer, ",""");
-            Append (Buffer, Get_Field_Image (F));
-            Append (Buffer, """:""");
-            Append_Escaped (Buffer, Image_String8 (N));
-            Append (Buffer, """");
+            Append_Attribute (Buffer, Get_Field_Image (F), Image_String8 (N));
 
          when Type_PSL_NFA =>
-            Append_Quoted_Attribute (Buffer, Get_Field_Image (F), "PSL-NFA");
+            Append_Attribute (Buffer, Get_Field_Image (F), "PSL-NFA");
 
          when Type_PSL_Node =>
-            Append_Quoted_Attribute (Buffer, Get_Field_Image (F), "PSL-NODE");
+            Append_Attribute (Buffer, Get_Field_Image (F), "PSL-NODE");
 
          when Type_Source_Ptr =>
             null;
@@ -403,25 +335,25 @@ package body Ghdljson is
             null;
 
          when Type_Number_Base_Type =>
-            Append_Quoted_Attribute (
+            Append_Attribute (
                Buffer,
                Get_Field_Image (F),
                Number_Base_Type'Image (Get_Number_Base_Type (N, F)));
 
          when Type_Iir_Constraint =>
-            Append_Quoted_Attribute (
+            Append_Attribute (
                Buffer,
                Get_Field_Image (F),
                Image_Iir_Constraint (Get_Iir_Constraint (N, F)));
 
          when Type_Iir_Mode =>
-            Append_Quoted_Attribute (
+            Append_Attribute (
                Buffer,
                Get_Field_Image (F),
                Image_Iir_Mode (Get_Iir_Mode (N, F)));
 
          when Type_Iir_Force_Mode =>
-            Append_Quoted_Attribute (
+            Append_Attribute (
                Buffer,
                Get_Field_Image (F),
                Image_Iir_Force_Mode (Get_Iir_Force_Mode (N, F)));
@@ -430,16 +362,16 @@ package body Ghdljson is
             Append_Attribute (
                Buffer,
                Get_Field_Image (F),
-               Uns32 (Get_Iir_Index32 (N, F)));
+               Unsigned_32 (Get_Iir_Index32 (N, F)));
 
          when Type_Int64 =>
-            Append_Attribute (Buffer, Get_Field_Image (F), Get_Int64 (N, F));
+            Append_Attribute (Buffer, Get_Field_Image (F), Integer_64 (Get_Int64 (N, F)));
 
          when Type_Boolean =>
             Append_Attribute (Buffer, Get_Field_Image (F), Get_Boolean (N, F));
 
          when Type_Iir_Staticness =>
-            Append_Quoted_Attribute (
+            Append_Attribute (
                Buffer,
                Get_Field_Image (F),
                Image_Iir_Staticness (Get_Iir_Staticness (N, F)));
@@ -451,31 +383,31 @@ package body Ghdljson is
             null;
 
          when Type_Iir_All_Sensitized =>
-            Append_Quoted_Attribute (
+            Append_Attribute (
                Buffer,
                Get_Field_Image (F),
                Image_Iir_All_Sensitized (Get_Iir_All_Sensitized (N, F)));
 
          when Type_Iir_Signal_Kind =>
-            Append_Quoted_Attribute (
+            Append_Attribute (
                Buffer,
                Get_Field_Image (F),
                Image_Iir_Signal_Kind (Get_Iir_Signal_Kind (N, F)));
 
          when Type_Tri_State_Type =>
-            Append_Quoted_Attribute (
+            Append_Attribute (
                Buffer,
                Get_Field_Image (F),
                Image_Tri_State_Type (Get_Tri_State_Type (N, F)));
 
          when Type_Iir_Pure_State =>
-            Append_Quoted_Attribute (
+            Append_Attribute (
                Buffer,
                Get_Field_Image (F),
                Image_Iir_Pure_State (Get_Iir_Pure_State (N, F)));
 
          when Type_Iir_Delay_Mechanism =>
-            Append_Quoted_Attribute (
+            Append_Attribute (
                Buffer,
                Get_Field_Image (F),
                Image_Iir_Delay_Mechanism (
@@ -487,7 +419,7 @@ package body Ghdljson is
                   Get_Iir_Predefined_Functions (N, F);
             begin
                if Implicit /= Iir_Predefined_None then
-                  Append_Quoted_Attribute (
+                  Append_Attribute (
                      Buffer,
                      Get_Field_Image (F),
                      Image_Iir_Predefined_Functions (Implicit));
@@ -495,7 +427,7 @@ package body Ghdljson is
             end;
 
          when Type_Direction_Type =>
-            Append_Quoted_Attribute (
+            Append_Attribute (
                Buffer,
                Get_Field_Image (F),
                Image_Direction_Type (Get_Direction_Type (N, F)));
@@ -504,19 +436,19 @@ package body Ghdljson is
             Append_Attribute (
                Buffer,
                Get_Field_Image (F),
-               Int32 (Get_Iir_Int32 (N, F)));
+               Integer_32 (Get_Iir_Int32 (N, F)));
 
          when Type_Int32 =>
             Append_Attribute (
                Buffer,
                Get_Field_Image (F),
-               Get_Int32 (N, F));
+               Integer_32 (Get_Int32 (N, F)));
 
          when Type_Fp64 =>
             Append_Attribute (
                Buffer,
                Get_Field_Image (F),
-               Get_Fp64 (N, F));
+               IEEE_Float_64 (Get_Fp64 (N, F)));
 
          when Type_Time_Stamp_Id =>
             null;
@@ -525,7 +457,7 @@ package body Ghdljson is
             null;
 
          when Type_Token_Type =>
-            Append_Quoted_Attribute (
+            Append_Attribute (
                Buffer,
                Get_Field_Image (F),
                Image_Token_Type (Get_Token_Type (N, F)));
@@ -657,7 +589,7 @@ package body Ghdljson is
       Last_Source : constant Source_File_Entry :=
          Files_Map.Get_Last_Source_File_Entry;
 
-      File_Start : Unsigned_32;
+      File_Start, File_End : Unsigned_32;
    begin
       Append (Buffer, '[');
       for File in First_Source .. Last_Source loop
@@ -670,12 +602,13 @@ package body Ghdljson is
          Dir_Name := Files_Map.Get_Directory_Name (File);
          File_Name := Files_Map.Get_File_Name (File);
          Append_Escaped (Buffer, Files_Map.Get_Pathname (Dir_Name, File_Name));
-         Append (Buffer, """,""start"":");
+         Append (Buffer, '"');
+
          File_Start := Unsigned_32 (Files_Map.File_To_Location (File));
-         Append (Buffer, File_Start);
-         Append (Buffer, ",""end"":");
          -- Subtract 2 for the two terminal EOT
-         Append (Buffer, File_Start + Unsigned_32 (Files_Map.Get_Buffer_Length (File)) - 2);
+         File_End := File_Start + Unsigned_32 (Files_Map.Get_Buffer_Length (File)) - 2;
+         Append_Attribute (Buffer, "start", File_Start);
+         Append_Attribute (Buffer, "end", File_End);
          Append (Buffer, '}');
       end loop;
       Append (Buffer, ']');

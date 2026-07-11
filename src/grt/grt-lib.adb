@@ -96,7 +96,7 @@ package body Grt.Lib is
             Msg_Addr := Base (0)'Address;
             Msg_Len := Unsigned_64 (Len);
          else
-            Msg_Addr := Default_Str (Default_Str'First)'Address;
+            Msg_Addr := Default_Str'Address;
             Msg_Len := Unsigned_64 (Default_Str'Length);
          end if;
          if Loc.Filename /= null then

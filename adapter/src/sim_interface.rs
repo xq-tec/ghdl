@@ -30,6 +30,8 @@ use tracing::warn;
 
 use crate::SimulationCommand;
 use crate::SimulationUpdate;
+use crate::ada_ffi::AdaString;
+use crate::ada_ffi::latin1_c_string_to_string;
 use crate::design::Signal;
 use crate::websocket_server::UPDATE_SIZE_THRESHOLD;
 use crate::websocket_server::run_websocket_server;
@@ -362,30 +364,6 @@ impl SubscriptionTracker {
     }
 }
 
-/// Decodes a VHDL Latin-1 string into a Rust `String`.
-fn latin1_bytes_to_string(bytes: &[u8]) -> String {
-    let mut string = String::with_capacity(bytes.len());
-    string.extend(bytes.iter().map(|&byte| char::from(byte)));
-    string
-}
-
-/// Decodes a null-terminated Latin-1 C string into a Rust `String`.
-///
-/// # Safety
-///
-/// - The memory pointed to by `ptr` must contain a valid nul terminator at the end of the string.
-/// - `ptr` must be [valid] for reads of bytes up to and including the nul terminator.
-/// - The nul terminator must be within `isize::MAX` from `ptr`
-unsafe fn latin1_c_string_to_string(ptr: *const u8) -> String {
-    if ptr.is_null() {
-        String::new()
-    } else {
-        // SAFETY: Valid as per function preconditions, plus the memory won't be mutated.
-        let string = unsafe { std::ffi::CStr::from_ptr(ptr.cast()) };
-        latin1_bytes_to_string(string.to_bytes())
-    }
-}
-
 /// Maps a GHDL severity level to the protocol severity enum.
 fn severity_from_u8(severity: u8) -> Severity {
     match severity {
@@ -552,32 +530,21 @@ extern "C" fn adapter_notify_signal_event(
 ///
 /// # Safety
 ///
-/// - When `!msg_ptr.is_null() && msg_len > 0`, `msg_ptr` must point to a memory area
-///   of size `msg_len` bytes that is valid for reads.
 /// - When `!file_ptr.is_null()`, `file_ptr` must point to a valid null-terminated C string.
 #[unsafe(no_mangle)]
 extern "C" fn adapter_notify_report(
     state: &mut AdapterState,
-    msg_ptr: *const u8,
-    msg_len: u64,
+    msg: AdaString<'_>,
     severity: u8,
     file_ptr: *const u8,
     line: u32,
     column: u32,
 ) {
-    let message = if msg_ptr.is_null() || msg_len == 0 {
-        String::new()
-    } else {
-        let len = usize::try_from(msg_len).unwrap_or(usize::MAX);
-        // SAFETY: valid byte slice as per function precondition.
-        let bytes = unsafe { std::slice::from_raw_parts(msg_ptr, len) };
-        latin1_bytes_to_string(bytes)
-    };
     // SAFETY: Valid as per function precondition.
     let file = unsafe { latin1_c_string_to_string(file_ptr) };
     state.subscriptions.notify_report(
         state.time_for_events,
-        message,
+        msg.into(),
         severity_from_u8(severity),
         file,
         line,

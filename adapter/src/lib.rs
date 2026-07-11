@@ -8,6 +8,7 @@ use hdl_simulation_protocol::design_hierarchy::SignalElementId;
 use hdl_simulation_protocol::from_simulator::EventsUpdate;
 use hdl_simulation_protocol::to_simulator::RunUntil;
 
+mod ada_ffi;
 mod design;
 mod json_buffer;
 mod logging;

@@ -16,11 +16,11 @@
 
 package body Adapter is
 
-   function Create_Buffer (Size : Unsigned_32) return System.Address is
-      function Adapter_Create_Buffer (Size : Unsigned_32) return System.Address;
+   function Create_Buffer (Capacity : Unsigned_32) return System.Address is
+      function Adapter_Create_Buffer (Capacity : Unsigned_32) return System.Address;
       pragma Import (C, Adapter_Create_Buffer, "adapter_create_buffer");
    begin
-      return Adapter_Create_Buffer (Size);
+      return Adapter_Create_Buffer (Capacity);
    end Create_Buffer;
 
    procedure Free_Buffer (Buffer : System.Address) is
@@ -38,11 +38,12 @@ package body Adapter is
    end Append;
 
    procedure Append (Buffer: System.Address; Str: String) is
-      procedure Adapter_Append_Str (Buffer : System.Address;
-                                    Str : System.Address; Len : Unsigned_64);
+      procedure Adapter_Append_Str (Buffer : System.Address; Str : AdaString);
       pragma Import (C, Adapter_Append_Str, "adapter_append_str");
+
+      FFI_Str : constant AdaString := (Ptr => Str'Address, Len => Unsigned_64 (Str'Length));
    begin
-      Adapter_Append_Str (Buffer, Str (Str'First)'Address, Unsigned_64 (Str'Length));
+      Adapter_Append_Str (Buffer, FFI_Str);
    end Append;
 
    procedure Append (Buffer: System.Address; Value: Boolean) is
@@ -91,12 +92,93 @@ package body Adapter is
    end Append;
 
    procedure Append_Escaped (Buffer: System.Address; Str: String) is
-      procedure Adapter_Append_Escaped (Buffer : System.Address;
-                                        Str : System.Address; Len : Unsigned_64);
+      procedure Adapter_Append_Escaped (Buffer : System.Address; Str : AdaString);
       pragma Import (C, Adapter_Append_Escaped, "adapter_append_escaped");
+
+      FFI_Str : constant AdaString := (Ptr => Str'Address, Len => Unsigned_64 (Str'Length));
    begin
-      Adapter_Append_Escaped (Buffer, Str (Str'First)'Address, Unsigned_64 (Str'Length));
+      Adapter_Append_Escaped (Buffer, FFI_Str);
    end Append_Escaped;
+
+   procedure Append_Attribute (Buffer: System.Address;
+                               Attr: String; Value: Boolean)
+   is
+      procedure Adapter_Append_Bool_Attribute (Buffer : System.Address;
+                                               Attr : AdaString;
+                                               Value: RustBool);
+      pragma Import (C, Adapter_Append_Bool_Attribute, "adapter_append_bool_attribute");
+
+      FFI_Attr : constant AdaString := (Ptr => Attr'Address, Len => Unsigned_64 (Attr'Length));
+      FFI_Value : constant RustBool := (if Value then True else False);
+   begin
+      Adapter_Append_Bool_Attribute (Buffer, FFI_Attr, FFI_Value);
+   end Append_Attribute;
+
+   procedure Append_Attribute (Buffer: System.Address;
+                               Attr: String; Value: Unsigned_32)
+   is
+      procedure Adapter_Append_U32_Attribute (Buffer : System.Address;
+                                              Attr : AdaString;
+                                              Value: Unsigned_32);
+      pragma Import (C, Adapter_Append_U32_Attribute, "adapter_append_u32_attribute");
+
+      FFI_Attr : constant AdaString := (Ptr => Attr'Address, Len => Unsigned_64 (Attr'Length));
+   begin
+      Adapter_Append_U32_Attribute (Buffer, FFI_Attr, Value);
+   end Append_Attribute;
+
+   procedure Append_Attribute (Buffer: System.Address;
+                               Attr: String; Value: Integer_32)
+   is
+      procedure Adapter_Append_I32_Attribute (Buffer : System.Address;
+                                              Attr : AdaString;
+                                              Value: Integer_32);
+      pragma Import (C, Adapter_Append_I32_Attribute, "adapter_append_i32_attribute");
+
+      FFI_Attr : constant AdaString := (Ptr => Attr'Address, Len => Unsigned_64 (Attr'Length));
+   begin
+      Adapter_Append_I32_Attribute (Buffer, FFI_Attr, Value);
+   end Append_Attribute;
+
+   procedure Append_Attribute (Buffer: System.Address;
+                               Attr: String; Value: Integer_64)
+   is
+      procedure Adapter_Append_I64_Attribute (Buffer : System.Address;
+                                              Attr : AdaString;
+                                              Value: Integer_64);
+      pragma Import (C, Adapter_Append_I64_Attribute, "adapter_append_i64_attribute");
+
+      FFI_Attr : constant AdaString := (Ptr => Attr'Address, Len => Unsigned_64 (Attr'Length));
+   begin
+      Adapter_Append_I64_Attribute (Buffer, FFI_Attr, Value);
+   end Append_Attribute;
+
+   procedure Append_Attribute (Buffer: System.Address;
+                               Attr: String; Value: IEEE_Float_64)
+   is
+      procedure Adapter_Append_F64_Attribute (Buffer : System.Address;
+                                              Attr : AdaString;
+                                              Value: IEEE_Float_64);
+      pragma Import (C, Adapter_Append_F64_Attribute, "adapter_append_f64_attribute");
+
+      FFI_Attr : constant AdaString := (Ptr => Attr'Address, Len => Unsigned_64 (Attr'Length));
+   begin
+      Adapter_Append_F64_Attribute (Buffer, FFI_Attr, Value);
+   end Append_Attribute;
+
+   procedure Append_Attribute (Buffer: System.Address;
+                               Attr: String; Value: String)
+   is
+      procedure Adapter_Append_String_Attribute (Buffer : System.Address;
+                                                 Attr : AdaString;
+                                                 Value : AdaString);
+      pragma Import (C, Adapter_Append_String_Attribute, "adapter_append_string_attribute");
+
+      FFI_Attr : constant AdaString := (Ptr => Attr'Address, Len => Unsigned_64 (Attr'Length));
+      FFI_Value : constant AdaString := (Ptr => Value'Address, Len => Unsigned_64 (Value'Length));
+   begin
+      Adapter_Append_String_Attribute (Buffer, FFI_Attr, FFI_Value);
+   end Append_Attribute;
 
    procedure Flush (Buffer : System.Address) is
       procedure Adapter_Flush (Buffer : System.Address);

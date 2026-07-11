@@ -21,6 +21,14 @@ with Types;
 with Grt.Vhdl_Types; use Grt.Vhdl_Types;
 
 package Adapter is
+   type AdaString is record
+      Ptr : System.Address;
+      Len : Unsigned_64;
+   end record;
+   --  Use C_Pass_By_Copy so GNAT passes the record by value (in registers),
+   --  matching the C ABI. Plain Convention C would pass it by reference.
+   pragma Convention (C_Pass_By_Copy, AdaString);
+
    pragma Warnings (Off, "the size of enums in C is implementation-defined");
 
    type RustBool is (False, True) with Size => 8;
@@ -33,7 +41,7 @@ package Adapter is
 
    pragma Warnings (On, "the size of enums in C is implementation-defined");
 
-   function Create_Buffer (Size : Unsigned_32) return System.Address
+   function Create_Buffer (Capacity : Unsigned_32) return System.Address
       with Inline;
    procedure Free_Buffer (Buffer : System.Address)
       with Inline;
@@ -54,6 +62,18 @@ package Adapter is
    procedure Append (Buffer: System.Address; Value: Types.Direction_Type)
       with Inline;
    procedure Append_Escaped (Buffer: System.Address; Str: String)
+      with Inline;
+   procedure Append_Attribute (Buffer: System.Address; Attr: String; Value: Boolean)
+      with Inline;
+   procedure Append_Attribute (Buffer: System.Address; Attr: String; Value: Unsigned_32)
+      with Inline;
+   procedure Append_Attribute (Buffer: System.Address; Attr: String; Value: Integer_32)
+      with Inline;
+   procedure Append_Attribute (Buffer: System.Address; Attr: String; Value: Integer_64)
+      with Inline;
+   procedure Append_Attribute (Buffer: System.Address; Attr: String; Value: IEEE_Float_64)
+      with Inline;
+   procedure Append_Attribute (Buffer: System.Address; Attr: String; Value: String)
       with Inline;
    procedure Flush (Buffer : System.Address)
       with Inline;

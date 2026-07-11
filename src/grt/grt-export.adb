@@ -256,15 +256,14 @@ package body Grt.Export is
       procedure Adapter_Register_Design (
          Adapter_State : System.Address;
          Root_Instance, Instance_Count, Signal_Count : Unsigned_32;
-         Name_Str : System.Address; Name_Len : Unsigned_64);
+         Name : AdaString);
       pragma Import (C, Adapter_Register_Design, "adapter_register_design");
 
-      Name_Str : System.Address := System.Null_Address;
-      Name_Len : Unsigned_64 := 0;
+      Name : AdaString := (Ptr => System.Null_Address, Len => 0);
    begin
       if Grt.Options.Sim_Name_Valid then
-         Name_Str := Grt.Options.Sim_Name.all'Address;
-         Name_Len := Unsigned_64 (Grt.Options.Sim_Name'Length);
+         Name := (Ptr => Grt.Options.Sim_Name.all'Address,
+                  Len => Unsigned_64 (Grt.Options.Sim_Name'Length));
       end if;
 
       Adapter_Register_Design (
@@ -272,7 +271,7 @@ package body Grt.Export is
          Unsigned_32 (Get_Instance_Id (Elab.Vhdl_Insts.Top_Instance)),
          Unsigned_32 (Get_Instance_Count),
          Unsigned_32 (Signals_Table.Last),
-         Name_Str, Name_Len);
+         Name);
    end Register_Design;
 
    function Set_Signal_Subscription (Signal_Id, Element_Index : Unsigned_32;
@@ -298,13 +297,15 @@ package body Grt.Export is
                             File : System.Address; Line : Unsigned_32; Column : Unsigned_32)
    is
       procedure Adapter_Notify_Report (Adapter_State : System.Address;
-                                       Msg : System.Address; Len : Unsigned_64;
+                                       Msg : AdaString;
                                        Severity : Unsigned_8;
                                        File : System.Address;
                                        Line : Unsigned_32; Column : Unsigned_32);
       pragma Import (C, Adapter_Notify_Report, "adapter_notify_report");
+
+      FFI_Msg : constant AdaString := (Ptr => Msg, Len => Len);
    begin
-      Adapter_Notify_Report(Get_Adapter_State, Msg, Len, Severity, File, Line, Column);
+      Adapter_Notify_Report(Get_Adapter_State, FFI_Msg, Severity, File, Line, Column);
    end Notify_Report;
 
 end Grt.Export;
