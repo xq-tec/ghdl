@@ -22,6 +22,8 @@ with Vhdl.Nodes; use Vhdl.Nodes;
 with Vhdl.Sem_Lib; use Vhdl.Sem_Lib;
 with Ghdlmain; use Ghdlmain;
 with Ghdllocal; use Ghdllocal;
+with Ghdlcomp; use Ghdlcomp;
+with Options; use Options;
 
 with Ast_Export;
 
@@ -79,7 +81,7 @@ package body Ghdljson is
       pragma Unreferenced (Cmd);
    begin
       return "ast-to-json"
-        & ASCII.LF & "  Dump AST in JSON"
+        & ASCII.LF & "  Dump analyzed AST in JSON"
         & ASCII.LF & "  alias: --ast-to-json";
    end Get_Short_Help;
 
@@ -101,8 +103,107 @@ package body Ghdljson is
          Error ("json dump failed due to compilation error");
    end Perform_Action;
 
+   --  Command --design-to-json
+   type Command_Design_To_Json is new Command_Lib with null record;
+
+   function Decode_Command (Cmd : Command_Design_To_Json; Name : String)
+                           return Boolean;
+   function Get_Short_Help (Cmd : Command_Design_To_Json) return String;
+   procedure Decode_Option (Cmd : in out Command_Design_To_Json;
+                            Option : String;
+                            Arg : String;
+                            Res : out Option_State);
+   procedure Disp_Long_Help (Cmd : Command_Design_To_Json);
+   procedure Perform_Action (Cmd : in out Command_Design_To_Json;
+                             Args : String_Acc_Array;
+                             Success : out Boolean);
+
+   function Decode_Command (Cmd : Command_Design_To_Json; Name : String)
+                           return Boolean
+   is
+      pragma Unreferenced (Cmd);
+   begin
+      return Name = "design-to-json"
+        or else Name = "--design-to-json";
+   end Decode_Command;
+
+   function Get_Short_Help (Cmd : Command_Design_To_Json) return String
+   is
+      pragma Unreferenced (Cmd);
+   begin
+      return "design-to-json [OPTS] UNIT [ARCH]"
+        & ASCII.LF & "  Dump elaborated AST in JSON"
+        & ASCII.LF & "  alias: --design-to-json";
+   end Get_Short_Help;
+
+   procedure Decode_Option (Cmd : in out Command_Design_To_Json;
+                            Option : String;
+                            Arg : String;
+                            Res : out Option_State)
+   is
+      pragma Unreferenced (Cmd);
+      pragma Assert (Option'First = 1);
+   begin
+      if Option = "-o" then
+         if Arg'Length = 0 then
+            Res := Option_Arg_Req;
+         else
+            --  Silently accepted.
+            Res := Option_Arg;
+         end if;
+      elsif Option'Length >= 4 and then Option (1 .. 4) = "-Wl," then
+         Error_Msg_Option ("option -Wl is not available when ghdl "
+                             & "is not configured with gcc or llvm");
+         Res := Option_Err;
+      else
+         Decode_Comp_Option (Option, Arg, Res);
+      end if;
+   end Decode_Option;
+
+   procedure Disp_Long_Help (Cmd : Command_Design_To_Json) is
+      pragma Unreferenced (Cmd);
+   begin
+      Disp_Long_Help (Command_Lib (Cmd));
+      Disp_Comp_Long_Help;
+   end Disp_Long_Help;
+
+   procedure Perform_Action (Cmd : in out Command_Design_To_Json;
+                             Args : String_Acc_Array;
+                             Success : out Boolean)
+   is
+      pragma Unreferenced (Cmd);
+      Run_Arg : Natural;
+   begin
+      Success := False;
+
+      if Hooks.Compile_Elab = null then
+         Error ("design-to-json requires elaboration support");
+         return;
+      end if;
+
+      Hooks.Compile_Init.all (False);
+
+      Libraries.Load_Work_Library (False);
+      Flags.Flag_Elaborate_With_Outdated := False;
+      Flags.Flag_Only_Elab_Warnings := True;
+
+      Hooks.Compile_Elab.all ("design-to-json", Args, Run_Arg);
+      if Run_Arg <= Args'Last then
+         Error_Msg_Option ("options after unit are ignored");
+         return;
+      end if;
+
+      Ast_Export.Dump_Ast;
+
+      Success := not Flag_Expect_Failure;
+   exception
+      when Compilation_Error =>
+         Success := Flag_Expect_Failure and then Errorout.Nbr_Errors > 0;
+   end Perform_Action;
+
    procedure Register_Commands is
    begin
       Register_Command (new Command_Ast_To_Json);
+      Register_Command (new Command_Design_To_Json);
    end Register_Commands;
 end Ghdljson;

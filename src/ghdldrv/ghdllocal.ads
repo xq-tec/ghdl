@@ -41,6 +41,9 @@ package Ghdllocal is
    --  Disp detailled help.
    procedure Disp_Long_Help (Cmd : Command_Lib);
 
+   --  Display detailed help for driver options.
+   procedure Disp_Driver_Long_Help;
+
    --  Value of --PREFIX
    Switch_Prefix_Path : String_Acc := null;
 

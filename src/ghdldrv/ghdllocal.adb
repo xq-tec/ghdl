@@ -160,9 +160,8 @@ package body Ghdllocal is
       Res := Decode_Driver_Option (Option);
    end Decode_Option;
 
-   procedure Disp_Long_Help (Cmd : Command_Lib)
+   procedure Disp_Driver_Long_Help
    is
-      pragma Unreferenced (Cmd);
       procedure P (Str : String) renames Put_Line;
    begin
       P ("Main options (try --options-help for details):");
@@ -180,6 +179,13 @@ package body Ghdllocal is
       P ("   Relax semantic rules");
       P (" -fexplicit");
       P ("   Gives priority to explicit operator redefinitions");
+   end Disp_Driver_Long_Help;
+
+   procedure Disp_Long_Help (Cmd : Command_Lib)
+   is
+      pragma Unreferenced (Cmd);
+   begin
+      Disp_Driver_Long_Help;
    end Disp_Long_Help;
 
    function Is_Directory_Separator (C : Character) return Boolean is

@@ -17,7 +17,6 @@ with Ada.Command_Line;
 
 with Ghdlmain; use Ghdlmain;
 with Ghdllocal; use Ghdllocal;
-with Options; use Options;
 
 with Flags;
 with Simple_IO;
@@ -43,12 +42,12 @@ package body Ghdlcomp is
                             Res : out Option_State);
    procedure Disp_Long_Help (Cmd : Command_Comp);
 
-   procedure Decode_Option (Cmd : in out Command_Comp;
-                            Option : String;
-                            Arg : String;
-                            Res : out Option_State)
+   procedure Decode_Comp_Option (Option : String;
+                                 Arg : String;
+                                 Res : out Option_State)
    is
       pragma Assert (Option'First = 1);
+      pragma Unreferenced (Arg);
    begin
       if Option = "--expect-failure" then
          Flag_Expect_Failure := True;
@@ -81,19 +80,36 @@ package body Ghdlcomp is
             Res := Option_Err;
          end if;
       else
-         Decode_Option (Command_Lib (Cmd), Option, Arg, Res);
+         Res := Decode_Driver_Option (Option);
       end if;
-   end Decode_Option;
+   end Decode_Comp_Option;
 
-   procedure Disp_Long_Help (Cmd : Command_Comp)
+   procedure Disp_Comp_Long_Help
    is
       use Simple_IO;
    begin
-      Disp_Long_Help (Command_Lib (Cmd));
+      Disp_Driver_Long_Help;
       Hooks.Disp_Long_Help.all;
       Put_Line (" --expect-failure  Expect analysis/elaboration failure");
       Put_Line (" --time-resolution=UNIT   Set the resolution of type time");
       Put_Line ("            UNIT can be fs, ps, ns, us, ms, sec or auto");
+   end Disp_Comp_Long_Help;
+
+   procedure Decode_Option (Cmd : in out Command_Comp;
+                            Option : String;
+                            Arg : String;
+                            Res : out Option_State)
+   is
+      pragma Unreferenced (Cmd);
+   begin
+      Decode_Comp_Option (Option, Arg, Res);
+   end Decode_Option;
+
+   procedure Disp_Long_Help (Cmd : Command_Comp)
+   is
+      pragma Unreferenced (Cmd);
+   begin
+      Disp_Comp_Long_Help;
    end Disp_Long_Help;
 
    --  Command -r

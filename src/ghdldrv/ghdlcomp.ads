@@ -15,6 +15,7 @@
 --  along with this program.  If not, see <gnu.org/licenses>.
 
 with Types; use Types;
+with Options; use Options;
 with Vhdl.Nodes; use Vhdl.Nodes;
 
 package Ghdlcomp is
@@ -112,6 +113,14 @@ package Ghdlcomp is
 
    --  Hook for verilog.
    Init_Verilog_Options : Compile_Init_Acc;
+
+   --  Decode options common to compile/elaborate commands.
+   procedure Decode_Comp_Option (Option : String;
+                                 Arg : String;
+                                 Res : out Option_State);
+
+   --  Display detailed help for compile/elaborate options.
+   procedure Disp_Comp_Long_Help;
 
 private
    --  For Rust:
