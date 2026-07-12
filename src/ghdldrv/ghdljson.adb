@@ -26,6 +26,7 @@ with Ghdlcomp; use Ghdlcomp;
 with Options; use Options;
 
 with Ast_Export;
+with Design_Export;
 
 package body Ghdljson is
 
@@ -132,7 +133,7 @@ package body Ghdljson is
       pragma Unreferenced (Cmd);
    begin
       return "design-to-json [OPTS] UNIT [ARCH]"
-        & ASCII.LF & "  Dump elaborated AST in JSON"
+        & ASCII.LF & "  Dump analyzed AST and elaborated design in JSONL"
         & ASCII.LF & "  alias: --design-to-json";
    end Get_Short_Help;
 
@@ -193,7 +194,9 @@ package body Ghdljson is
          return;
       end if;
 
+      -- First dump the AST, then the corresponding design.
       Ast_Export.Dump_Ast;
+      Design_Export.Dump_Design;
 
       Success := not Flag_Expect_Failure;
    exception

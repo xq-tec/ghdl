@@ -165,7 +165,7 @@ fn start_attribute(buffer: &mut Vec<u8>, attr: AdaString<'_>) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn adapter_flush(buffer: &mut Vec<u8>) {
-    let mut stdout = std::io::stdout();
+    let mut stdout = std::io::stdout().lock();
     if let Err(e) = stdout.write_all(buffer) {
         eprintln!("Error writing to stdout: {e}");
         // We mustn't panic in an FFI function, so we exit the whole program

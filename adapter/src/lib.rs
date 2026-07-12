@@ -10,6 +10,7 @@ use hdl_simulation_protocol::to_simulator::RunUntil;
 
 mod ada_ffi;
 mod design;
+mod design_export;
 mod json_buffer;
 mod logging;
 mod sim_interface;

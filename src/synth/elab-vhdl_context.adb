@@ -889,6 +889,28 @@ package body Elab.Vhdl_Context is
       return Inst.Objects (Slot);
    end Get_Instance_Obj;
 
+   function Get_Instance_Elab_Objects (Inst : Synth_Instance_Acc)
+                                      return Object_Slot_Type is
+   begin
+      return Inst.Elab_Objects;
+   end Get_Instance_Elab_Objects;
 
+   function Get_Instance_Block_Ref (Inst : Synth_Instance_Acc) return Node is
+   begin
+      if Inst.Block_Scope = null then
+         return Null_Node;
+      else
+         return Inst.Block_Scope.Ref;
+      end if;
+   end Get_Instance_Block_Ref;
+
+   function Get_Instance_Uninst_Ref (Inst : Synth_Instance_Acc) return Node is
+   begin
+      if Inst.Uninst_Scope = null then
+         return Null_Node;
+      else
+         return Inst.Uninst_Scope.Ref;
+      end if;
+   end Get_Instance_Uninst_Ref;
 
 end Elab.Vhdl_Context;

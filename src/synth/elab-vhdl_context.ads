@@ -316,6 +316,12 @@ package Elab.Vhdl_Context is
 
    function Get_Instance_Max_Objs (Inst : Synth_Instance_Acc) return Object_Slot_Type;
    function Get_Instance_Obj (Inst : Synth_Instance_Acc; Slot : Object_Slot_Type) return Obj_Type;
+
+   --  For design export.
+   function Get_Instance_Elab_Objects (Inst : Synth_Instance_Acc)
+                                      return Object_Slot_Type;
+   function Get_Instance_Block_Ref (Inst : Synth_Instance_Acc) return Node;
+   function Get_Instance_Uninst_Ref (Inst : Synth_Instance_Acc) return Node;
 private
    type Destroy_Type is record
       Inst : Synth_Instance_Acc;
