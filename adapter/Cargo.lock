@@ -370,17 +370,17 @@ dependencies = [
 
 [[package]]
 name = "ghdl-ast"
-version = "0.1.0"
-source = "git+https://github.com/xq-tec/ghdl-ast.git?rev=d1534cc6eda3da2669a1b79d8288a8ed3a38c6f3#d1534cc6eda3da2669a1b79d8288a8ed3a38c6f3"
+version = "0.2.0"
+source = "git+https://github.com/xq-tec/ghdl-ast.git?rev=4d1dedd0f2642395d8f7aff833fcaa425855a9ee#4d1dedd0f2642395d8f7aff833fcaa425855a9ee"
 dependencies = [
  "anyhow",
  "compact_str",
- "log",
  "rustc-hash",
  "serde",
  "serde_json",
  "smallvec",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
@@ -1339,9 +1339,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-macros"
-version = "2.6.0"
+version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af407857209536a95c8e56f8231ef2c2e2aff839b22e07a1ffcbc617e9db9fa5"
+checksum = "5c55a2eff8b69ce66c84f85e1da1c233edc36ceb85a2058d11b0d6a3c7e7569c"
 dependencies = [
  "proc-macro2",
  "quote",

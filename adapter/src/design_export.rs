@@ -1,11 +1,17 @@
 //! Pointer interning for flat elaborated-design JSON export.
 //!
+//! Each export kind (`type`, `value`, `memory`, `nbr_sources`, …) has its own
+//! contiguous 1-based ID space.
+//!
 //! AI NOTICE: Mostly generated, partially reviewed.
 
 use std::io::Write;
 use std::ptr::NonNull;
 
 use rustc_hash::FxHashMap;
+
+/// Number of [`ExportObjectKind`] variants.
+const KIND_COUNT: usize = 5;
 
 /// Object kinds for pointer-backed elaboration data.
 #[repr(u32)]
@@ -34,7 +40,6 @@ impl TryFrom<u32> for ExportObjectKind {
 }
 
 struct InternedEntry {
-    kind: ExportObjectKind,
     ptr: NonNull<u8>,
     size: usize,
 }
@@ -45,20 +50,17 @@ pub struct InternedId(u32);
 
 /// Interning context for elaborated-design export.
 pub struct DesignExportContext {
-    /// Maps from *(kind, address)* to *interned ID*.
+    /// Maps from *(kind, address)* to *per-kind interned ID*.
     map: FxHashMap<(ExportObjectKind, NonNull<u8>), InternedId>,
-    /// Interned entries, indexed by *interned ID*.
-    entries: Vec<InternedEntry>,
-    /// Object counts, indexed by [`ExportObjectKind`].
-    counts: [u32; 5],
+    /// Interned entries per kind, indexed by that kind's 1-based ID.
+    entries: [Vec<InternedEntry>; KIND_COUNT],
 }
 
 impl DesignExportContext {
     fn new() -> Self {
         Self {
             map: FxHashMap::default(),
-            entries: Vec::new(),
-            counts: [0; 5],
+            entries: Default::default(),
         }
     }
 
@@ -72,42 +74,25 @@ impl DesignExportContext {
             return (id, false);
         }
 
-        let id = InternedId(u32::try_from(self.entries.len() + 1).expect("export id overflow"));
+        let table = &mut self.entries[kind as usize];
+        let id = InternedId(u32::try_from(table.len() + 1).expect("export id overflow"));
         self.map.insert((kind, ptr), id);
-        self.entries.push(InternedEntry {
-            kind,
+        table.push(InternedEntry {
             ptr,
             size: size as usize,
         });
-        self.counts[kind as usize] += 1;
         (id, true)
     }
 
     fn count(&self, kind: ExportObjectKind) -> u32 {
-        self.counts[kind as usize]
+        u32::try_from(self.entries[kind as usize].len()).unwrap_or(0)
     }
 
     fn entry(&self, kind: ExportObjectKind, id: InternedId) -> Option<&InternedEntry> {
         if id.0 == 0 {
             return None;
         }
-        let entry = self.entries.get(usize::try_from(id.0 - 1).ok()?)?;
-        if entry.kind == kind {
-            Some(entry)
-        } else {
-            None
-        }
-    }
-
-    fn entry_at(&self, index: InternedId) -> Option<&InternedEntry> {
-        if index.0 == 0 {
-            return None;
-        }
-        self.entries.get(usize::try_from(index.0 - 1).ok()?)
-    }
-
-    fn total_entries(&self) -> u32 {
-        u32::try_from(self.entries.len()).unwrap_or(0)
+        self.entries[kind as usize].get(usize::try_from(id.0 - 1).ok()?)
     }
 }
 
@@ -159,28 +144,27 @@ pub extern "C" fn adapter_design_export_get_size(
         .map_or(0, |entry| u32::try_from(entry.size).unwrap_or(0))
 }
 
+/// Returns the interned entry for `kind` with per-kind ID `id`.
 #[unsafe(no_mangle)]
 pub extern "C" fn adapter_design_export_get_entry(
     ctx: &DesignExportContext,
-    index: InternedId,
-    kind: &mut u32,
+    kind: u32,
+    id: InternedId,
     ptr: &mut *const u8,
     size: &mut u32,
 ) {
-    if let Some(entry) = ctx.entry_at(index) {
-        *kind = entry.kind as u32;
+    let Ok(kind) = ExportObjectKind::try_from(kind) else {
+        *ptr = std::ptr::null();
+        *size = 0;
+        return;
+    };
+    if let Some(entry) = ctx.entry(kind, id) {
         *ptr = entry.ptr.as_ptr();
         *size = u32::try_from(entry.size).unwrap_or(0);
     } else {
-        *kind = 0;
         *ptr = std::ptr::null();
         *size = 0;
     }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn adapter_design_export_total_entries(ctx: &DesignExportContext) -> u32 {
-    ctx.total_entries()
 }
 
 #[unsafe(no_mangle)]

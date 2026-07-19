@@ -36,7 +36,7 @@ with Vhdl.Nodes; use Vhdl.Nodes;
 with Vhdl.Nodes_Meta; use Vhdl.Nodes_Meta;
 
 package body Design_Export is
-   Design_Schema_Version : constant := 1;
+   Design_Schema_Version : constant := 2;
 
    function To_Type_Acc is new Ada.Unchecked_Conversion
      (System.Address, Type_Acc);
@@ -146,15 +146,11 @@ package body Design_Export is
       Intern_Object (Kind, Ptr, Size, Id, Was_New);
    end Intern_Object;
 
-   function Design_Export_Total_Entries (Ctx : System.Address) return Unsigned_32;
-   pragma Import (C, Design_Export_Total_Entries,
-                  "adapter_design_export_total_entries");
-
    procedure Design_Export_Get_Entry (Ctx : System.Address;
-                                    Index : Unsigned_32;
-                                    Kind : out Unsigned_32;
-                                    Ptr : out System.Address;
-                                    Size : out Unsigned_32);
+                                      Kind : Unsigned_32;
+                                      Id : Unsigned_32;
+                                      Ptr : out System.Address;
+                                      Size : out Unsigned_32);
    pragma Import (C, Design_Export_Get_Entry,
                   "adapter_design_export_get_entry");
 
@@ -962,44 +958,40 @@ package body Design_Export is
    begin
       for Id in First_Instance_Id .. Get_Instance_Count loop
          Inst := Get_Instance_By_Id (Id);
-         if Inst = null then
-            Append (Buffer, "null");
-            Append_Line_End (Buffer);
-         else
-            Append_Tag_Open (Buffer, "instance");
-            Append (Buffer, """id"":");
-            Append (Buffer, Unsigned_32 (Id));
-            Append (Buffer, ",""stmt"":");
-            Append_Iir (Buffer, Get_Statement_Scope (Inst));
-            Append (Buffer, ",""source"":");
-            Append_Iir (Buffer, Get_Source_Scope (Inst));
-            Append (Buffer, ",""parent"":");
-            Append_Instance_Ref (Buffer, Get_Instance_Parent (Inst));
-            Append (Buffer, ",""config"":");
-            Append_Iir (Buffer, Get_Instance_Config (Inst));
-            Append (Buffer, ",""caller"":");
-            Append_Instance_Ref (Buffer, Get_Caller_Instance (Inst));
-            Append (Buffer, ",""extra"":");
-            Append_Instance_Ref (Buffer, Get_First_Extra_Instance (Inst));
-            Append (Buffer, ",""block"":");
-            Append_Iir (Buffer, Get_Instance_Block_Ref (Inst));
-            Append (Buffer, ",""uninst"":");
-            Append_Iir (Buffer, Get_Instance_Uninst_Ref (Inst));
-            Append_Attribute (Buffer, "is_const", Get_Instance_Const (Inst));
-            Append_Attribute (Buffer, "is_error", Is_Error (Inst));
-            Append_Attribute
-              (Buffer, "flag1", Get_Indiv_Signal_Assoc_Flag (Inst));
-            Append_Attribute
-              (Buffer, "flag2", Get_Indiv_Signal_Assoc_Parent_Flag (Inst));
-            Append (Buffer, ",""foreign"":");
-            Append (Buffer, Integer_32 (Get_Instance_Foreign (Inst)));
-            Append (Buffer, ",""elab_objects"":");
-            Append (Buffer, Unsigned_32 (Get_Instance_Elab_Objects (Inst)));
-            Append (Buffer, ",""max_objects"":");
-            Append (Buffer, Unsigned_32 (Get_Instance_Max_Objs (Inst)));
-            Append_Tag_Close (Buffer);
-            Append_Line_End (Buffer);
-         end if;
+         exit when Inst = null;
+         Append_Tag_Open (Buffer, "instance");
+         Append (Buffer, """id"":");
+         Append (Buffer, Unsigned_32 (Id));
+         Append (Buffer, ",""stmt"":");
+         Append_Iir (Buffer, Get_Statement_Scope (Inst));
+         Append (Buffer, ",""source"":");
+         Append_Iir (Buffer, Get_Source_Scope (Inst));
+         Append (Buffer, ",""parent"":");
+         Append_Instance_Ref (Buffer, Get_Instance_Parent (Inst));
+         Append (Buffer, ",""config"":");
+         Append_Iir (Buffer, Get_Instance_Config (Inst));
+         Append (Buffer, ",""caller"":");
+         Append_Instance_Ref (Buffer, Get_Caller_Instance (Inst));
+         Append (Buffer, ",""extra"":");
+         Append_Instance_Ref (Buffer, Get_First_Extra_Instance (Inst));
+         Append (Buffer, ",""block"":");
+         Append_Iir (Buffer, Get_Instance_Block_Ref (Inst));
+         Append (Buffer, ",""uninst"":");
+         Append_Iir (Buffer, Get_Instance_Uninst_Ref (Inst));
+         Append_Attribute (Buffer, "is_const", Get_Instance_Const (Inst));
+         Append_Attribute (Buffer, "is_error", Is_Error (Inst));
+         Append_Attribute
+            (Buffer, "flag1", Get_Indiv_Signal_Assoc_Flag (Inst));
+         Append_Attribute
+            (Buffer, "flag2", Get_Indiv_Signal_Assoc_Parent_Flag (Inst));
+         Append (Buffer, ",""foreign"":");
+         Append (Buffer, Integer_32 (Get_Instance_Foreign (Inst)));
+         Append (Buffer, ",""elab_objects"":");
+         Append (Buffer, Unsigned_32 (Get_Instance_Elab_Objects (Inst)));
+         Append (Buffer, ",""max_objects"":");
+         Append (Buffer, Unsigned_32 (Get_Instance_Max_Objs (Inst)));
+         Append_Tag_Close (Buffer);
+         Append_Line_End (Buffer);
       end loop;
    end Emit_Instances;
 
@@ -1422,48 +1414,43 @@ package body Design_Export is
       end loop;
    end Emit_Simultaneous;
 
-   function Design_Export_Total_Entries_Wrap return Unsigned_32 is
-   begin
-      return Design_Export_Total_Entries (Intern_Ctx);
-   end Design_Export_Total_Entries_Wrap;
-
-   procedure Design_Export_Get_Entry_Wrap (Index : Unsigned_32;
-                                         Kind : out Unsigned_32;
-                                         Ptr : out System.Address;
-                                         Size : out Unsigned_32) is
-   begin
-      Design_Export_Get_Entry (Intern_Ctx, Index, Kind, Ptr, Size);
-   end Design_Export_Get_Entry_Wrap;
-
    procedure Emit_Interned_Objects (Buffer : System.Address) is
-      Entry_Kind : Unsigned_32;
       Entry_Ptr : System.Address;
       Entry_Size : Unsigned_32;
+
+      procedure Emit_Kind (Kind : Unsigned_32) is
+      begin
+         for Id in 1 .. Export_Count (Kind) loop
+            Design_Export_Get_Entry
+              (Intern_Ctx, Kind, Id, Entry_Ptr, Entry_Size);
+            case Kind is
+               when Export_Kind_Type =>
+                  if Entry_Ptr /= System.Null_Address then
+                     Encode_Type_Record (Buffer, To_Type_Acc (Entry_Ptr));
+                     Append_Line_End (Buffer);
+                  end if;
+               when Export_Kind_Value =>
+                  if Entry_Ptr /= System.Null_Address then
+                     Encode_Value_Record (Buffer, To_Value_Acc (Entry_Ptr));
+                     Append_Line_End (Buffer);
+                  end if;
+               when Export_Kind_Memory =>
+                  Encode_Memory_Record (Buffer, Id);
+                  Append_Line_End (Buffer);
+               when Export_Kind_Nbr_Sources =>
+                  Encode_Nbr_Sources_Record
+                    (Buffer, Id, Entry_Ptr, Entry_Size);
+                  Append_Line_End (Buffer);
+               when others =>
+                  null;
+            end case;
+         end loop;
+      end Emit_Kind;
    begin
-      for I in 1 .. Design_Export_Total_Entries_Wrap loop
-         Design_Export_Get_Entry_Wrap (I, Entry_Kind, Entry_Ptr, Entry_Size);
-         case Entry_Kind is
-            when Export_Kind_Type =>
-               if Entry_Ptr /= System.Null_Address then
-                  Encode_Type_Record (Buffer, To_Type_Acc (Entry_Ptr));
-                  Append_Line_End (Buffer);
-               end if;
-            when Export_Kind_Value =>
-               if Entry_Ptr /= System.Null_Address then
-                  Encode_Value_Record (Buffer, To_Value_Acc (Entry_Ptr));
-                  Append_Line_End (Buffer);
-               end if;
-            when Export_Kind_Memory =>
-               Encode_Memory_Record (Buffer, I);
-               Append_Line_End (Buffer);
-            when Export_Kind_Nbr_Sources =>
-               Encode_Nbr_Sources_Record
-                 (Buffer, I, Entry_Ptr, Entry_Size);
-               Append_Line_End (Buffer);
-            when others =>
-               null;
-         end case;
-      end loop;
+      Emit_Kind (Export_Kind_Type);
+      Emit_Kind (Export_Kind_Value);
+      Emit_Kind (Export_Kind_Memory);
+      Emit_Kind (Export_Kind_Nbr_Sources);
    end Emit_Interned_Objects;
 
    procedure Dump_Design is
@@ -1475,11 +1462,11 @@ package body Design_Export is
       end if;
 
       Design_Export_Create;
-      Line_Counter := 0;
 
       Discover_Snapshot;
 
       Buffer := Create_Buffer (64 * 1024);
+      Line_Counter := 0;
       Encode_Metadata (Buffer);
       Emit_Elab_Units (Buffer);
       Emit_Instances (Buffer);
@@ -1494,9 +1481,11 @@ package body Design_Export is
       Emit_Terminals (Buffer);
       Emit_Simultaneous (Buffer);
       Emit_Interned_Objects (Buffer);
+      -- Empty line to indicate end of data
+      Append_Line_End (Buffer);
+
       Flush (Buffer);
       Free_Buffer (Buffer);
-
       Design_Export_Free;
    end Dump_Design;
 

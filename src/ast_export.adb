@@ -646,6 +646,8 @@ package body Ast_Export is
    begin
       Encode_Metadata (Buffer);
       Encode_Ast (Buffer);
+      -- Empty line to indicate end of data
+      Append (Buffer, ASCII.LF);
       Adapter.Flush (Buffer);
       Adapter.Free_Buffer (Buffer);
    end Dump_Ast;

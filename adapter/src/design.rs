@@ -8,6 +8,7 @@ use std::time::UNIX_EPOCH;
 use compact_str::CompactString;
 use compact_str::format_compact;
 use ghdl_ast as ast;
+use ghdl_ast::deserialize_f64;
 use hdl_simulation_protocol::SimulationId;
 use hdl_simulation_protocol::design_hierarchy as hierarchy;
 use hdl_simulation_protocol::design_hierarchy::SignalInstanceId;
@@ -206,20 +207,6 @@ impl From<Dir> for hierarchy::Direction {
     }
 }
 
-fn deserialize_f64<'de, D>(deserializer: D) -> Result<f64, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    use serde::de::Error;
-
-    let string_repr = <&str>::deserialize(deserializer)?;
-    let bits_str = string_repr
-        .strip_prefix('#')
-        .ok_or_else(|| D::Error::custom("missing # prefix"))?;
-    let bits = u64::from_str_radix(bits_str, 16).map_err(D::Error::custom)?;
-    Ok(f64::from_bits(bits))
-}
-
 /// Registers the design hierarchy with the WebSocket server.
 #[instrument(level = "debug", skip(state))]
 #[unsafe(no_mangle)]
@@ -268,10 +255,9 @@ fn get_signal_name(decl_id: ast::GenericNodeId) -> Option<CompactString> {
         ast::Node::SignalDeclaration(signal) => Some(signal.identifier.normalized.0),
         ast::Node::InterfaceSignalDeclaration(signal) => Some(signal.identifier.normalized.0),
         ast::Node::Attribute(attribute) => {
-            let prefix = retrieve_ast_node(attribute.prefix.into()).ok()?;
-            let prefix: ast::Prefix<'_> = (&prefix).try_into().ok()?;
-            let name = match prefix {
-                ast::Prefix::SimpleName(simple_name) => simple_name.identifier.original(),
+            let prefix = retrieve_ast_node(attribute.prefix).ok()?;
+            let name = match &prefix {
+                ast::PrefixOwned::SimpleName(simple_name) => simple_name.identifier.original(),
                 _ => return None,
             };
             Some(format_compact!("{name}'{kind}", kind = attribute.kind))
@@ -280,10 +266,11 @@ fn get_signal_name(decl_id: ast::GenericNodeId) -> Option<CompactString> {
     }
 }
 
-fn retrieve_ast_node<T>(node_id: ast::NodeId<T>) -> Result<T, DecodingError>
+fn retrieve_ast_node<Id>(node_id: Id) -> Result<Id::OwnedNodeType, DecodingError>
 where
-    T: TryFrom<ast::Node>,
-    <T as TryFrom<ast::Node>>::Error: fmt::Debug,
+    Id: ast::AstNodeId,
+    Id::OwnedNodeType: TryFrom<ast::Node>,
+    <Id::OwnedNodeType as TryFrom<ast::Node>>::Error: fmt::Debug,
 {
     fn get_node(node_id: NonZeroU32) -> Result<ast::Node, DecodingError> {
         let mut buffer = Vec::with_capacity(4096);
@@ -294,7 +281,8 @@ where
         })
     }
 
-    get_node(node_id.to_raw()).map(|node| node.try_into().expect("node should be of expected type"))
+    get_node(node_id.id_primitive())
+        .map(|node| node.try_into().expect("node should be of expected type"))
 }
 
 fn collect_signals(signal_count: u32) -> Vec<Signal> {
@@ -365,6 +353,9 @@ fn build_module(
     match source {
         ast::Node::ArchitectureBody(arch) => {
             let entity_name = retrieve_ast_node(arch.entity_name).unwrap();
+            let ast::NameOwned::SimpleName(entity_name) = entity_name else {
+                return None; // TODO log error
+            };
             kind = hierarchy::ModuleKind::DesignEntity {
                 entity: entity_name.identifier.into_original(),
                 architecture: arch.identifier.into_original(),
