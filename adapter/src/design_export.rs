@@ -5,7 +5,6 @@
 //!
 //! AI NOTICE: Mostly generated, partially reviewed.
 
-use std::io::Write;
 use std::ptr::NonNull;
 
 use rustc_hash::FxHashMap;
@@ -167,8 +166,9 @@ pub extern "C" fn adapter_design_export_get_entry(
     }
 }
 
+/// Appends the interned entry as a JSON string of Base64-encoded bytes.
 #[unsafe(no_mangle)]
-pub extern "C" fn adapter_design_export_append_memory_hex(
+pub extern "C" fn adapter_design_export_append_memory_base64(
     buffer: &mut Vec<u8>,
     ctx: &DesignExportContext,
     kind: u32,
@@ -182,15 +182,79 @@ pub extern "C" fn adapter_design_export_append_memory_hex(
     };
 
     buffer.push(b'"');
+    // SAFETY: `entry.ptr`/`entry.size` come from the elaborator and stay valid
+    // for the lifetime of the export context.
     let bytes = unsafe { std::slice::from_raw_parts(entry.ptr.as_ptr(), entry.size) };
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    for byte in bytes {
-        let _wont_fail = write!(
-            buffer,
-            "{}{}",
-            HEX[(byte >> 4) as usize],
-            HEX[(byte & 0xf) as usize]
-        );
-    }
+    append_base64(buffer, bytes);
     buffer.push(b'"');
+}
+
+/// Appends standard Base64 encoding of `bytes` to `buffer`.
+fn append_base64(buffer: &mut Vec<u8>, bytes: &[u8]) {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut chunks = bytes.chunks_exact(3);
+    for chunk in chunks.by_ref() {
+        let n = (u32::from(chunk[0]) << 16) | (u32::from(chunk[1]) << 8) | u32::from(chunk[2]);
+        buffer.push(TABLE[((n >> 18) & 0x3f) as usize]);
+        buffer.push(TABLE[((n >> 12) & 0x3f) as usize]);
+        buffer.push(TABLE[((n >> 6) & 0x3f) as usize]);
+        buffer.push(TABLE[(n & 0x3f) as usize]);
+    }
+    let rem = chunks.remainder();
+    match rem.len() {
+        1 => {
+            let n = u32::from(rem[0]) << 16;
+            buffer.push(TABLE[((n >> 18) & 0x3f) as usize]);
+            buffer.push(TABLE[((n >> 12) & 0x3f) as usize]);
+            buffer.push(b'=');
+            buffer.push(b'=');
+        },
+        2 => {
+            let n = (u32::from(rem[0]) << 16) | (u32::from(rem[1]) << 8);
+            buffer.push(TABLE[((n >> 18) & 0x3f) as usize]);
+            buffer.push(TABLE[((n >> 12) & 0x3f) as usize]);
+            buffer.push(TABLE[((n >> 6) & 0x3f) as usize]);
+            buffer.push(b'=');
+        },
+        _ => {},
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::append_base64;
+
+    fn encode_base64(bytes: &[u8]) -> String {
+        let mut buffer = Vec::new();
+        append_base64(&mut buffer, bytes);
+        String::from_utf8(buffer).unwrap()
+    }
+
+    /// RFC 4648 §10 test vectors.
+    const RFC4648_VECTORS: &[(&[u8], &str)] = &[
+        (b"", ""),
+        (b"f", "Zg=="),
+        (b"fo", "Zm8="),
+        (b"foo", "Zm9v"),
+        (b"foob", "Zm9vYg=="),
+        (b"fooba", "Zm9vYmE="),
+        (b"foobar", "Zm9vYmFy"),
+    ];
+
+    #[test]
+    fn encode_rfc4648_vectors() {
+        for &(plain, encoded) in RFC4648_VECTORS {
+            assert_eq!(encode_base64(plain), encoded, "encode {plain:?}");
+        }
+    }
+
+    #[test]
+    fn encode_all_bytes() {
+        let bytes: Vec<u8> = (0u8..=255).collect();
+        let encoded = encode_base64(&bytes);
+        assert!(encoded.is_ascii());
+        assert_eq!(encoded.len() % 4, 0);
+        // 256 ≡ 1 (mod 3), so encoding ends with `==`.
+        assert!(encoded.ends_with("=="));
+    }
 }

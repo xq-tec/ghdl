@@ -36,7 +36,7 @@ with Vhdl.Nodes; use Vhdl.Nodes;
 with Vhdl.Nodes_Meta; use Vhdl.Nodes_Meta;
 
 package body Design_Export is
-   Design_Schema_Version : constant := 2;
+   Design_Schema_Version : constant := 3;
 
    function To_Type_Acc is new Ada.Unchecked_Conversion
      (System.Address, Type_Acc);
@@ -163,20 +163,20 @@ package body Design_Export is
       return Adapter_Design_Export_Count (Intern_Ctx, Kind);
    end Export_Count;
 
-   procedure Append_Memory_Hex (Buffer : System.Address;
-                                Kind : Unsigned_32;
-                                Id : Unsigned_32) is
-      procedure Adapter_Design_Export_Append_Memory_Hex
+   procedure Append_Memory_Base64 (Buffer : System.Address;
+                                   Kind : Unsigned_32;
+                                   Id : Unsigned_32) is
+      procedure Adapter_Design_Export_Append_Memory_Base64
         (Buffer : System.Address;
          Ctx : System.Address;
          Kind : Unsigned_32;
          Id : Unsigned_32);
-      pragma Import (C, Adapter_Design_Export_Append_Memory_Hex,
-                     "adapter_design_export_append_memory_hex");
+      pragma Import (C, Adapter_Design_Export_Append_Memory_Base64,
+                     "adapter_design_export_append_memory_base64");
    begin
-      Adapter_Design_Export_Append_Memory_Hex
+      Adapter_Design_Export_Append_Memory_Base64
         (Buffer, Intern_Ctx, Kind, Id);
-   end Append_Memory_Hex;
+   end Append_Memory_Base64;
 
    Line_Counter : Natural := 0;
 
@@ -469,9 +469,6 @@ package body Design_Export is
       Append_Wkind (Buffer, T.Wkind);
       Append (Buffer, ",""align"":");
       Append (Buffer, Unsigned_32 (T.Al));
-      Append_Attribute (Buffer, "is_global", T.Is_Global);
-      Append_Attribute (Buffer, "is_static", T.Is_Static);
-      Append_Attribute (Buffer, "is_bnd_static", T.Is_Bnd_Static);
       Append (Buffer, ",""sz"":");
       Append (Buffer, Integer_64 (T.Sz));
       Append (Buffer, ",""w"":");
@@ -628,6 +625,15 @@ package body Design_Export is
          return Intern_Object (Export_Kind_Value, V.all'Address, 0);
       end Value_Id;
    begin
+      case V.Kind is
+         when Value_Net | Value_Wire | Value_Quantity | Value_Terminal =>
+            --  Synthesis / AMS values are not part of the digital simulation
+            --  export.
+            raise Program_Error;
+         when others =>
+            null;
+      end case;
+
       Append_Tag_Open (Buffer, "value");
       Append (Buffer, """id"":");
       Append (Buffer, Value_Id);
@@ -635,19 +641,11 @@ package body Design_Export is
       Append_Value_Kind (Buffer, V.Kind);
 
       case V.Kind is
-         when Value_Net | Value_Wire =>
-            Append (Buffer, ",""n"":");
-            Append (Buffer, Unsigned_32 (V.N));
+         when Value_Net | Value_Wire | Value_Quantity | Value_Terminal =>
+            raise Program_Error;
          when Value_Signal =>
             Append (Buffer, ",""signal"":");
             Append (Buffer, Unsigned_32 (V.S));
-            Append (Buffer, ",""init"":");
-            if V.Init = null then
-               Append (Buffer, "0");
-            else
-               Append (Buffer, Intern_Object
-                         (Export_Kind_Value, V.Init.all'Address, 0));
-            end if;
          when Value_Memory =>
             Append (Buffer, ",""memory"":");
             if V.Mem = null then
@@ -661,12 +659,6 @@ package body Design_Export is
          when Value_File =>
             Append (Buffer, ",""file"":");
             Append (Buffer, Unsigned_32 (V.File));
-         when Value_Quantity =>
-            Append (Buffer, ",""quantity"":");
-            Append (Buffer, Unsigned_32 (V.Q));
-         when Value_Terminal =>
-            Append (Buffer, ",""terminal"":");
-            Append (Buffer, Unsigned_32 (V.T));
          when Value_Const =>
             Append (Buffer, ",""value"":");
             if V.C_Val = null then
@@ -677,8 +669,6 @@ package body Design_Export is
             end if;
             Append (Buffer, ",""loc"":");
             Append_Iir (Buffer, V.C_Loc);
-            Append (Buffer, ",""net"":");
-            Append (Buffer, Unsigned_32 (V.C_Net));
          when Value_Alias =>
             Append (Buffer, ",""obj"":");
             if V.A_Obj = null then
@@ -757,7 +747,7 @@ package body Design_Export is
       Append (Buffer, ",""size"":");
       Append (Buffer, Sz);
       Append (Buffer, ",""data"":");
-      Append_Memory_Hex (Buffer, Export_Kind_Memory, Id);
+      Append_Memory_Base64 (Buffer, Export_Kind_Memory, Id);
       Append_Tag_Close (Buffer);
    end Encode_Memory_Record;
 
@@ -805,8 +795,6 @@ package body Design_Export is
                Append (Buffer, Unsigned_32 (Entry_Item.Nbr_Conns));
                Append (Buffer, ",""total"":");
                Append (Buffer, Unsigned_32 (Entry_Item.Total));
-               Append (Buffer, ",""last_proc"":");
-               Append (Buffer, Unsigned_32 (Entry_Item.Last_Proc));
                Append (Buffer, '}');
             end;
          end loop;
@@ -854,28 +842,6 @@ package body Design_Export is
          end;
       end loop;
 
-      for I in Quantity_Table.First .. Quantity_Table.Last loop
-         declare
-            Item : Quantity_Entry renames Quantity_Table.Table (I);
-         begin
-            Discover_Type (Item.Typ);
-            if Item.Val /= null then
-               Discover_Memory (Item.Val, Item.Typ.Sz);
-            end if;
-         end;
-      end loop;
-
-      for I in Terminal_Table.First .. Terminal_Table.Last loop
-         declare
-            Item : Terminal_Entry renames Terminal_Table.Table (I);
-         begin
-            Discover_Type (Item.Across_Typ);
-            Discover_Type (Item.Through_Typ);
-            if Item.Ref_Val /= null and then Item.Across_Typ /= null then
-               Discover_Memory (Item.Ref_Val, Item.Across_Typ.Sz);
-            end if;
-         end;
-      end loop;
    end Discover_Snapshot;
 
    procedure Encode_Metadata (Buffer : System.Address) is
@@ -896,9 +862,7 @@ package body Design_Export is
            (Get_Instance_Id (Elab.Vhdl_Insts.Top_Instance)));
       end if;
       Append (Buffer, ",""counts"":{");
-      Append (Buffer, """elab_unit"":");
-      Append (Buffer, Unsigned_32 (Elab_Units.Last));
-      Append (Buffer, ",""instance"":");
+      Append (Buffer, """instance"":");
       Append (Buffer, Unsigned_32 (Get_Instance_Count));
       Append (Buffer, ",""signal"":");
       Append (Buffer, Unsigned_32 (Signals_Table.Last));
@@ -912,14 +876,6 @@ package body Design_Export is
       Append (Buffer, Unsigned_32 (Connect_Table.Last));
       Append (Buffer, ",""disconnect"":");
       Append (Buffer, Unsigned_32 (Disconnect_Table.Last));
-      Append (Buffer, ",""quantity"":");
-      Append (Buffer, Unsigned_32 (Quantity_Table.Last));
-      Append (Buffer, ",""terminal"":");
-      Append (Buffer, Unsigned_32 (Terminal_Table.Last));
-      Append (Buffer, ",""simultaneous"":");
-      Append (Buffer, Unsigned_32 (Simultaneous_Table.Last));
-      Append (Buffer, ",""complex_simultaneous"":");
-      Append (Buffer, Unsigned_32 (Complex_Simultaneous_Table.Last));
       Append (Buffer, ",""type"":");
       Append (Buffer, Export_Count (Export_Kind_Type));
       Append (Buffer, ",""value"":");
@@ -940,19 +896,6 @@ package body Design_Export is
       Append_Line_End (Buffer);
    end Encode_Metadata;
 
-   procedure Emit_Elab_Units (Buffer : System.Address) is
-   begin
-      for I in Elab_Units.First .. Elab_Units.Last loop
-         Append_Tag_Open (Buffer, "elab_unit");
-         Append (Buffer, """id"":");
-         Append (Buffer, Unsigned_32 (I));
-         Append (Buffer, ",""unit"":");
-         Append_Iir (Buffer, Elab_Units.Table (I));
-         Append_Tag_Close (Buffer);
-         Append_Line_End (Buffer);
-      end loop;
-   end Emit_Elab_Units;
-
    procedure Emit_Instances (Buffer : System.Address) is
       Inst : Synth_Instance_Acc;
    begin
@@ -970,26 +913,18 @@ package body Design_Export is
          Append_Instance_Ref (Buffer, Get_Instance_Parent (Inst));
          Append (Buffer, ",""config"":");
          Append_Iir (Buffer, Get_Instance_Config (Inst));
-         Append (Buffer, ",""caller"":");
-         Append_Instance_Ref (Buffer, Get_Caller_Instance (Inst));
          Append (Buffer, ",""extra"":");
          Append_Instance_Ref (Buffer, Get_First_Extra_Instance (Inst));
          Append (Buffer, ",""block"":");
          Append_Iir (Buffer, Get_Instance_Block_Ref (Inst));
          Append (Buffer, ",""uninst"":");
          Append_Iir (Buffer, Get_Instance_Uninst_Ref (Inst));
-         Append_Attribute (Buffer, "is_const", Get_Instance_Const (Inst));
-         Append_Attribute (Buffer, "is_error", Is_Error (Inst));
          Append_Attribute
             (Buffer, "flag1", Get_Indiv_Signal_Assoc_Flag (Inst));
          Append_Attribute
             (Buffer, "flag2", Get_Indiv_Signal_Assoc_Parent_Flag (Inst));
          Append (Buffer, ",""foreign"":");
          Append (Buffer, Integer_32 (Get_Instance_Foreign (Inst)));
-         Append (Buffer, ",""elab_objects"":");
-         Append (Buffer, Unsigned_32 (Get_Instance_Elab_Objects (Inst)));
-         Append (Buffer, ",""max_objects"":");
-         Append (Buffer, Unsigned_32 (Get_Instance_Max_Objs (Inst)));
          Append_Tag_Close (Buffer);
          Append_Line_End (Buffer);
       end loop;
@@ -1032,7 +967,7 @@ package body Design_Export is
 
                for Slot in 1 .. Get_Instance_Max_Objs (Inst) loop
                   Obj := Get_Instance_Obj (Inst, Slot);
-                  if Obj.Kind /= Obj_None then
+                  if Obj.Kind /= Obj_None and then Obj.Kind /= Obj_Marker then
                      Append_Tag_Open (Buffer, "object_slot");
                      Append (Buffer, """instance"":");
                      Append (Buffer, Unsigned_32 (Id));
@@ -1078,8 +1013,6 @@ package body Design_Export is
                         when Obj_Instance =>
                            Append (Buffer, ",""target_instance"":");
                            Append_Instance_Ref (Buffer, Obj.I_Inst);
-                        when Obj_Marker =>
-                           Append (Buffer, ",""mark"":null");
                         when others =>
                            null;
                      end case;
@@ -1294,126 +1227,6 @@ package body Design_Export is
       end loop;
    end Emit_Disconnects;
 
-   procedure Emit_Quantities (Buffer : System.Address) is
-   begin
-      for I in Quantity_Table.First .. Quantity_Table.Last loop
-         declare
-            Item : Quantity_Entry renames Quantity_Table.Table (I);
-         begin
-            Append_Tag_Open (Buffer, "quantity");
-            Append (Buffer, """id"":");
-            Append (Buffer, Unsigned_32 (I));
-            Append (Buffer, ",""decl"":");
-            Append_Iir (Buffer, Item.Decl);
-            Append (Buffer, ",""instance"":");
-            Append_Instance_Ref (Buffer, Item.Inst);
-            Append (Buffer, ",""type"":");
-            if Item.Typ = null then
-               Append (Buffer, "0");
-            else
-               Append (Buffer, Intern_Object
-                         (Export_Kind_Type, Item.Typ.all'Address, 0));
-            end if;
-            Append (Buffer, ",""val"":");
-            if Item.Val = null or else Item.Typ = null then
-               Append (Buffer, "0");
-            else
-               Append (Buffer, Intern_Object
-                         (Export_Kind_Memory,
-                          To_Address (Item.Val),
-                          Size_To_U32 (Item.Typ.Sz)));
-            end if;
-            Append (Buffer, ",""sq_idx"":");
-            Append (Buffer, Unsigned_32 (Item.Sq_Idx));
-            Append_Tag_Close (Buffer);
-            Append_Line_End (Buffer);
-         end;
-      end loop;
-   end Emit_Quantities;
-
-   procedure Emit_Terminals (Buffer : System.Address) is
-   begin
-      for I in Terminal_Table.First .. Terminal_Table.Last loop
-         declare
-            Item : Terminal_Entry renames Terminal_Table.Table (I);
-         begin
-            Append_Tag_Open (Buffer, "terminal");
-            Append (Buffer, """id"":");
-            Append (Buffer, Unsigned_32 (I));
-            Append (Buffer, ",""decl"":");
-            Append_Iir (Buffer, Item.Decl);
-            Append (Buffer, ",""instance"":");
-            Append_Instance_Ref (Buffer, Item.Inst);
-            Append (Buffer, ",""across_type"":");
-            if Item.Across_Typ = null then
-               Append (Buffer, "0");
-            else
-               Append (Buffer, Intern_Object
-                         (Export_Kind_Type, Item.Across_Typ.all'Address, 0));
-            end if;
-            Append (Buffer, ",""through_type"":");
-            if Item.Through_Typ = null then
-               Append (Buffer, "0");
-            else
-               Append (Buffer, Intern_Object
-                         (Export_Kind_Type, Item.Through_Typ.all'Address, 0));
-            end if;
-            Append (Buffer, ",""ref_val"":");
-            if Item.Ref_Val = null or else Item.Across_Typ = null then
-               Append (Buffer, "0");
-            else
-               Append (Buffer, Intern_Object
-                         (Export_Kind_Memory,
-                          To_Address (Item.Ref_Val),
-                          Size_To_U32 (Item.Across_Typ.Sz)));
-            end if;
-            Append (Buffer, ",""ref_idx"":");
-            Append (Buffer, Unsigned_32 (Item.Ref_Idx));
-            Append (Buffer, ",""term_idx"":");
-            Append (Buffer, Unsigned_32 (Item.Term_Idx));
-            Append_Tag_Close (Buffer);
-            Append_Line_End (Buffer);
-         end;
-      end loop;
-   end Emit_Terminals;
-
-   procedure Emit_Simultaneous (Buffer : System.Address) is
-   begin
-      for I in Simultaneous_Table.First .. Simultaneous_Table.Last loop
-         declare
-            Item : Simultaneous_Record renames Simultaneous_Table.Table (I);
-         begin
-            Append_Tag_Open (Buffer, "simultaneous");
-            Append (Buffer, """id"":");
-            Append (Buffer, Unsigned_32 (I));
-            Append (Buffer, ",""stmt"":");
-            Append_Iir (Buffer, Item.Stmt);
-            Append (Buffer, ",""instance"":");
-            Append_Instance_Ref (Buffer, Item.Inst);
-            Append_Tag_Close (Buffer);
-            Append_Line_End (Buffer);
-         end;
-      end loop;
-
-      for I in Complex_Simultaneous_Table.First .. Complex_Simultaneous_Table.Last
-      loop
-         declare
-            Item : Simultaneous_Record renames
-              Complex_Simultaneous_Table.Table (I);
-         begin
-            Append_Tag_Open (Buffer, "complex_simultaneous");
-            Append (Buffer, """id"":");
-            Append (Buffer, Unsigned_32 (I));
-            Append (Buffer, ",""stmt"":");
-            Append_Iir (Buffer, Item.Stmt);
-            Append (Buffer, ",""instance"":");
-            Append_Instance_Ref (Buffer, Item.Inst);
-            Append_Tag_Close (Buffer);
-            Append_Line_End (Buffer);
-         end;
-      end loop;
-   end Emit_Simultaneous;
-
    procedure Emit_Interned_Objects (Buffer : System.Address) is
       Entry_Ptr : System.Address;
       Entry_Size : Unsigned_32;
@@ -1468,7 +1281,6 @@ package body Design_Export is
       Buffer := Create_Buffer (64 * 1024);
       Line_Counter := 0;
       Encode_Metadata (Buffer);
-      Emit_Elab_Units (Buffer);
       Emit_Instances (Buffer);
       Emit_Object_Slots (Buffer);
       Emit_Signals (Buffer);
@@ -1477,9 +1289,6 @@ package body Design_Export is
       Emit_Sensitivity (Buffer);
       Emit_Connections (Buffer);
       Emit_Disconnects (Buffer);
-      Emit_Quantities (Buffer);
-      Emit_Terminals (Buffer);
-      Emit_Simultaneous (Buffer);
       Emit_Interned_Objects (Buffer);
       -- Empty line to indicate end of data
       Append_Line_End (Buffer);
