@@ -504,6 +504,10 @@ package body Ghdlrun is
       elsif Option'Last > 7 and then Option (1 .. 7) = "--name="
       then
          Grt.Options.Sim_Name := new String'(Option (8 .. Option'Last));
+      elsif Option'Last > 16
+        and then Option (1 .. 16) = "--simulation-id="
+      then
+         Grt.Options.Sim_Id := new String'(Option (17 .. Option'Last));
       elsif Option = "--coverage"
         or else Option = "--coverage=stmt"
       then

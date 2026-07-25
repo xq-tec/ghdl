@@ -29,7 +29,6 @@ use tracing::info_span;
 use tracing::instrument;
 use tracing::warn;
 
-use crate::SIMULATION_ID;
 use crate::SimulationCommand;
 use crate::SimulationUpdate;
 
@@ -118,7 +117,7 @@ pub(crate) async fn run_websocket_server(
         },
     };
 
-    if let Err(e) = create_server_marker_and_register_cleanup(addr.port(), *SIMULATION_ID) {
+    if let Err(e) = create_server_marker_and_register_cleanup(addr.port(), crate::simulation_id()) {
         error!(%addr, "failed to create server marker file: {e}");
         return;
     }

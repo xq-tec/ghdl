@@ -71,8 +71,6 @@ package body Simul.Main is
       Run_End_Time : aliased Std_Time;
       Do_Pause : Boolean := False;
    begin
-      Init_Websocket;
-
       Break_Time := Std_Time'Last;
       Break_Step := False;
 
@@ -92,6 +90,8 @@ package body Simul.Main is
       if not Ok then
          return;
       end if;
+
+      Init_Websocket;
       Set_Interactive (Grt.Options.Flag_Wait);
 
       pragma Assert (Areapools.Is_Empty (Expr_Pool));

@@ -105,6 +105,10 @@ package Grt.Options is
    Sim_Name : String_Access := null;
    function Sim_Name_Valid return Boolean;
 
+   --  Set by --simulation-id=ID to override the randomly generated simulation ID.
+   Sim_Id : String_Access := null;
+   function Sim_Id_Valid return Boolean;
+
    --  Set by --disp-time (and --trace-signals, --trace-processes) to display
    --  time and deltas.
    Disp_Time : Boolean := False;

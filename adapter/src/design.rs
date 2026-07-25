@@ -8,15 +8,12 @@ use std::time::UNIX_EPOCH;
 use compact_str::CompactString;
 use compact_str::format_compact;
 use ghdl_ast as ast;
-use hdl_simulation_protocol::SimulationId;
 use hdl_simulation_protocol::design_hierarchy as hierarchy;
 use hdl_simulation_protocol::design_hierarchy::SignalInstanceId;
 use serde::Deserialize;
 use tracing::debug;
 use tracing::info;
 use tracing::instrument;
-
-use crate::SIMULATION_ID;
 
 #[derive(Debug, Deserialize)]
 pub struct Signal {
@@ -239,7 +236,7 @@ extern "C" fn adapter_register_design(
     // TODO take time at program start, instead of after elaboration
     let start_time = UNIX_EPOCH.elapsed().unwrap_or(Duration::ZERO).as_secs_f64();
     let hierarchy = hierarchy::DesignHierarchy {
-        simulation_id: *SIMULATION_ID,
+        simulation_id: crate::simulation_id(),
         name,
         start_time,
         root_modules,

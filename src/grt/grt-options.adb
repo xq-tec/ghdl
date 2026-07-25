@@ -96,6 +96,7 @@ package body Grt.Options is
       P (" --max-stack-alloc=X  error if variables are larger than X KB");
       P (" --no-run          do not simulate, only elaborate");
       P (" --name=NAME       name for the exported design hierarchy");
+      P (" --simulation-id=ID  set the simulation instance ID (hex)");
       P (" --wait            wait for command before starting simulation");
       P (" --unbuffered      disable buffering on stdout, stderr and");
       P ("                   files opened in write or append mode (TEXTIO).");
@@ -345,6 +346,11 @@ package body Grt.Options is
             Grt.Types.Unchecked_Deallocation (Sim_Name);
          end if;
          Sim_Name := new String'(Option (8 .. Len));
+      elsif Len > 16 and then Option (1 .. 16) = "--simulation-id=" then
+         if Sim_Id /= null then
+            Grt.Types.Unchecked_Deallocation (Sim_Id);
+         end if;
+         Sim_Id := new String'(Option (17 .. Len));
       elsif Len > 12 and then Option (1 .. 12) = "--stop-time=" then
          Stop_Time := Parse_Time (Option (13 .. Len));
          if Stop_Time = -1 then
@@ -547,5 +553,10 @@ package body Grt.Options is
    begin
       return Sim_Name /= null;
    end Sim_Name_Valid;
+
+   function Sim_Id_Valid return Boolean is
+   begin
+      return Sim_Id /= null;
+   end Sim_Id_Valid;
 
 end Grt.Options;

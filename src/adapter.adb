@@ -14,6 +14,8 @@
 --  You should have received a copy of the GNU General Public License
 --  along with this program.  If not, see <gnu.org/licenses>.
 
+with Grt.Options;
+
 package body Adapter is
 
    function Create_Buffer (Size : Unsigned_32) return System.Address is
@@ -108,10 +110,18 @@ package body Adapter is
    Adapter_State : System.Address := System.Null_Address;
 
    procedure Init_Websocket is
-      function Adapter_Init_Websocket return System.Address;
+      function Adapter_Init_Websocket
+        (Id_Str : System.Address; Id_Len : Unsigned_64) return System.Address;
       pragma Import (C, Adapter_Init_Websocket, "adapter_init_websocket");
+
+      Id_Str : System.Address := System.Null_Address;
+      Id_Len : Unsigned_64 := 0;
    begin
-      Adapter_State := Adapter_Init_Websocket;
+      if Grt.Options.Sim_Id_Valid then
+         Id_Str := Grt.Options.Sim_Id.all'Address;
+         Id_Len := Unsigned_64 (Grt.Options.Sim_Id'Length);
+      end if;
+      Adapter_State := Adapter_Init_Websocket (Id_Str, Id_Len);
    end Init_Websocket;
 
    procedure Set_Interactive (Is_Interactive : Boolean) is
