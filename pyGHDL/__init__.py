@@ -48,7 +48,7 @@ this is provided from a ``pyGHDL`` packages with four sub-packages:
   written in Python. The implementation offers an HTTPS service that can be used e.g. by editors and IDEs supporting LSP.
 """
 
-__version__ = "6.2.1-risim"
+__version__ = "6.3.0-risim"
 
 __author__ = "Tristan Gingold and contributors"
 __email__ = "tgingold@free.fr"
