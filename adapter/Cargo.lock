@@ -429,7 +429,7 @@ checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
 [[package]]
 name = "hdl-simulation-protocol"
 version = "0.1.0"
-source = "git+https://github.com/xq-tec/hdl-simulation-protocol.git?rev=b822b80f60f38f3216f112def1991f4f8b7f0654#b822b80f60f38f3216f112def1991f4f8b7f0654"
+source = "git+https://github.com/xq-tec/hdl-simulation-protocol.git?rev=cf7033012233b342317134e959f1b8f34f8cf172#cf7033012233b342317134e959f1b8f34f8cf172"
 dependencies = [
  "compact_str",
  "getrandom 0.4.2",

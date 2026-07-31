@@ -31,14 +31,58 @@ with Elab.Vhdl_Insts;
 with Elab.Vhdl_Values; use Elab.Vhdl_Values;
 with Grt.Options;
 with Grt.Signals; use Grt.Signals;
+with Name_Table;
 with Simul.Vhdl_Elab; use Simul.Vhdl_Elab;
 with Simul.Vhdl_Simul; use Simul.Vhdl_Simul;
 with Types;
+with Vhdl.Nodes; use Vhdl.Nodes;
+with Vhdl.Utils; use Vhdl.Utils;
 
 package body Grt.Export is
 
-   procedure Encode_Type (Buffer : System.Address; Typ : Type_Acc) is
+   --  True when Atype is a user-defined enumeration (or subtype thereof).
+   --  Predefined bit/boolean/std_logic use Type_Bit/Type_Logic, not Type_Discrete.
+   function Is_Enumeration_Type (Atype : Node) return Boolean is
    begin
+      return Atype /= Null_Iir
+        and then Get_Kind (Get_Base_Type (Atype))
+                   = Iir_Kind_Enumeration_Type_Definition;
+   end Is_Enumeration_Type;
+
+   procedure Encode_Enumeration_Type (Buffer : System.Address; Atype : Node)
+   is
+      Base : constant Node := Get_Base_Type (Atype);
+      Enums : constant Iir_Flist := Get_Enumeration_Literal_List (Base);
+      Nbr : constant Natural := Get_Nbr_Elements (Enums);
+      Is_First : Boolean := True;
+      Lit : Node;
+   begin
+      Append (Buffer, "{""enumeration"":{""names"":[");
+      for I in 1 .. Nbr loop
+         if Is_First then
+            Is_First := False;
+         else
+            Append (Buffer, ',');
+         end if;
+         Lit := Get_Nth_Element (Enums, I - 1);
+         Append (Buffer, '"');
+         Append_Escaped (Buffer, Name_Table.Image (Get_Identifier (Lit)));
+         Append (Buffer, '"');
+      end loop;
+      Append (Buffer, "]}}");
+   end Encode_Enumeration_Type;
+
+   procedure Encode_Type
+     (Buffer : System.Address; Typ : Type_Acc; Atype : Node)
+   is
+      Is_Enum : constant Boolean :=
+        Typ.Kind = Type_Discrete and then Is_Enumeration_Type (Atype);
+   begin
+      if Is_Enum then
+         Encode_Enumeration_Type (Buffer, Atype);
+         return;
+      end if;
+
       case Typ.Kind is
          when Type_Bit =>
             Append (Buffer, "{""bit"":{");
@@ -93,26 +137,39 @@ package body Grt.Export is
          when Type_Array
             | Type_Array_Unbounded
             | Type_Vector =>
-            Append (Buffer, """left"":");
-            Append (Buffer, Integer_32 (Typ.Abound.Left));
-            Append (Buffer, ",""right"":");
-            Append (Buffer, Integer_32 (Typ.Abound.Right));
-            Append (Buffer, ",""dir"":");
-            Append (Buffer, Typ.Abound.Dir);
-            Append (Buffer, ",""W"":");
-            Append (Buffer, Unsigned_32 (Typ.W));
-            Append (Buffer, ",""Sz"":");
-            Append (Buffer, Integer_64 (Typ.Sz));
-            Append (Buffer, ",""is_last"":");
-            Append (Buffer, Typ.Alast);
-            Append (Buffer, ",""element_type"":");
-            Encode_Type (Buffer, Typ.Arr_El);
-            Append (Buffer, "}}");
+            declare
+               --  Runtime types nest one Type_Array per dimension, while the
+               --  AST keeps a single array node.  Only the last dimension
+               --  maps to the element subtype; earlier ones reuse Atype.
+               El_Type : Node;
+            begin
+               if Atype /= Null_Iir and then Typ.Alast then
+                  El_Type := Get_Element_Subtype (Atype);
+               else
+                  El_Type := Atype;
+               end if;
+               Append (Buffer, """left"":");
+               Append (Buffer, Integer_32 (Typ.Abound.Left));
+               Append (Buffer, ",""right"":");
+               Append (Buffer, Integer_32 (Typ.Abound.Right));
+               Append (Buffer, ",""dir"":");
+               Append (Buffer, Typ.Abound.Dir);
+               Append (Buffer, ",""W"":");
+               Append (Buffer, Unsigned_32 (Typ.W));
+               Append (Buffer, ",""Sz"":");
+               Append (Buffer, Integer_64 (Typ.Sz));
+               Append (Buffer, ",""is_last"":");
+               Append (Buffer, Typ.Alast);
+               Append (Buffer, ",""element_type"":");
+               Encode_Type (Buffer, Typ.Arr_El, El_Type);
+               Append (Buffer, "}}");
+            end;
 
          when Type_Record
             | Type_Unbounded_Record =>
             declare
                Is_First : Boolean := True;
+               Field_Type : Node;
             begin
                Append (Buffer, """fields"":[");
                for I in Typ.Rec.E'Range loop
@@ -121,8 +178,12 @@ package body Grt.Export is
                   else
                      Append (Buffer, ',');
                   end if;
+                  Field_Type := Null_Iir;
+                  if Typ.Rec.E (I).Decl /= Null_Iir then
+                     Field_Type := Get_Type (Typ.Rec.E (I).Decl);
+                  end if;
                   Append (Buffer, "{""typ"":");
-                  Encode_Type (Buffer, Typ.Rec.E (I).Typ);
+                  Encode_Type (Buffer, Typ.Rec.E (I).Typ, Field_Type);
                   Append (Buffer, ",""net_offset"":");
                   Append (Buffer, Integer_64 (Typ.Rec.E (I).Offs.Net_Off));
                   Append (Buffer, ",""mem_offset"":");
@@ -163,6 +224,7 @@ package body Grt.Export is
 
    procedure Encode_Signal (Buffer : System.Address; Signal_Id : Unsigned_32) is
       Signal : Signal_Entry renames Signals_Table.Table (Signal_Index_Type (Signal_Id));
+      Atype : Node := Null_Iir;
    begin
       Append (Buffer, "{""decl"":");
       Append (Buffer, Unsigned_32 (Signal.Decl));
@@ -170,7 +232,10 @@ package body Grt.Export is
       Append (Buffer, ",""width"":");
       Append (Buffer, Unsigned_32 (Signal.Typ.W));
       Append (Buffer, ",""type"":");
-      Encode_Type (Buffer, Signal.Typ);
+      if Signal.Decl /= Null_Iir then
+         Atype := Get_Type (Signal.Decl);
+      end if;
+      Encode_Type (Buffer, Signal.Typ, Atype);
 
       Append (Buffer, '}');
    end Encode_Signal;

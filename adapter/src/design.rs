@@ -67,6 +67,9 @@ enum Type {
         right: i64,
         dir: Dir,
     },
+    Enumeration {
+        names: Vec<CompactString>,
+    },
     Float {
         #[serde(deserialize_with = "deserialize_f64")]
         left: f64,
@@ -109,6 +112,9 @@ impl From<&Type> for hierarchy::SignalType {
                     max,
                     direction: dir.into(),
                 }
+            },
+            Type::Enumeration { names } => hierarchy::SignalType::Enumeration {
+                names: names.clone(),
             },
             &Type::Float { left, right, dir } => {
                 // TODO this doesn't work for empty ranges (e.g., 10 downto 11)
