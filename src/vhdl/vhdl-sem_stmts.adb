@@ -277,24 +277,65 @@ package body Vhdl.Sem_Stmts is
    is
       Choice : Iir;
       Ass : Iir;
+
+      --  Check one associated expression and count it in NBR (must stay
+      --  consistent with Fill_Array_From_Aggregate_Associated).
+      procedure Check_Assoc (Ass : Iir) is
+      begin
+         if Get_Kind (Ass) = Iir_Kind_Aggregate then
+            Check_Aggregate_Target (Stmt, Ass, Nbr);
+         else
+            if Get_Kind (Stmt) in Iir_Kinds_Variable_Assignment_Statement then
+               Check_Simple_Variable_Target (Stmt, Ass, Locally);
+            else
+               Check_Simple_Signal_Target (Stmt, Ass, Locally);
+            end if;
+            Nbr := Nbr + 1;
+         end if;
+      end Check_Assoc;
    begin
       Choice := Get_Association_Choices_Chain (Target);
       while Choice /= Null_Iir loop
          case Get_Kind (Choice) is
             when Iir_Kind_Choice_By_Range =>
-               --  LRM93 8.4
+               --  LRM93 8.4:
                --  It is an error if an element association in such an
                --  aggregate contains an OTHERS choice or a choice that is
                --  a discrete range.
-               Error_Msg_Sem
-                 (+Choice, "discrete range choice not allowed for target");
+               --
+               --  LRM08 10.5.2.1 / 10.6.2.1:
+               --  It is an error if an element association in such an
+               --  aggregate contains an OTHERS choice, or if the element
+               --  association contains a choice that is a discrete range
+               --  and an expression of a type other than the aggregate type.
+               --  (So a discrete range with an expression of the aggregate
+               --  type is a legal slice association.)
+               if Flags.Vhdl_Std < Vhdl_08 then
+                  Error_Msg_Sem
+                    (+Choice, "discrete range choice not allowed for target");
+               elsif Get_Element_Type_Flag (Choice) then
+                  Error_Msg_Sem
+                    (+Choice, "discrete range choice for a target requires "
+                       & "an expression of the aggregate type");
+               elsif Get_Choice_Staticness (Choice) < Locally then
+                  --  LRM08 10.5.2.1 / 10.6.2.1:
+                  --  The choices of an aggregate target shall be locally
+                  --  static.  The translator relies on this to compute the
+                  --  slice offset at compile time.
+                  Error_Msg_Sem
+                    (+Choice, "choice of an aggregate target must be "
+                       & "locally static");
+               end if;
+               Ass := Get_Associated_Expr (Choice);
+               Check_Assoc (Ass);
             when Iir_Kind_Choice_By_Others =>
-               --  LRM93 8.4
+               --  LRM93 8.4 / LRM08 10.5.2.1 / 10.6.2.1
                --  It is an error if an element association in such an
-               --  aggregate contains an OTHERS choice or a choice that is
-               --  a discrete range.
+               --  aggregate contains an OTHERS choice.
                Error_Msg_Sem
                  (+Choice, "others choice not allowed for target");
+               Ass := Get_Associated_Expr (Choice);
+               Check_Assoc (Ass);
             when Iir_Kind_Choice_By_Expression
               | Iir_Kind_Choice_By_Name
               | Iir_Kind_Choice_By_None =>
@@ -302,18 +343,7 @@ package body Vhdl.Sem_Stmts is
                --  Such a target may not only contain locally static signal
                --  names [...]
                Ass := Get_Associated_Expr (Choice);
-               if Get_Kind (Ass) = Iir_Kind_Aggregate then
-                  Check_Aggregate_Target (Stmt, Ass, Nbr);
-               else
-                  if Get_Kind (Stmt) in
-                    Iir_Kinds_Variable_Assignment_Statement
-                  then
-                     Check_Simple_Variable_Target (Stmt, Ass, Locally);
-                  else
-                     Check_Simple_Signal_Target (Stmt, Ass, Locally);
-                  end if;
-                  Nbr := Nbr + 1;
-               end if;
+               Check_Assoc (Ass);
             when others =>
                Error_Kind ("check_aggregate_target", Choice);
          end case;

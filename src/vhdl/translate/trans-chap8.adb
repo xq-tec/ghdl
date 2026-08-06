@@ -951,6 +951,9 @@ package body Trans.Chap8 is
          Inc_Var (Index);
       else
          Sub_Type := Get_Type (Targ);
+         if Get_Kind (Targ) = Iir_Kind_Slice_Name then
+            Chap3.Create_Composite_Subtype (Sub_Type, False);
+         end if;
          Sub_Aggr := Chap3.Slice_Base (Chap3.Get_Composite_Base (Val),
                                        Sub_Type, New_Obj_Value (Index),
                                        O_Enode_Null);
@@ -976,6 +979,33 @@ package body Trans.Chap8 is
    is
       Choice  : Iir;
       Final   : Boolean;
+
+      --  Set INDEX to the offset of CHOICE's discrete range within TARG_TYPE.
+      procedure Set_Index_From_Range_Choice (Choice : Iir)
+      is
+         Index_Type : constant Iir := Get_Index_Type (Targ_Type, Dim - 1);
+         Index_Range : constant Iir := Get_Range_Constraint (Index_Type);
+         Choice_Range : constant Iir :=
+           Get_Range_From_Discrete_Range (Get_Choice_Range (Choice));
+         Off : Int64;
+      begin
+         --  Named associations used as assignment targets have locally
+         --  static choices (see Check_Aggregate_Target / LRM name rules).
+         --  The choice range is within the index range, so OFF is non-negative.
+         pragma Assert (Get_Choice_Staticness (Choice) = Locally);
+         case Get_Direction (Index_Range) is
+            when Dir_To =>
+               Off := Eval_Pos (Get_Left_Limit (Choice_Range))
+                 - Eval_Pos (Get_Left_Limit (Index_Range));
+            when Dir_Downto =>
+               Off := Eval_Pos (Get_Left_Limit (Index_Range))
+                 - Eval_Pos (Get_Left_Limit (Choice_Range));
+         end case;
+         pragma Assert (Off >= 0);
+         New_Assign_Stmt
+           (New_Obj (Index),
+            New_Lit (New_Index_Lit (Unsigned_64 (Off))));
+      end Set_Index_From_Range_Choice;
    begin
       Final := Dim = Get_Nbr_Elements (Get_Index_Subtype_List (Targ_Type));
       Choice := Get_Association_Choices_Chain (Targ);
@@ -990,6 +1020,15 @@ package body Trans.Chap8 is
                     (Get_Associated_Expr (Choice),
                      Targ_Type, Val, Index, Dim + 1);
                end if;
+            when Iir_Kind_Choice_By_Range =>
+               --  LRM08: discrete range with an expression of the aggregate
+               --  type denotes a slice association.
+               if not Final or else Get_Element_Type_Flag (Choice) then
+                  Error_Kind ("translate_variable_array_aggr", Choice);
+               end if;
+               Set_Index_From_Range_Choice (Choice);
+               Translate_Variable_Array_Aggr_Final
+                 (Choice, Targ_Type, Val, Index);
             when others =>
                Error_Kind ("translate_variable_array_aggr", Choice);
          end case;
@@ -4376,6 +4415,32 @@ package body Trans.Chap8 is
       Sub_Type   : Iir;
       El         : Iir;
       Expr       : Iir;
+
+      procedure Set_Idx_From_Range_Choice (Choice : Iir)
+      is
+         Index_Type : constant Iir := Get_Index_Type (Target_Type, Dim - 1);
+         Index_Range : constant Iir := Get_Range_Constraint (Index_Type);
+         Choice_Range : constant Iir :=
+           Get_Range_From_Discrete_Range (Get_Choice_Range (Choice));
+         Off : Int64;
+      begin
+         --  Named associations used as assignment targets have locally
+         --  static choices (see Check_Aggregate_Target / LRM name rules).
+         --  The choice range is within the index range, so OFF is non-negative.
+         pragma Assert (Get_Choice_Staticness (Choice) = Locally);
+         case Get_Direction (Index_Range) is
+            when Dir_To =>
+               Off := Eval_Pos (Get_Left_Limit (Choice_Range))
+                 - Eval_Pos (Get_Left_Limit (Index_Range));
+            when Dir_Downto =>
+               Off := Eval_Pos (Get_Left_Limit (Index_Range))
+                 - Eval_Pos (Get_Left_Limit (Choice_Range));
+         end case;
+         pragma Assert (Off >= 0);
+         New_Assign_Stmt
+           (New_Obj (Idx),
+            New_Lit (New_Index_Lit (Unsigned_64 (Off))));
+      end Set_Idx_From_Range_Choice;
    begin
       El := Get_Association_Choices_Chain (Target);
       while El /= Null_Iir loop
@@ -4394,26 +4459,44 @@ package body Trans.Chap8 is
                   Sub_Aggr := Chap3.Slice_Base
                     (Aggr, Sub_Type, New_Obj_Value (Idx), O_Enode_Null);
                end if;
+            when Iir_Kind_Choice_By_Range =>
+               if Get_Element_Type_Flag (El) then
+                  Error_Kind ("translate_signal_target_array_aggr", El);
+               end if;
+               Set_Idx_From_Range_Choice (El);
+               Sub_Type := Get_Type (Expr);
+               if Get_Kind (Expr) = Iir_Kind_Slice_Name then
+                  Chap3.Create_Composite_Subtype (Sub_Type, False);
+               end if;
+               Sub_Aggr := Chap3.Slice_Base
+                 (Aggr, Sub_Type, New_Obj_Value (Idx), O_Enode_Null);
             when others =>
                Error_Kind ("translate_signal_target_array_aggr", El);
          end case;
          if Dim = Nbr_Dim then
             E := Translate_Signal_Target_Aggr (Sub_Aggr, Expr, Sub_Type);
-            if Get_Kind (El) = Iir_Kind_Choice_By_None then
-               if Get_Element_Type_Flag (El) then
-                  Inc_Var (Idx);
-               else
+            case Get_Kind (El) is
+               when Iir_Kind_Choice_By_None =>
+                  if Get_Element_Type_Flag (El) then
+                     Inc_Var (Idx);
+                  else
+                     New_Assign_Stmt
+                       (New_Obj (Idx),
+                        New_Dyadic_Op
+                          (ON_Add_Ov,
+                           New_Obj_Value (Idx),
+                           Chap3.Get_Array_Length (E, Sub_Type)));
+                  end if;
+               when Iir_Kind_Choice_By_Range =>
                   New_Assign_Stmt
                     (New_Obj (Idx),
                      New_Dyadic_Op
                        (ON_Add_Ov,
                         New_Obj_Value (Idx),
                         Chap3.Get_Array_Length (E, Sub_Type)));
-               end if;
-            else
-               --  TODO
-               raise Internal_Error;
-            end if;
+               when others =>
+                  raise Internal_Error;
+            end case;
          else
             Translate_Signal_Target_Array_Aggr
               (Sub_Aggr, Expr, Target_Type, Idx, Dim + 1);
