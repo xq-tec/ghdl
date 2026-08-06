@@ -935,10 +935,12 @@ package body Trans.Chap8 is
    procedure Translate_Variable_Aggregate_Assignment
      (Targ : Iir; Targ_Type : Iir; Val : Mnode);
 
+   --  TARG is the associated target expression for CHOICE.  It is passed
+   --  separately so that multi-choice associations ("|") can reuse the
+   --  expression carried only by the first choice.
    procedure Translate_Variable_Array_Aggr_Final
-     (Choice : Iir; Targ_Type : Iir; Val : Mnode; Index : O_Dnode)
+     (Choice : Iir; Targ : Iir; Targ_Type : Iir; Val : Mnode; Index : O_Dnode)
    is
-      Targ : constant Iir := Get_Associated_Expr (Choice);
       Sub_Aggr  : Mnode;
       Sub_Type  : Iir;
       Dest : Mnode;
@@ -978,48 +980,77 @@ package body Trans.Chap8 is
                                             Dim       : Natural)
    is
       Choice  : Iir;
+      Assoc   : Iir;
       Final   : Boolean;
 
-      --  Set INDEX to the offset of CHOICE's discrete range within TARG_TYPE.
-      procedure Set_Index_From_Range_Choice (Choice : Iir)
+      --  Set INDEX to the offset of CHOICE within TARG_TYPE's index range.
+      procedure Set_Index_From_Choice_Pos (Choice_Pos : Int64)
       is
          Index_Type : constant Iir := Get_Index_Type (Targ_Type, Dim - 1);
          Index_Range : constant Iir := Get_Range_Constraint (Index_Type);
-         Choice_Range : constant Iir :=
-           Get_Range_From_Discrete_Range (Get_Choice_Range (Choice));
          Off : Int64;
       begin
-         --  Named associations used as assignment targets have locally
-         --  static choices (see Check_Aggregate_Target / LRM name rules).
-         --  The choice range is within the index range, so OFF is non-negative.
-         pragma Assert (Get_Choice_Staticness (Choice) = Locally);
          case Get_Direction (Index_Range) is
             when Dir_To =>
-               Off := Eval_Pos (Get_Left_Limit (Choice_Range))
-                 - Eval_Pos (Get_Left_Limit (Index_Range));
+               Off := Choice_Pos - Eval_Pos (Get_Left_Limit (Index_Range));
             when Dir_Downto =>
-               Off := Eval_Pos (Get_Left_Limit (Index_Range))
-                 - Eval_Pos (Get_Left_Limit (Choice_Range));
+               Off := Eval_Pos (Get_Left_Limit (Index_Range)) - Choice_Pos;
          end case;
          pragma Assert (Off >= 0);
          New_Assign_Stmt
            (New_Obj (Index),
             New_Lit (New_Index_Lit (Unsigned_64 (Off))));
+      end Set_Index_From_Choice_Pos;
+
+      --  Set INDEX to the offset of CHOICE's discrete range within TARG_TYPE.
+      procedure Set_Index_From_Range_Choice (Choice : Iir)
+      is
+         Choice_Range : constant Iir :=
+           Get_Range_From_Discrete_Range (Get_Choice_Range (Choice));
+      begin
+         --  Named associations used as assignment targets have locally
+         --  static choices (see Check_Aggregate_Target / LRM name rules).
+         --  The choice range is within the index range, so OFF is non-negative.
+         pragma Assert (Get_Choice_Staticness (Choice) = Locally);
+         Set_Index_From_Choice_Pos (Eval_Pos (Get_Left_Limit (Choice_Range)));
       end Set_Index_From_Range_Choice;
+
+      procedure Set_Index_From_Expression_Choice (Choice : Iir) is
+      begin
+         pragma Assert (Get_Choice_Staticness (Choice) = Locally);
+         Set_Index_From_Choice_Pos
+           (Eval_Pos (Get_Choice_Expression (Choice)));
+      end Set_Index_From_Expression_Choice;
    begin
       Final := Dim = Get_Nbr_Elements (Get_Index_Subtype_List (Targ_Type));
       Choice := Get_Association_Choices_Chain (Targ);
+      Assoc := Null_Iir;
       while Choice /= Null_Iir loop
+         --  Only the first choice of a "|" list carries the associated
+         --  expression.
+         if not Get_Same_Alternative_Flag (Choice) then
+            Assoc := Get_Associated_Expr (Choice);
+         end if;
+
          case Get_Kind (Choice) is
             when Iir_Kind_Choice_By_None =>
                if Final then
                   Translate_Variable_Array_Aggr_Final
-                    (Choice, Targ_Type, Val, Index);
+                    (Choice, Assoc, Targ_Type, Val, Index);
                else
                   Translate_Variable_Array_Aggr
-                    (Get_Associated_Expr (Choice),
-                     Targ_Type, Val, Index, Dim + 1);
+                    (Assoc, Targ_Type, Val, Index, Dim + 1);
                end if;
+            when Iir_Kind_Choice_By_Expression =>
+               --  Named index choice with an element-type target.  An
+               --  aggregate-type expression requires a discrete range
+               --  (LRM08 9.3.3.3), so Element_Type_Flag must be set.
+               if not Final or else not Get_Element_Type_Flag (Choice) then
+                  Error_Kind ("translate_variable_array_aggr", Choice);
+               end if;
+               Set_Index_From_Expression_Choice (Choice);
+               Translate_Variable_Array_Aggr_Final
+                 (Choice, Assoc, Targ_Type, Val, Index);
             when Iir_Kind_Choice_By_Range =>
                --  LRM08: discrete range with an expression of the aggregate
                --  type denotes a slice association.
@@ -1028,7 +1059,7 @@ package body Trans.Chap8 is
                end if;
                Set_Index_From_Range_Choice (Choice);
                Translate_Variable_Array_Aggr_Final
-                 (Choice, Targ_Type, Val, Index);
+                 (Choice, Assoc, Targ_Type, Val, Index);
             when others =>
                Error_Kind ("translate_variable_array_aggr", Choice);
          end case;
@@ -1102,15 +1133,17 @@ package body Trans.Chap8 is
    begin
       Assoc := Get_Association_Choices_Chain (Aggr);
       while Assoc /= Null_Iir loop
-         Expr := Get_Associated_Expr (Assoc);
-         if Get_Kind (Expr) = Iir_Kind_Aggregate then
-            if Aggregate_Overlap_Variable (Expr, Name) then
-               return True;
-            end if;
-         else
-            Expr := Get_Base_Name (Expr);
-            if Expr = Name then
-               return True;
+         if not Get_Same_Alternative_Flag (Assoc) then
+            Expr := Get_Associated_Expr (Assoc);
+            if Get_Kind (Expr) = Iir_Kind_Aggregate then
+               if Aggregate_Overlap_Variable (Expr, Name) then
+                  return True;
+               end if;
+            else
+               Expr := Get_Base_Name (Expr);
+               if Expr = Name then
+                  return True;
+               end if;
             end if;
          end if;
          Assoc := Get_Chain (Assoc);
@@ -1126,17 +1159,19 @@ package body Trans.Chap8 is
    begin
       Assoc := Get_Association_Choices_Chain (Aggr);
       while Assoc /= Null_Iir loop
-         Expr := Get_Associated_Expr (Assoc);
-         if Get_Kind (Expr) = Iir_Kind_Aggregate then
-            if Aggregate_Overlap_Dereference (Expr, Atype) then
-               return True;
-            end if;
-         else
-            Expr := Get_Base_Name (Expr);
-            if Get_Kind (Expr) in Iir_Kinds_Dereference
-              and then Get_Base_Type (Get_Type (Expr)) = Atype
-            then
-               return True;
+         if not Get_Same_Alternative_Flag (Assoc) then
+            Expr := Get_Associated_Expr (Assoc);
+            if Get_Kind (Expr) = Iir_Kind_Aggregate then
+               if Aggregate_Overlap_Dereference (Expr, Atype) then
+                  return True;
+               end if;
+            else
+               Expr := Get_Base_Name (Expr);
+               if Get_Kind (Expr) in Iir_Kinds_Dereference
+                 and then Get_Base_Type (Get_Type (Expr)) = Atype
+               then
+                  return True;
+               end if;
             end if;
          end if;
          Assoc := Get_Chain (Assoc);

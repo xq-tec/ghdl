@@ -123,13 +123,17 @@ package body Vhdl.Sem_Stmts is
    begin
       El := Chain;
       while El /= Null_Iir loop
-         Ass := Get_Associated_Expr (El);
-         if Get_Kind (Ass) = Iir_Kind_Aggregate then
-            Fill_Array_From_Aggregate_Associated
-              (Get_Association_Choices_Chain (Ass), Nbr, Arr);
-         else
-            Arr (Nbr) := Ass;
-            Nbr := Nbr + 1;
+         --  Only the first choice of a "|" list carries the associated
+         --  expression; the following ones have Same_Alternative_Flag set.
+         if not Get_Same_Alternative_Flag (El) then
+            Ass := Get_Associated_Expr (El);
+            if Get_Kind (Ass) = Iir_Kind_Aggregate then
+               Fill_Array_From_Aggregate_Associated
+                 (Get_Association_Choices_Chain (Ass), Nbr, Arr);
+            else
+               Arr (Nbr) := Ass;
+               Nbr := Nbr + 1;
+            end if;
          end if;
          El := Get_Chain (El);
       end loop;
@@ -326,24 +330,32 @@ package body Vhdl.Sem_Stmts is
                     (+Choice, "choice of an aggregate target must be "
                        & "locally static");
                end if;
-               Ass := Get_Associated_Expr (Choice);
-               Check_Assoc (Ass);
+               if not Get_Same_Alternative_Flag (Choice) then
+                  Ass := Get_Associated_Expr (Choice);
+                  Check_Assoc (Ass);
+               end if;
             when Iir_Kind_Choice_By_Others =>
                --  LRM93 8.4 / LRM08 10.5.2.1 / 10.6.2.1
                --  It is an error if an element association in such an
                --  aggregate contains an OTHERS choice.
                Error_Msg_Sem
                  (+Choice, "others choice not allowed for target");
-               Ass := Get_Associated_Expr (Choice);
-               Check_Assoc (Ass);
+               if not Get_Same_Alternative_Flag (Choice) then
+                  Ass := Get_Associated_Expr (Choice);
+                  Check_Assoc (Ass);
+               end if;
             when Iir_Kind_Choice_By_Expression
               | Iir_Kind_Choice_By_Name
               | Iir_Kind_Choice_By_None =>
                --  LRM93 9.4
                --  Such a target may not only contain locally static signal
                --  names [...]
-               Ass := Get_Associated_Expr (Choice);
-               Check_Assoc (Ass);
+               --  Only the first choice of a "|" list carries the associated
+               --  expression.
+               if not Get_Same_Alternative_Flag (Choice) then
+                  Ass := Get_Associated_Expr (Choice);
+                  Check_Assoc (Ass);
+               end if;
             when others =>
                Error_Kind ("check_aggregate_target", Choice);
          end case;
