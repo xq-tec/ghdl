@@ -307,6 +307,10 @@ impl SubscriptionTracker {
         // get_mut(index) should never fail, this would be a bug. But just in case we do have a bug,
         // we ignore this error so that the simulation can continue.
         if let Some(signal) = self.events.signals.get_mut(index) {
+            if time == LogicalTime::ZERO {
+                // Workaround for issue where two conflicting events are recorded at time (0, 0).
+                signal.events.clear();
+            }
             signal.events.push(Event {
                 time,
                 value: RawValue(value),
