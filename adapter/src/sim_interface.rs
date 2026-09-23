@@ -6,6 +6,7 @@ use std::time::Duration;
 use crossbeam_channel::Receiver as SyncReceiver;
 use crossbeam_channel::bounded as sync_bounded;
 use crossbeam_channel::unbounded as sync_unbounded;
+use hdl_simulation_protocol::SimulationId;
 use hdl_simulation_protocol::SimulationStatus;
 use hdl_simulation_protocol::design_hierarchy::DesignHierarchy;
 use hdl_simulation_protocol::design_hierarchy::SignalElementId;
@@ -308,6 +309,10 @@ impl SubscriptionTracker {
         // get_mut(index) should never fail, this would be a bug. But just in case we do have a bug,
         // we ignore this error so that the simulation can continue.
         if let Some(signal) = self.events.signals.get_mut(index) {
+            if time == LogicalTime::ZERO {
+                // Workaround for issue where two conflicting events are recorded at time (0, 0).
+                signal.events.clear();
+            }
             signal.events.push(Event {
                 time,
                 value: RawValue(value),
@@ -383,8 +388,17 @@ static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 /// runtime.
 /// Returns a pointer to the adapter state that must be passed to other
 /// `adapter_*` functions.
+///
+/// When `id_str` is non-null, `id_len` bytes are parsed as a hex simulation ID
+/// (see `--simulation-id`); otherwise a random ID is used.
 #[unsafe(no_mangle)]
-extern "C" fn adapter_init_websocket() -> *mut AdapterState {
+unsafe extern "C" fn adapter_init_websocket(id_str: *const u8, id_len: u64) -> *mut AdapterState {
+    if !id_str.is_null()
+        && let Some(id) = unsafe { parse_simulation_id(id_str, id_len) }
+    {
+        let _ = crate::SIMULATION_ID.set(id);
+    }
+
     let rt = RUNTIME.get_or_init(|| {
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -412,6 +426,26 @@ extern "C" fn adapter_init_websocket() -> *mut AdapterState {
         current_status: SimulationStatus::Running,
         requested_end_time: None,
     }))
+}
+
+unsafe fn parse_simulation_id(id_str: *const u8, id_len: u64) -> Option<SimulationId> {
+    let bytes = unsafe { std::slice::from_raw_parts(id_str, id_len as usize) };
+    let id_text = match std::str::from_utf8(bytes) {
+        Ok(id_text) => id_text,
+        Err(error) => {
+            error!("invalid --simulation-id value: not UTF-8 ({error})");
+            return None;
+        },
+    };
+    eprintln!("id_text: {id_text}");
+    let id = match id_text.parse() {
+        Ok(id) => id,
+        Err(error) => {
+            error!("invalid --simulation-id value '{id_text}': {error}");
+            return None;
+        },
+    };
+    Some(id)
 }
 
 /// Sets the initial state of the simulation: paused if interactive, running otherwise.

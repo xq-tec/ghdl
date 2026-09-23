@@ -371,7 +371,7 @@ dependencies = [
 [[package]]
 name = "ghdl-ast"
 version = "0.2.0"
-source = "git+https://github.com/xq-tec/ghdl-ast.git?rev=4d1dedd0f2642395d8f7aff833fcaa425855a9ee#4d1dedd0f2642395d8f7aff833fcaa425855a9ee"
+source = "git+https://github.com/xq-tec/ghdl-ast.git?rev=5dfe9208d7dfee2e81ff9680a83ce9fd2d63a9fa#5dfe9208d7dfee2e81ff9680a83ce9fd2d63a9fa"
 dependencies = [
  "anyhow",
  "compact_str",
@@ -429,7 +429,7 @@ checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
 [[package]]
 name = "hdl-simulation-protocol"
 version = "0.1.0"
-source = "git+https://github.com/xq-tec/hdl-simulation-protocol.git?rev=b822b80f60f38f3216f112def1991f4f8b7f0654#b822b80f60f38f3216f112def1991f4f8b7f0654"
+source = "git+https://github.com/xq-tec/hdl-simulation-protocol.git?rev=2333ec4b3ff010bd5ebb752dd58e7d421999872e#2333ec4b3ff010bd5ebb752dd58e7d421999872e"
 dependencies = [
  "compact_str",
  "getrandom 0.4.2",

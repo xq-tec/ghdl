@@ -10,8 +10,8 @@ crate-type = ["staticlib"]
 compact_str = { version = "0.9", features = ["serde", "smallvec"] }
 crossbeam-channel = "0.5"
 futures-util = "0.3"
-ghdl-ast = { git = "https://github.com/xq-tec/ghdl-ast.git", rev = "4d1dedd0f2642395d8f7aff833fcaa425855a9ee" }
-hdl-simulation-protocol = { git = "https://github.com/xq-tec/hdl-simulation-protocol.git", rev = "b822b80f60f38f3216f112def1991f4f8b7f0654" }
+ghdl-ast = { git = "https://github.com/xq-tec/ghdl-ast.git", rev = "5dfe9208d7dfee2e81ff9680a83ce9fd2d63a9fa" }
+hdl-simulation-protocol = { git = "https://github.com/xq-tec/hdl-simulation-protocol.git", rev = "2333ec4b3ff010bd5ebb752dd58e7d421999872e" }
 libc = "0.2"
 opentelemetry = { version = "0.31", features = ["trace", "logs"] }
 opentelemetry_sdk = { version = "0.31", features = [

@@ -9,7 +9,6 @@ use compact_str::CompactString;
 use compact_str::format_compact;
 use ghdl_ast as ast;
 use ghdl_ast::deserialize_f64;
-use hdl_simulation_protocol::SimulationId;
 use hdl_simulation_protocol::design_hierarchy as hierarchy;
 use hdl_simulation_protocol::design_hierarchy::SignalInstanceId;
 use serde::Deserialize;
@@ -17,7 +16,6 @@ use tracing::debug;
 use tracing::info;
 use tracing::instrument;
 
-use crate::SIMULATION_ID;
 use crate::ada_ffi::AdaString;
 
 #[derive(Debug, Deserialize)]
@@ -72,6 +70,9 @@ enum Type {
         right: i64,
         dir: Dir,
     },
+    Enumeration {
+        names: Vec<CompactString>,
+    },
     Float {
         #[serde(deserialize_with = "deserialize_f64")]
         left: f64,
@@ -114,6 +115,9 @@ impl From<&Type> for hierarchy::SignalType {
                     max,
                     direction: dir.into(),
                 }
+            },
+            Type::Enumeration { names } => hierarchy::SignalType::Enumeration {
+                names: names.clone(),
             },
             &Type::Float { left, right, dir } => {
                 // TODO this doesn't work for empty ranges (e.g., 10 downto 11)
@@ -230,7 +234,7 @@ extern "C" fn adapter_register_design(
     // TODO take time at program start, instead of after elaboration
     let start_time = UNIX_EPOCH.elapsed().unwrap_or(Duration::ZERO).as_secs_f64();
     let hierarchy = hierarchy::DesignHierarchy {
-        simulation_id: *SIMULATION_ID,
+        simulation_id: crate::simulation_id(),
         name,
         start_time,
         root_modules,
