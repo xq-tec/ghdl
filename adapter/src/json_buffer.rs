@@ -44,13 +44,15 @@ fn append_escaped(buffer: &mut Vec<u8>, str: AdaString<'_>) {
             },
 
             0..=31 => {
-                let hex_chars = [
-                    b'0', b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'a', b'b', b'c',
-                    b'd', b'e', b'f',
+                const HEX_CHARS: [u8; 16] = *b"0123456789abcdef";
+                let bytes = [
+                    b'\\',
+                    b'u',
+                    b'0',
+                    b'0',
+                    HEX_CHARS[byte as usize / 16],
+                    HEX_CHARS[byte as usize % 16],
                 ];
-                let mut bytes = [b'\\', b'u', b'0', b'0', 0, 0];
-                bytes[4] = hex_chars[byte as usize / 16];
-                bytes[5] = hex_chars[byte as usize % 16];
                 buffer.extend_from_slice(&bytes);
             },
 
