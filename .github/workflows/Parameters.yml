@@ -39,7 +39,7 @@ on:
         default: 'testing'
         type: string
       release_tag_pattern:
-        description: 'Pattern for release tags on the main branch. Usually: vXX.YY.ZZ-risim'
+        description: 'Pattern for release tags on any branch. Usually: vXX.YY.ZZ-risim'
         required: false
         default: 'v[0-9]+\.[0-9]+\.[0-9]+-risim'
         type: string
@@ -361,16 +361,7 @@ jobs:
             elif [[ "${is_test_tag}" == "true" ]]; then
               printf "  Check if test tag is on any branch ... ${ANSI_LIGHT_YELLOW}[SKIPPED]${ANSI_NOCOLOR}\n"
             elif [[ "${is_release_tag}" == "true" ]]; then
-              printf "  Check if release tag is on main branch '%s' ... " "${{ inputs.main_branch }}"
-              git branch --remotes --contains $(git rev-parse --verify "tags/${tag}~0") | grep "origin/${{ inputs.main_branch }}" > /dev/null
-              if [[ $? -eq 0 ]]; then
-                printf "${ANSI_LIGHT_GREEN}[OK]${ANSI_NOCOLOR}\n"
-              else
-                printf "${ANSI_LIGHT_RED}[FAILED]${ANSI_NOCOLOR}\n"
-                printf "    ${ANSI_LIGHT_RED}Tag '%s' isn't on branch '%s'.${ANSI_NOCOLOR}\n" "${tag}" "${{ inputs.main_branch }}"
-                printf "::error title=TagCheck::Tag '%s' isn't on branch '%s'.\n" "${tag}" "${{ inputs.main_branch }}"
-                exit 1
-              fi
+              printf "  Check if release tag is on any branch ... ${ANSI_LIGHT_YELLOW}[SKIPPED]${ANSI_NOCOLOR}\n"
             fi
           elif [[ "${ref:0:10}" == "refs/pull/" ]]; then
             printf "${ANSI_LIGHT_YELLOW}[PULL REQUEST]\n"
