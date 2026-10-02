@@ -261,7 +261,9 @@ fn get_signal_name(decl_id: ast::GenericNodeId) -> Option<CompactString> {
         ast::Node::Attribute(attribute) => {
             let prefix = retrieve_ast_node(attribute.prefix).ok()?;
             let name = match &prefix {
-                ast::PrefixOwned::SimpleName(simple_name) => simple_name.identifier.original(),
+                ast::PrefixOwned::SimpleName(simple_name) => {
+                    simple_name.identifier.as_ref()?.original()
+                },
                 _ => return None,
             };
             Some(format_compact!("{name}'{kind}", kind = attribute.kind))
@@ -361,7 +363,7 @@ fn build_module(
                 return None; // TODO log error
             };
             kind = hierarchy::ModuleKind::DesignEntity {
-                entity: entity_name.identifier.into_original(),
+                entity: entity_name.identifier?.into_original(),
                 architecture: arch.identifier.into_original(),
             };
 

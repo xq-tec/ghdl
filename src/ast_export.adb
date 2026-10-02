@@ -28,6 +28,46 @@ with Adapter; use Adapter;
 
 package body Ast_Export is
 
+   --  Forward-reference chains are not linked by the usual Chain field.
+   --  Attribute_Implicit_Chain continues through Attr_Chain.
+   --  Incomplete_Type_Ref_Chain on an incomplete type continues through the
+   --  same field on each access type.  On an access type that field is only
+   --  the next node, so it stays a single id.
+   type Forward_Chain_Kind is
+     (Forward_Attr_Chain, Forward_Incomplete_Type_Ref);
+
+   procedure Append_Forward_Ref_Chain
+     (Buffer : System.Address;
+      Id : String;
+      Head : Iir;
+      Kind : Forward_Chain_Kind)
+   is
+      El : Iir;
+      Is_First_Item : Boolean := True;
+   begin
+      Append (Buffer, ",""");
+      Append (Buffer, Id);
+      Append (Buffer, """:[");
+
+      El := Head;
+      while Is_Valid (El) loop
+         if Is_First_Item then
+            Is_First_Item := False;
+         else
+            Append (Buffer, ',');
+         end if;
+         Append (Buffer, Unsigned_32 (El));
+         case Kind is
+            when Forward_Attr_Chain =>
+               El := Get_Attr_Chain (El);
+            when Forward_Incomplete_Type_Ref =>
+               El := Get_Incomplete_Type_Ref_Chain (El);
+         end case;
+      end loop;
+
+      Append (Buffer, ']');
+   end Append_Forward_Ref_Chain;
+
    procedure Append_Iir_Chain (Buffer : System.Address; Id : String; N : Iir) is
       El : Iir;
       Is_First_Item : Boolean := True;
@@ -288,8 +328,19 @@ package body Ast_Export is
                if Val /= Null_Iir then
                   if Get_Field_Attribute (F) = Attr_Chain then
                      Append_Iir_Chain (Buffer, Get_Field_Image (F), Val);
+                  elsif F = Field_Attribute_Implicit_Chain then
+                     Append_Forward_Ref_Chain
+                       (Buffer, Get_Field_Image (F), Val, Forward_Attr_Chain);
+                  elsif F = Field_Incomplete_Type_Ref_Chain
+                    and then
+                      Get_Kind (N) = Iir_Kind_Incomplete_Type_Definition
+                  then
+                     Append_Forward_Ref_Chain
+                       (Buffer, Get_Field_Image (F), Val,
+                        Forward_Incomplete_Type_Ref);
                   else
-                     Append_Attribute (Buffer, Get_Field_Image (F), Unsigned_32 (Val));
+                     Append_Attribute
+                       (Buffer, Get_Field_Image (F), Unsigned_32 (Val));
                   end if;
                end if;
             end;

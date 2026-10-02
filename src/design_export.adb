@@ -973,8 +973,15 @@ package body Design_Export is
                      Append (Buffer, Unsigned_32 (Id));
                      Append (Buffer, ",""slot"":");
                      Append (Buffer, Unsigned_32 (Slot));
+                     --  Subprogram slots store the bound subprogram in S_Decl.
+                     --  Emitting both that and the declaration-chain node
+                     --  would repeat the "decl" key.
                      Append (Buffer, ",""decl"":");
-                     Append_Iir (Buffer, Slot_Decls (Slot));
+                     if Obj.Kind = Obj_Subprg then
+                        Append_Iir (Buffer, Obj.S_Decl);
+                     else
+                        Append_Iir (Buffer, Slot_Decls (Slot));
+                     end if;
                      Append (Buffer, ",""obj_kind"":");
                      Append_Obj_Kind (Buffer, Obj.Kind);
 
@@ -1008,8 +1015,7 @@ package body Design_Export is
                            Append (Buffer, ",""def"":");
                            Append_Iir (Buffer, Obj.T_Def);
                         when Obj_Subprg =>
-                           Append (Buffer, ",""decl"":");
-                           Append_Iir (Buffer, Obj.S_Decl);
+                           null;
                         when Obj_Instance =>
                            Append (Buffer, ",""target_instance"":");
                            Append_Instance_Ref (Buffer, Obj.I_Inst);
