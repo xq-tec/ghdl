@@ -944,6 +944,22 @@ package body Design_Export is
                  array (Object_Slot_Type range <>) of Node;
                Slot_Decls : Slot_Decl_Array (1 .. Get_Instance_Max_Objs (Inst));
                Source : constant Node := Get_Source_Scope (Inst);
+               Bod : Node;
+
+               --  Maps the slot of each declaration in CHAIN to it.
+               procedure Map_Declarations (Chain : Node) is
+               begin
+                  Decl := Chain;
+                  while Is_Valid (Decl) loop
+                     Ann := Get_Ann (Decl);
+                     if Ann /= null
+                       and then Ann.Slot /= Invalid_Object_Slot
+                     then
+                        Slot_Decls (Ann.Slot) := Decl;
+                     end if;
+                     Decl := Get_Chain (Decl);
+                  end loop;
+               end Map_Declarations;
             begin
                for S in Slot_Decls'Range loop
                   Slot_Decls (S) := Null_Node;
@@ -952,16 +968,22 @@ package body Design_Export is
                  and then Get_Kind (Source) /= Iir_Kind_Foreign_Module
                then
                   if Has_Declaration_Chain (Get_Kind (Source)) then
-                     Decl := Get_Declaration_Chain (Source);
-                     while Is_Valid (Decl) loop
-                        Ann := Get_Ann (Decl);
-                        if Ann /= null
-                          and then Ann.Slot /= Invalid_Object_Slot
-                        then
-                           Slot_Decls (Ann.Slot) := Decl;
-                        end if;
-                        Decl := Get_Chain (Decl);
-                     end loop;
+                     Map_Declarations (Get_Declaration_Chain (Source));
+                  end if;
+
+                  --  A package body shares the instance (and the slot
+                  --  annotations) of its package declaration, so its
+                  --  declarations, such as body constants, are mapped too.
+                  case Get_Kind (Source) is
+                     when Iir_Kind_Package_Declaration =>
+                        Bod := Get_Package_Body (Source);
+                     when Iir_Kind_Package_Instantiation_Declaration =>
+                        Bod := Get_Instance_Package_Body (Source);
+                     when others =>
+                        Bod := Null_Node;
+                  end case;
+                  if Is_Valid (Bod) then
+                     Map_Declarations (Get_Declaration_Chain (Bod));
                   end if;
                end if;
 
