@@ -1108,7 +1108,7 @@ package body Elab.Vhdl_Expr is
                Pfx : Type_Acc;
             begin
                Pfx := Exec_Name_Subtype (Syn_Inst, Get_Prefix (Name));
-               return Pfx.Arr_El;
+               return Get_Array_Element_Multidim (Pfx);
             end;
 
          when others => Error_Kind ("exec_name_subtype", Name);

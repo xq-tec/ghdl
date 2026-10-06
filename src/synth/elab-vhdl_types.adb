@@ -913,8 +913,9 @@ package body Elab.Vhdl_Types is
             begin
                T := Synth_Array_Attribute_Prefix (Syn_Inst, Atype);
                pragma Assert (T.Is_Global);
-               --  Always a bounded array/vector.
-               return T.Arr_El;
+               --  Always a bounded array/vector.  The element of a
+               --  multi-dimensional array is the element of its last dimension.
+               return Get_Array_Element_Multidim (T);
             end;
          when Iir_Kind_Enumeration_Type_Definition
            | Iir_Kind_Integer_Type_Definition
