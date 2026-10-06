@@ -26,6 +26,7 @@ with Vhdl.Types;
 with Vhdl.Ieee.Std_Logic_1164; use Vhdl.Ieee.Std_Logic_1164;
 with Vhdl.Std_Package;
 with Vhdl.Errors; use Vhdl.Errors;
+with Vhdl.Sem_Names;
 with Vhdl.Utils; use Vhdl.Utils;
 with Vhdl.Evaluation; use Vhdl.Evaluation;
 
@@ -1530,6 +1531,136 @@ package body Synth.Vhdl_Expr is
       return No_Net;
    end Synth_Clock_Edge;
 
+   --  True if the index type of a dimension of OPER_TYPE is not closely
+   --  related to that of TARG_TYPE.
+   function Has_Unrelated_Index (Oper_Type : Node; Targ_Type : Node)
+                                return Boolean
+   is
+      Indexes : constant Node_Flist :=
+        Get_Index_Subtype_List (Get_Base_Type (Targ_Type));
+   begin
+      for I in Flist_First .. Flist_Last (Indexes) loop
+         if not Vhdl.Sem_Names.Are_Types_Closely_Related
+           (Get_Index_Type (Oper_Type, I), Get_Index_Type (Targ_Type, I))
+         then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Has_Unrelated_Index;
+
+   --  LRM08 9.3.6 Type conversions
+   --  If the index type of the operand and the index type of the target
+   --  type are not closely related, then the direction and nominal left
+   --  bound of the index range of the result are the direction and left
+   --  bound, respectively, of the corresponding index subtype of the target
+   --  type.  [...]  For a null range, if there is a value to the left of the
+   --  nominal left bound (given by the 'LEFTOF attribute), then the left
+   --  bound is the nominal left bound, and the right bound is the value to
+   --  the left of the nominal left bound; otherwise, the left bound is the
+   --  value to the right of the nominal left bound, and the right bound is
+   --  the nominal left bound.  For either a non-null or a null range, it is
+   --  an error if the base type of the corresponding index subtype of the
+   --  target type does not include sufficient values for the index range of
+   --  the result.
+   --
+   --  As for null string literals (see Create_Range_By_Length), the value
+   --  to the left is taken in the base type, in the direction of the index
+   --  subtype.
+   function Convert_Unrelated_Bound (Syn_Inst : Synth_Instance_Acc;
+                                     Bnd : Bound_Type;
+                                     Idx_Typ : Type_Acc;
+                                     Idx_Type : Node;
+                                     Loc : Node) return Bound_Type
+   is
+      Btype : constant Node := Get_Base_Type (Idx_Type);
+      Left : constant Int64 := Idx_Typ.Drange.Left;
+      Dir : constant Direction_Type := Idx_Typ.Drange.Dir;
+      Low, High : Int64;
+      Step : Int64;
+      Right : Int64;
+   begin
+      if Get_Kind (Btype) = Iir_Kind_Enumeration_Type_Definition then
+         Low := 0;
+         High := Int64 (Flist_Last (Get_Enumeration_Literal_List (Btype)));
+      else
+         Low := Int64 (Int32'First);
+         High := Int64 (Int32'Last);
+      end if;
+      case Dir is
+         when Dir_To =>
+            Step := 1;
+         when Dir_Downto =>
+            Step := -1;
+      end case;
+
+      if Bnd.Len = 0 then
+         if Left - Step in Low .. High then
+            return (Dir => Dir, Left => Int32 (Left),
+                    Right => Int32 (Left - Step), Len => 0);
+         elsif Left + Step in Low .. High then
+            return (Dir => Dir, Left => Int32 (Left + Step),
+                    Right => Int32 (Left), Len => 0);
+         end if;
+      else
+         Right := Left + Step * (Int64 (Bnd.Len) - 1);
+         if Right in Low .. High then
+            return (Dir => Dir, Left => Int32 (Left),
+                    Right => Int32 (Right), Len => Bnd.Len);
+         end if;
+      end if;
+      Error_Msg_Synth
+        (Syn_Inst, Loc, "index type has not enough values for conversion");
+      return Bnd;
+   end Convert_Unrelated_Bound;
+
+   --  Bounds of the result of converting a value of type OPER_TYP (whose
+   --  type is OPER_TYPE) to the unbounded array type TARG_TYP (whose type
+   --  is TARG_TYPE), from dimension DIM.
+   function Convert_Unbounded_Array_Bounds (Syn_Inst : Synth_Instance_Acc;
+                                            Oper_Typ : Type_Acc;
+                                            Targ_Typ : Type_Acc;
+                                            Oper_Type : Node;
+                                            Targ_Type : Node;
+                                            Dim : Natural;
+                                            Loc : Node) return Type_Acc
+   is
+      Targ_Idx : constant Node := Get_Index_Type (Targ_Type, Dim);
+      Bnd : Bound_Type;
+      El : Type_Acc;
+   begin
+      Bnd := Oper_Typ.Abound;
+      if not Vhdl.Sem_Names.Are_Types_Closely_Related
+        (Get_Index_Type (Oper_Type, Dim), Targ_Idx)
+      then
+         Bnd := Convert_Unrelated_Bound
+           (Syn_Inst, Bnd, Targ_Typ.Uarr_Idx, Targ_Idx, Loc);
+      end if;
+      Elab.Vhdl_Types.Check_Bound_Compatibility
+        (Syn_Inst, Loc, Bnd, Targ_Typ.Uarr_Idx);
+
+      if Oper_Typ.Alast then
+         El := Oper_Typ.Arr_El;
+      else
+         El := Convert_Unbounded_Array_Bounds
+           (Syn_Inst, Oper_Typ.Arr_El, Targ_Typ.Uarr_El,
+            Oper_Type, Targ_Type, Dim + 1, Loc);
+      end if;
+
+      case Oper_Typ.Kind is
+         when Type_Vector =>
+            return Create_Vector_Type (Bnd, Oper_Typ.Is_Bnd_Static, El);
+         when Type_Array =>
+            return Create_Array_Type
+              (Bnd, Oper_Typ.Is_Bnd_Static, Oper_Typ.Alast, El);
+         when Type_Array_Unbounded =>
+            return Create_Array_Unbounded_Type
+              (Bnd, Oper_Typ.Is_Bnd_Static, Oper_Typ.Alast, El);
+         when others =>
+            raise Internal_Error;
+      end case;
+   end Convert_Unbounded_Array_Bounds;
+
    function Synth_Type_Conversion (Syn_Inst : Synth_Instance_Acc;
                                    Val : Valtyp;
                                    Conv_Typ : Type_Acc;
@@ -1611,6 +1742,17 @@ package body Synth.Vhdl_Expr is
             end;
          when Type_Unbounded_Vector
             | Type_Unbounded_Array =>
+            if Get_Kind (Loc) = Iir_Kind_Type_Conversion
+              and then Has_Unrelated_Index
+                (Get_Type (Get_Expression (Loc)), Get_Type (Loc))
+            then
+               return (Typ => Convert_Unbounded_Array_Bounds
+                         (Syn_Inst, Val.Typ, Conv_Typ,
+                          Get_Type (Get_Expression (Loc)), Get_Type (Loc),
+                          0, Loc),
+                       Val => Val.Val);
+            end if;
+
             --  Check bounds fit in target
             declare
                Src_Typ, Dst_Typ : Type_Acc;
