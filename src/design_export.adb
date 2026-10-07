@@ -946,16 +946,35 @@ package body Design_Export is
                Source : constant Node := Get_Source_Scope (Inst);
                Bod : Node;
 
-               --  Maps the slot of each declaration in CHAIN to it.
+               --  Maps the slot of DECL to it, if it has one.
+               procedure Map_Declaration (D : Node) is
+               begin
+                  Ann := Get_Ann (D);
+                  if Ann /= null
+                    and then Ann.Slot /= Invalid_Object_Slot
+                  then
+                     Slot_Decls (Ann.Slot) := D;
+                  end if;
+               end Map_Declaration;
+
+               --  Maps the slot of each declaration in CHAIN to it.  The
+               --  members of an attribute implicit declaration (implicit
+               --  signals and external names) have slots of their own.
                procedure Map_Declarations (Chain : Node) is
+                  Attr : Node;
                begin
                   Decl := Chain;
                   while Is_Valid (Decl) loop
-                     Ann := Get_Ann (Decl);
-                     if Ann /= null
-                       and then Ann.Slot /= Invalid_Object_Slot
+                     if Get_Kind (Decl)
+                       = Iir_Kind_Attribute_Implicit_Declaration
                      then
-                        Slot_Decls (Ann.Slot) := Decl;
+                        Attr := Get_Attribute_Implicit_Chain (Decl);
+                        while Is_Valid (Attr) loop
+                           Map_Declaration (Attr);
+                           Attr := Get_Attr_Chain (Attr);
+                        end loop;
+                     else
+                        Map_Declaration (Decl);
                      end if;
                      Decl := Get_Chain (Decl);
                   end loop;

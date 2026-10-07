@@ -346,6 +346,12 @@ package body Elab.Vhdl_Decls is
          end if;
          Res.Typ := Unshare (Res.Typ, Instance_Pool);
          Res := Unshare (Res, Instance_Pool);
+         --  Unsharing the value keeps the type of the aliased object, which
+         --  may be in the expression pool (for example the type of a
+         --  resolved external name).
+         if Res.Val.Kind = Value_Alias then
+            Res.Val.A_Typ := Unshare (Res.Val.A_Typ, Instance_Pool);
+         end if;
       end if;
       Create_Object (Syn_Inst, Decl, Res);
       Release_Expr_Pool (Marker);

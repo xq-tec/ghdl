@@ -774,6 +774,12 @@ package body Synth.Vhdl_Decls is
       end if;
       Res.Typ := Unshare (Res.Typ, Instance_Pool);
       Res := Unshare (Res, Instance_Pool);
+      --  Unsharing the value keeps the type of the aliased object, which
+      --  may be in the expression pool (for example the type of a
+      --  resolved external name).
+      if Res.Val.Kind = Value_Alias then
+         Res.Val.A_Typ := Unshare (Res.Val.A_Typ, Instance_Pool);
+      end if;
       Release_Expr_Pool (Marker);
       Create_Object (Syn_Inst, Decl, Res);
    end Synth_Object_Alias_Declaration;
@@ -797,7 +803,9 @@ package body Synth.Vhdl_Decls is
       Res := Elab.Vhdl_Expr.Exec_External_Name (Inst, Name);
 
       if Res /= No_Valtyp then
-         --  Rewrite the external name as an alias.
+         --  Rewrite the external name as an alias.  The type of the
+         --  resolved object may be in the expression pool, which is
+         --  released below.
          Name_Typ := Prev.Typ;
          case Res.Val.Kind is
             when Value_Signal
@@ -806,7 +814,7 @@ package body Synth.Vhdl_Decls is
               | Value_Alias =>
                Prev.Val.all := (Kind => Value_Alias,
                                 A_Obj => Res.Val,
-                                A_Typ => Res.Typ,
+                                A_Typ => Unshare (Res.Typ, Instance_Pool),
                                 A_Off => No_Value_Offsets);
             when others => raise Internal_Error;
          end case;
