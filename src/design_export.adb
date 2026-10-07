@@ -27,6 +27,7 @@ with Elab.Vhdl_Annotations; use Elab.Vhdl_Annotations;
 with Elab.Vhdl_Context; use Elab.Vhdl_Context;
 with Elab.Vhdl_Insts; use Elab.Vhdl_Insts;
 with Elab.Vhdl_Objtypes; use Elab.Vhdl_Objtypes;
+with Elab.Vhdl_Prot;
 with Elab.Vhdl_Values; use Elab.Vhdl_Values;
 with Errorout; use Errorout;
 with Grt.Options;
@@ -36,7 +37,7 @@ with Vhdl.Nodes; use Vhdl.Nodes;
 with Vhdl.Nodes_Meta; use Vhdl.Nodes_Meta;
 
 package body Design_Export is
-   Design_Schema_Version : constant := 3;
+   Design_Schema_Version : constant := 4;
 
    function To_Type_Acc is new Ada.Unchecked_Conversion
      (System.Address, Type_Acc);
@@ -930,6 +931,51 @@ package body Design_Export is
       end loop;
    end Emit_Instances;
 
+   --  Appends the instance of the protected object held by OBJ as
+   --  "protected", when OBJ is of a protected type.  The protected index is
+   --  resolved per live slot, because the table of protected objects may
+   --  hold entries whose instances were freed.
+   procedure Append_Protected_Object (Buffer : System.Address; Obj : Valtyp)
+   is
+      V : Value_Acc;
+      Idx : Protected_Index;
+      Prot : Synth_Instance_Acc;
+   begin
+      if Obj.Typ = null or else Obj.Typ.Kind /= Type_Protected then
+         return;
+      end if;
+      --  Only follow the chain that Get_Memory accepts.
+      V := Obj.Val;
+      loop
+         if V = null then
+            return;
+         end if;
+         case V.Kind is
+            when Value_Const =>
+               V := V.C_Val;
+            when Value_Alias =>
+               V := V.A_Obj;
+            when Value_Memory =>
+               exit;
+            when others =>
+               return;
+         end case;
+      end loop;
+      if V.Mem = null then
+         return;
+      end if;
+      Idx := Read_Protected (Get_Memory (Obj.Val));
+      if Idx = No_Protected_Index then
+         return;
+      end if;
+      Prot := Elab.Vhdl_Prot.Get (Idx);
+      if Prot = null then
+         return;
+      end if;
+      Append (Buffer, ",""protected"":");
+      Append_Instance_Ref (Buffer, Prot);
+   end Append_Protected_Object;
+
    procedure Emit_Object_Slots (Buffer : System.Address) is
       Inst : Synth_Instance_Acc;
       Obj : Obj_Type;
@@ -1044,6 +1090,7 @@ package body Design_Export is
                                         (Export_Kind_Value,
                                          Obj.Obj.Val.all'Address, 0));
                            end if;
+                           Append_Protected_Object (Buffer, Obj.Obj);
                         when Obj_Subtype =>
                            Append (Buffer, ",""type"":");
                            if Obj.T_Typ = null then
