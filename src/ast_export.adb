@@ -378,7 +378,10 @@ package body Ast_Export is
             null;
 
          when Type_Date_Type =>
-            null;
+            Append_Attribute (
+               Buffer,
+               Get_Field_Image (F),
+               Integer_32 (Get_Date_Type (N, F)));
 
          when Type_Number_Base_Type =>
             Append_Attribute (

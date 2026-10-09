@@ -16,9 +16,11 @@
 
 with Types; use Types;
 with Flags;
+with Files_Map;
 with Libraries;
 with Errorout; use Errorout;
 with Vhdl.Nodes; use Vhdl.Nodes;
+with Vhdl.Errors; use Vhdl.Errors;
 with Vhdl.Sem_Lib; use Vhdl.Sem_Lib;
 with Ghdlmain; use Ghdlmain;
 with Ghdllocal; use Ghdllocal;
@@ -30,8 +32,66 @@ with Design_Export;
 
 package body Ghdljson is
 
+   --  Return True if DESIGN_FILE has a unit that is not loaded yet.
+   function Has_Unit_On_Disk (Design_File : Iir) return Boolean
+   is
+      Design_Unit : Iir;
+   begin
+      Design_Unit := Get_First_Design_Unit (Design_File);
+      while Is_Valid (Design_Unit) loop
+         if Get_Date_State (Design_Unit) = Date_Disk then
+            return True;
+         end if;
+         Design_Unit := Get_Chain (Design_Unit);
+      end loop;
+      return False;
+   end Has_Unit_On_Disk;
+
+   --  Read the source of DESIGN_FILE and check that it is unchanged since
+   --  analysis.  Load_Parse_Design_Unit does the same check, but reports it
+   --  at the location of the referencing unit, which is No_Location for the
+   --  units loaded by Prepare_Ast, and that crashes.
+   function Check_Source (Library, Design_File : Iir) return Boolean
+   is
+      Fe : Source_File_Entry;
+      Checksum : File_Checksum_Id;
+   begin
+      if Get_Design_File_Source (Design_File) /= No_Source_File_Entry
+        or else not Has_Unit_On_Disk (Design_File)
+      then
+         return True;
+      end if;
+
+      Fe := Files_Map.Read_Source_File
+        (Get_Design_File_Directory (Design_File),
+         Get_Design_File_Filename (Design_File));
+      if Fe = No_Source_File_Entry then
+         Error_Msg_Option
+           ("cannot read file %i of library %i",
+            (+Get_Design_File_Filename (Design_File),
+             +Get_Identifier (Library)));
+         return False;
+      end if;
+      Set_Design_File_Source (Design_File, Fe);
+
+      Checksum := Get_File_Checksum (Design_File);
+      if Checksum /= No_File_Checksum_Id
+        and then not Files_Map.Is_Eq
+                       (Files_Map.Get_File_Checksum (Fe), Checksum)
+      then
+         Error_Msg_Sem
+           (+Files_Map.File_To_Location (Fe),
+            "file %i has changed and must be reanalysed",
+            +Get_Design_File_Filename (Design_File));
+         return False;
+      end if;
+
+      return True;
+   end Check_Source;
+
    procedure Prepare_Ast is
       Library, Design_File, Design_Unit : Iir;
+      Ok : Boolean := True;
    begin
       -- Load work library.
       if not Setup_Libraries (True) then
@@ -42,19 +102,31 @@ package body Ghdljson is
 
       -- Load and parse all design units,
       -- including secondary units and transitive dependencies.
+      -- Files whose source is missing or has changed are reported.  After
+      -- the first one, the remaining files are checked but not loaded:
+      -- Check_Source sets the source of a changed file, so a unit loaded
+      -- later that depends on it would be parsed from the changed source.
       Library := Libraries.Get_Libraries_Chain;
       while Is_Valid (Library) loop
          Design_File := Get_Design_File_Chain (Library);
          while Is_Valid (Design_File) loop
-            Design_Unit := Get_First_Design_Unit (Design_File);
-            while Is_Valid (Design_Unit) loop
-               Load_Design_Unit (Design_Unit, No_Location);
-               Design_Unit := Get_Chain (Design_Unit);
-            end loop;
+            if not Check_Source (Library, Design_File) then
+               Ok := False;
+            elsif Ok then
+               Design_Unit := Get_First_Design_Unit (Design_File);
+               while Is_Valid (Design_Unit) loop
+                  Load_Design_Unit (Design_Unit, No_Location);
+                  Design_Unit := Get_Chain (Design_Unit);
+               end loop;
+            end if;
             Design_File := Get_Chain (Design_File);
          end loop;
          Library := Get_Chain (Library);
       end loop;
+
+      if not Ok then
+         raise Compilation_Error;
+      end if;
    end Prepare_Ast;
 
    --  Command --ast-to-json
