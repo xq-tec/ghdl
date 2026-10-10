@@ -115,7 +115,12 @@ package body Ghdljson is
             elsif Ok then
                Design_Unit := Get_First_Design_Unit (Design_File);
                while Is_Valid (Design_Unit) loop
-                  Load_Design_Unit (Design_Unit, No_Location);
+                  --  A unit made obsolete by the reanalysis of a unit it
+                  --  depends on, such as an architecture of an entity that a
+                  --  later design unit redefined, cannot be loaded.
+                  if Get_Date (Design_Unit) /= Date_Obsolete then
+                     Load_Design_Unit (Design_Unit, No_Location);
+                  end if;
                   Design_Unit := Get_Chain (Design_Unit);
                end loop;
             end if;
