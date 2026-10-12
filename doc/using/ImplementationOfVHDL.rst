@@ -63,7 +63,9 @@ the VHDL standard. This modification is also known as 1076a. Note that this
 standard is not fully backward compatible with VHDL-93, since the type of a
 shared variable must now be a protected type (there was no such restriction
 before).  This incompatibility can be bypassed with the
-:option:`-frelaxed` option.
+:option:`-frelaxed` option, which accepts such a declaration silently.
+With :option:`-frelaxed`, :option:`-Wshared` reports it as a warning, and
+``-Werror=shared`` as an error.
 
 Minor corrections were added by the 2002 revision of the VHDL standard. This
 revision is not fully backward compatible with VHDL-00 since, for example,

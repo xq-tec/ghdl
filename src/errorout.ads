@@ -98,6 +98,8 @@ package Errorout is
       Warnid_Missing_Wait,
 
       --  Declaration of a shared variable with a non-protected type.
+      --  Only reported with -frelaxed (otherwise it is an error in
+      --  VHDL-2000 and later); disabled by default.
       Warnid_Shared,
 
       --  A declaration hides a previous one.
@@ -349,7 +351,7 @@ private
    type Warnings_Setting is array (Msgid_All_Warnings) of Warning_Control_Type;
 
    Default_Warnings : constant Warnings_Setting :=
-     (Warnid_Library | Warnid_Binding | Warnid_Port | Warnid_Shared
+     (Warnid_Library | Warnid_Binding | Warnid_Port
         | Warnid_Runtime_Error | Warnid_Pure | Warnid_Specs | Warnid_Hide
         | Warnid_Pragma | Warnid_Analyze_Assert | Warnid_Attribute
         | Warnid_Deprecated_Option | Warnid_Unexpected_Option
@@ -365,7 +367,7 @@ private
         | Warnid_Parenthesis | Warnid_Delayed_Checks | Warnid_Default_Binding
         | Warnid_Vital_Generic | Warnid_Missing_Xref
         | Warnid_Missing_Assoc
-        | Warnid_Sensitivity
+        | Warnid_Sensitivity | Warnid_Shared
         | Warnid_Unused => (Enabled => False, Error => False));
 
    --  Compute the column from Error_Record E.

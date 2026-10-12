@@ -683,8 +683,12 @@ Some warnings are reported only during analysis, others during elaboration.
 .. option:: --warn-shared
 .. option:: -Wshared
 
-  Emit a warning when a shared variable is declared and its type it
-  not a protected type.
+  Emit a warning when a shared variable is declared and its type is
+  not a protected type. In VHDL-2000 and later, such a declaration is
+  an error unless :option:`-frelaxed` is given. With :option:`-frelaxed`,
+  it is accepted silently by default; :option:`-Wshared` brings the
+  warning back, and ``-Werror=shared`` turns it into an error. VHDL-87
+  and VHDL-93 have no such rule, so nothing is reported there.
 
 .. option:: --warn-hide
 .. option:: -Whide
