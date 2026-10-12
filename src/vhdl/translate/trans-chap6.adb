@@ -1248,7 +1248,9 @@ package body Trans.Chap6 is
               (Translate_Name (Get_Prefix (Name), Mode),
                Get_Named_Entity (Name));
 
-         when Iir_Kind_Function_Call =>
+         when Iir_Kind_Function_Call
+           | Iir_Kinds_Name_Attribute
+           | Iir_Kinds_Signal_Value_Attribute =>
             pragma Assert (Mode = Mode_Value);
             --  This can appear as a prefix of a name, therefore, the
             --  result is always a composite type or an access type.

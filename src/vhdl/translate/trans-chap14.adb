@@ -55,8 +55,11 @@ package body Trans.Chap14 is
            | Iir_Kind_Slice_Name
            | Iir_Kind_Dereference
            | Iir_Kind_Implicit_Dereference
-           | Iir_Kind_Function_Call =>
-            --  Prefix is an object.
+           | Iir_Kind_Function_Call
+           | Iir_Kind_Attribute_Value
+           | Iir_Kinds_Name_Attribute
+           | Iir_Kinds_Signal_Value_Attribute =>
+            --  Prefix is an object or a value.
             Res := Chap6.Translate_Name (Name, Mode_Value);
             Res := Chap3.Get_Composite_Bounds (Res);
             return Res;

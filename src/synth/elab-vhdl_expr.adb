@@ -1092,7 +1092,9 @@ package body Elab.Vhdl_Expr is
          when Iir_Kind_Aggregate =>
             return Synth_Subtype_Indication (Syn_Inst, Get_Type (Name));
 
-         when Iir_Kind_Image_Attribute =>
+         when Iir_Kind_Image_Attribute
+           | Iir_Kind_Attribute_Value
+           | Iir_Kinds_Name_Attribute =>
             declare
                Val : Valtyp;
             begin
@@ -1100,7 +1102,12 @@ package body Elab.Vhdl_Expr is
                return Val.Typ;
             end;
 
-         when Iir_Kind_Subtype_Attribute =>
+         when Iir_Kind_Subtype_Attribute
+           | Iir_Kind_Delayed_Attribute
+           | Iir_Kind_Last_Value_Attribute
+           | Iir_Kind_Driving_Value_Attribute =>
+            --  The subtype of these signal attributes is the subtype of the
+            --  prefix.
             return Exec_Name_Subtype (Syn_Inst, Get_Prefix (Name));
 
          when Iir_Kind_Element_Attribute =>

@@ -341,9 +341,21 @@ package body Vhdl.Canon is
             -- was Iir_Kind_Left_Array_Attribute
             -- ditto Right, Low, High, Length
             -- add Ascending, Range and Reverse_Range...
-            null;
-            --Canon_Extract_Sensitivity
-            --  (Get_Prefix (Expr), Sensitivity_List, Is_Target);
+            --
+            --  The bounds of an object or of a subtype don't change, so the
+            --  prefix is ignored.  But the bounds of a value (like a function
+            --  call) can depend on signals.
+            declare
+               Prefix : constant Iir := Get_Prefix (Expr);
+            begin
+               if not Is_Object_Name (Prefix)
+                 and then Get_Kind (Prefix) /= Iir_Kind_Attribute_Value
+                 and then Name_To_Value (Prefix) /= Null_Iir
+               then
+                  Canon_Extract_Sensitivity_Expression
+                    (Prefix, Sensitivity_List, False);
+               end if;
+            end;
 
          when Iir_Kind_Value_Attribute
            | Iir_Kind_Image_Attribute

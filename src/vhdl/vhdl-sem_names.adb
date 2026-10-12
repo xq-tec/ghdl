@@ -1054,6 +1054,12 @@ package body Vhdl.Sem_Names is
          return None;
       end if;
 
+      if Get_Kind (Base) in Iir_Kinds_Signal_Attribute then
+         --  An implicit signal has no parent, it is static like its
+         --  prefix.
+         return Get_Object_Type_Staticness (Get_Prefix (Base));
+      end if;
+
       Parent := Get_Parent (Base);
       loop
          case Get_Kind (Parent) is
@@ -1102,11 +1108,6 @@ package body Vhdl.Sem_Names is
               = Iir_Kind_Function_Declaration)
          then
             Prefix := Function_Declaration_To_Call (Prefix);
-         end if;
-         if not Is_Object_Name (Prefix) then
-            Error_Msg_Sem_Relaxed
-              (Attr, Warnid_Attribute,
-               "prefix of array attribute must be an object name");
          end if;
       end if;
       Set_Prefix (Attr, Prefix);
@@ -1244,6 +1245,14 @@ package body Vhdl.Sem_Names is
       if Is_Object_Name (Prefix) then
          Staticness := Iir_Staticness'Max
            (Staticness, Get_Object_Type_Staticness (Prefix));
+      elsif Name_To_Value (Prefix) /= Null_Iir then
+         --  The prefix is a value that is not an object (a function call,
+         --  an attribute value, a name attribute...).  It is neither a
+         --  subtype nor an object, so the attribute is not locally static
+         --  (LRM08 9.4.2 f and g).  It is at most globally static, if the
+         --  prefix is globally static (LRM08 9.4.3 k and l).
+         Staticness := Iir_Staticness'Min
+           (Globally, Get_Expr_Staticness (Prefix));
       end if;
       Set_Expr_Staticness (Attr, Staticness);
    end Finish_Sem_Array_Attribute;
@@ -3651,16 +3660,17 @@ package body Vhdl.Sem_Names is
       --  thereof, or that denotes a constrained an array subtype whose index
       --  ranges are defined by a constraint.
       --
-      --  GHDL: the prefix cannot be a function call, as the result is not
-      --  an object and it doesn't denote a subtype.  References are:
+      --  LRM08 8.1 Names
+      --  A prefix is said to be appropriate for a type in either of the
+      --  following cases:
+      --  - The type of the prefix is the type considered.
+      --  - The type of the prefix is an access type whose designated type is
+      --    the type considered.
       --
-      --  LRM08 6.4 Objects:
-      --  An object is a named entity [...]
-      --  In addition the following are objects, but are not named
-      --  entities[...]
-      --
-      --  LRM08 6 Declarations
-      --  the name is said to denote the associated entity.
+      --  So the prefix doesn't need to be an object: any prefix of an array
+      --  type is allowed, like a function call, an attribute value, a name
+      --  attribute or a signal attribute.  A scalar prefix is rejected
+      --  below.
       case Get_Kind (Prefix) is
          when Iir_Kind_Dereference
            | Iir_Kinds_Object_Declaration
@@ -3670,7 +3680,10 @@ package body Vhdl.Sem_Names is
            | Iir_Kind_Indexed_Name
            | Iir_Kind_Slice_Name
            | Iir_Kind_Attribute_Value
-           | Iir_Kind_Image_Attribute =>
+           | Iir_Kind_Image_Attribute
+           | Iir_Kinds_Name_Attribute
+           | Iir_Kinds_Signal_Attribute
+           | Iir_Kinds_Signal_Value_Attribute =>
             --  FIXME: list of expr.
             Is_Prefix_Object := True;
             Prefix_Type := Get_Type (Prefix);

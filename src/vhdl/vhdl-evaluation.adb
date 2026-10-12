@@ -2824,7 +2824,8 @@ package body Vhdl.Evaluation is
            | Iir_Kind_Attribute_Value
            | Iir_Kind_Attribute_Name
            | Iir_Kind_Subtype_Attribute
-           | Iir_Kind_Element_Attribute =>
+           | Iir_Kind_Element_Attribute
+           | Iir_Kinds_Signal_Attribute =>
             Prefix_Type := Get_Type (Prefix);
          when Iir_Kinds_Subtype_Definition =>
             Prefix_Type := Prefix;
