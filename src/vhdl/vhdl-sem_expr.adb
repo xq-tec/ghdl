@@ -3363,6 +3363,15 @@ package body Vhdl.Sem_Expr is
                      Ok := False;
                   end if;
                end;
+            when Iir_Kind_Choice_By_Range =>
+               --  LRM08 9.3.3.1 General
+               --  An element association with a choice that is a simple
+               --  expression or a discrete range is only allowed in an array
+               --  aggregate.
+               Has_Named := True;
+               Error_Msg_Sem
+                 (+El, "range choice not allowed in a record aggregate");
+               Ok := False;
             when others =>
                Error_Kind ("sem_record_aggregate", El);
          end case;

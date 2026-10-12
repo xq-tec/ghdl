@@ -1132,7 +1132,10 @@ package body Vhdl.Sem_Inst is
                     (Get_Kind (Assoc)
                        = Iir_Kind_Association_Element_Subprogram);
                   --  Replace the interface subprogram by the subprogram.
-                  Actual_Subprg := Get_Named_Entity (Get_Actual (Assoc));
+                  Actual_Subprg := Get_Actual (Assoc);
+                  if not Is_Error (Actual_Subprg) then
+                     Actual_Subprg := Get_Named_Entity (Actual_Subprg);
+                  end if;
                end if;
                Set_Instance (Orig_Inter, Actual_Subprg);
                --  Also set the associated subprogram to the interface

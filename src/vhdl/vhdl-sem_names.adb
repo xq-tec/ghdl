@@ -1010,6 +1010,7 @@ package body Vhdl.Sem_Names is
       if Get_Kind (Res) = Iir_Kind_Base_Attribute then
          Error_Msg_Sem
            (+Name, "'Base attribute cannot be used as a type mark");
+         return Create_Error_Type (Res);
       end if;
 
       Atype := Name_To_Type_Definition (Res);
@@ -3095,8 +3096,23 @@ package body Vhdl.Sem_Names is
             | Iir_Kind_Selected_Element
             | Iir_Kind_Attribute_Value
             | Iir_Kind_Simple_Name_Attribute
+            | Iir_Kind_Instance_Name_Attribute
+            | Iir_Kind_Path_Name_Attribute
+            | Iir_Kind_Transaction_Attribute
             | Iir_Kind_Function_Call =>
             Add_Result (Res, Sem_As_Indexed_Or_Slice_Name (Prefix, True));
+
+         when Iir_Kinds_Signal_Value_Attribute =>
+            if Get_Kind (Get_Base_Type (Get_Type (Prefix)))
+              = Iir_Kind_Array_Type_Definition
+            then
+               --  GHDL: not implemented.
+               Error_Msg_Sem
+                 (+Name, "indexed or slice name of %n not supported",
+                  +Prefix);
+            else
+               Error_Msg_Sem (+Name, "type of prefix is not an array");
+            end if;
 
          when Iir_Kinds_Array_Attribute =>
             if Actual /= Null_Iir then
@@ -5192,6 +5208,23 @@ package body Vhdl.Sem_Names is
             if Expr /= Null_Iir then
                Expr := Sem_Expression_Wildcard
                  (Expr, Wildcard_Any_Discrete_Type);
+               if Expr /= Null_Iir
+                 and then Is_Overload_List (Get_Type (Expr))
+               then
+                  --  LRM08 12.5 The context of overload resolution
+                  --  The occurrence is only legal if there is exactly one
+                  --  interpretation of each constituent of the innermost
+                  --  complete context.
+                  Error_Msg_Sem
+                    (+Expr, "type of pathname expression is ambiguous");
+                  declare
+                     Expr_Type : Iir;
+                  begin
+                     Expr_Type := Get_Type (Expr);
+                     Free_Overload_List (Expr_Type);
+                  end;
+                  Set_Type (Expr, Error_Type);
+               end if;
                Set_Pathname_Expression (Path, Expr);
             end if;
          end if;

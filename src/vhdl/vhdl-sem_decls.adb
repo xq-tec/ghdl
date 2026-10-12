@@ -2331,23 +2331,35 @@ package body Vhdl.Sem_Decls is
          else
             El := Finish_Sem_Name (El);
             Set_Nth_Element (Constituent_List, I, El);
-            El_Name := Get_Named_Entity (El);
 
-            --  Statements are textually afer the group declaration.  To avoid
-            --  adding a flag on each node with a base_name, this field is
-            --  cleared, as we don't care about base name.
-            if Class = Tok_Label then
-               Set_Is_Forward_Ref (El, True);
-            end if;
-            Set_Base_Name (El, Null_Iir);
+            --  LRM08 6.10 Group declarations
+            --  A name that is a group constituent shall not be an attribute
+            --  name (see 8.6).  Moreover, if such a name contains a prefix,
+            --  it is an error if the prefix is a function call.
+            --  GHDL: such names (and names of subelements) are not denoting
+            --  names after analysis.
+            if Get_Kind (El) not in Iir_Kinds_Denoting_Name then
+               Error_Msg_Sem
+                 (+El, "group constituent is not the name of a named entity");
+            else
+               El_Name := Get_Named_Entity (El);
 
-            --  LRM93 4.7
-            --  It is an error if the class of any group constituent in the
-            --  group constituent list is not the same as the class specified
-            --  by the corresponding entity class entry in the entity class
-            --  entry list of the group template.
-            if Get_Entity_Class_Kind (El_Name) /= Class then
-               Error_Msg_Sem (+El, "constituent not of class %t", +Class);
+               --  Statements are textually afer the group declaration.  To
+               --  avoid adding a flag on each node with a base_name, this
+               --  field is cleared, as we don't care about base name.
+               if Class = Tok_Label then
+                  Set_Is_Forward_Ref (El, True);
+               end if;
+               Set_Base_Name (El, Null_Iir);
+
+               --  LRM93 4.7
+               --  It is an error if the class of any group constituent in
+               --  the group constituent list is not the same as the class
+               --  specified by the corresponding entity class entry in the
+               --  entity class entry list of the group template.
+               if Get_Entity_Class_Kind (El_Name) /= Class then
+                  Error_Msg_Sem (+El, "constituent not of class %t", +Class);
+               end if;
             end if;
          end if;
       end loop;

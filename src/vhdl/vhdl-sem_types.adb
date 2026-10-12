@@ -1570,12 +1570,14 @@ package body Vhdl.Sem_Types is
                   if not Has_Error then
                      Has_Error := True;
                      Report_Start_Group;
+                     --  Use the location of the name, as ATYPE may have no
+                     --  location (element subtype of an array element
+                     --  resolution).
                      Error_Msg_Sem
-                       (+Atype,
+                       (+Name,
                         "can't resolve overload for resolution function");
-                     Error_Msg_Sem (+Atype, "candidate functions are:");
-                     Error_Msg_Sem (+Func, " " & Disp_Subprg (Func));
-                     Report_End_Group;
+                     Error_Msg_Sem (+Name, "candidate functions are:");
+                     Error_Msg_Sem (+Res, " " & Disp_Subprg (Res));
                   end if;
                   Error_Msg_Sem (+El, " " & Disp_Subprg (El));
                else
@@ -1586,6 +1588,8 @@ package body Vhdl.Sem_Types is
          end loop;
          Free_Overload_List (Func);
          if Has_Error then
+            Report_End_Group;
+            Set_Named_Entity (Name, Error_Mark);
             return;
          end if;
          Set_Named_Entity (Name, Res);
@@ -2092,6 +2096,45 @@ package body Vhdl.Sem_Types is
                Error_Msg_Sem
                  (+Resolution,
                   "resolution indication must be an array element resolution");
+            when Iir_Kind_Array_Element_Resolution =>
+               --  LRM08 6.3 Subtype declarations
+               --  If a resolution indication is in the form that contains an
+               --  element resolution that is an array element resolution,
+               --  then the subtype corresponding to the resolution indication
+               --  shall be an array subtype.
+               Error_Msg_Sem
+                 (+Resolution,
+                  "array element resolution not allowed for record subtype");
+            when Iir_Kind_Record_Resolution =>
+               declare
+                  El_Res : Iir;
+                  Has_Error : Boolean;
+               begin
+                  --  LRM08 6.3 Subtype declarations
+                  --  For each record element resolution in the record
+                  --  resolution, the record subtype shall have an element
+                  --  with the same simple name as the record element simple
+                  --  name in the record element resolution, [...]
+                  Has_Error := False;
+                  El_Res := Get_Record_Element_Resolution_Chain (Resolution);
+                  while El_Res /= Null_Iir loop
+                     if Find_Name_In_Flist
+                       (Get_Elements_Declaration_List (Type_Mark),
+                        Get_Identifier (El_Res)) = Null_Iir
+                     then
+                        Error_Msg_Sem
+                          (+El_Res, "%n has no element %i",
+                           (+Type_Mark, +Get_Identifier (El_Res)));
+                        Has_Error := True;
+                     end if;
+                     El_Res := Get_Chain (El_Res);
+                  end loop;
+                  if not Has_Error then
+                     --  GHDL: record resolutions are not implemented.
+                     Error_Msg_Sem
+                       (+Resolution, "record resolution not supported");
+                  end if;
+               end;
             when Iir_Kind_Attribute_Name =>
                Error_Msg_Sem
                  (+Resolution, "%n not allowed as resolution", +Resolution);
@@ -2500,6 +2543,11 @@ package body Vhdl.Sem_Types is
 
       Res := Sem_Subtype_Constraint
         (Def, Type_Mark, Get_Resolution_Indication (Def));
+      if Res = Type_Mark then
+         --  The constraint has been discarded (it is not allowed for this
+         --  kind of type), so only keep the type mark.
+         return Type_Mark_Name;
+      end if;
       if not Is_Error (Res)
         and then Get_Kind (Res) in Iir_Kinds_Subtype_Definition
       then

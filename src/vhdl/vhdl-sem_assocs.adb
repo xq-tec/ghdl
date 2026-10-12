@@ -1973,7 +1973,11 @@ package body Vhdl.Sem_Assocs is
             Report_Start_Group;
             Error_Msg_Sem
               (+Loc, "%n must be associated with a subprogram", +Inter);
-            Error_Msg_Sem (+Loc, "found %n defined at %l", (+Res, +Res));
+            if Get_Location (Res) = No_Location then
+               Error_Msg_Sem (+Loc, "found %n", +Res);
+            else
+               Error_Msg_Sem (+Loc, "found %n defined at %l", (+Res, +Res));
+            end if;
             Report_End_Group;
             Res := Null_Iir;
       end case;
@@ -2038,6 +2042,18 @@ package body Vhdl.Sem_Assocs is
          --  predefined attribute name that denotes a function, shall be one
          --  of the predefined attributes 'IMAGE, 'VALUE, 'POS, 'VAL, 'SUCC,
          --  'PREV, 'LEFTOF, or 'RIGHTOF.
+         case Get_Kind (Actual) is
+            when Iir_Kinds_Name
+              | Iir_Kind_Attribute_Name
+              | Iir_Kind_Signature =>
+               null;
+            when others =>
+               Error_Msg_Sem
+                 (+Actual, "%n must be associated with a subprogram name",
+                  +Inter);
+               Set_Actual (Assoc, Create_Error_Name (Actual));
+               return;
+         end case;
          Sem_Name (Actual);
          Res := Get_Named_Entity (Actual);
 

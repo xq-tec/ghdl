@@ -335,7 +335,9 @@ package body Synth.Vhdl_Stmts is
             end;
 
          when Iir_Kind_Function_Call
-           | Iir_Kind_Image_Attribute =>
+           | Iir_Kind_Image_Attribute
+           | Iir_Kind_Path_Name_Attribute
+           | Iir_Kind_Instance_Name_Attribute =>
             Dest_Base := Synth_Expression (Syn_Inst, Pfx);
             Dest_Typ := Dest_Base.Typ;
             Dest_Off := (0, 0);
