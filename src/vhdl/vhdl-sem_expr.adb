@@ -4753,6 +4753,18 @@ package body Vhdl.Sem_Expr is
             when Iir_Kind_Allocator_By_Subtype =>
                --  Analyze subtype indication.
                Ind := Get_Subtype_Indication (Expr);
+
+               --  LRM08 9.3.7 Allocators
+               --  The only allowed form of constraint in the subtype
+               --  indication of an allocator is an array constraint or a
+               --  record constraint.
+               if Get_Kind (Ind) = Iir_Kind_Subtype_Definition
+                 and then Get_Range_Constraint (Ind) /= Null_Iir
+               then
+                  Error_Msg_Sem
+                    (+Ind, "range constraint not allowed in an allocator");
+               end if;
+
                Ind := Sem_Types.Sem_Subtype_Indication (Ind);
                Set_Subtype_Indication (Expr, Ind);
                Set_Allocator_Subtype (Expr, Ind);
@@ -5160,12 +5172,18 @@ package body Vhdl.Sem_Expr is
                | Iir_Kind_Psl_Boolean_Parameter =>
                Sem_Check_Pure (Expr, Obj);
                return;
-            when Iir_Kind_File_Declaration
-              | Iir_Kind_Interface_File_Declaration =>
+            when Iir_Kind_File_Declaration =>
                --  LRM 4.3.2  Interface declarations
                --  The value of an object is said to be read [...]
                --   -  When the object is a file and a READ operation is
                --      performed on the file.
+               --
+               --  LRM08 4.3  Subprogram bodies
+               --  [A pure function] shall not contain a reference to an
+               --  explicitly declared file object.
+               Sem_Check_Pure (Expr, Obj);
+               return;
+            when Iir_Kind_Interface_File_Declaration =>
                return;
             when Iir_Kind_Object_Alias_Declaration =>
                Obj := Get_Name (Obj);

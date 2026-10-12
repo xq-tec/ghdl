@@ -502,6 +502,94 @@ package body Vhdl.Sem is
       Res := Sem_Generic_Association_Chain (Inter_Parent, Assoc_Parent);
    end Sem_Generic_Association_Chain;
 
+   --  Return True iff ATYPE is a globally static subtype.
+   function Is_Globally_Static_Subtype (Atype : Iir) return Boolean is
+   begin
+      return Get_Type_Staticness (Atype) >= Globally
+        and then Is_Fully_Constrained_Type (Atype);
+   end Is_Globally_Static_Subtype;
+
+   --  LRM08 6.5.6.3 Port clauses
+   --  If a formal port of mode in is associated with an expression that is
+   --  not globally static (see 9.4.1) and the formal is of an unconstrained
+   --  or partially constrained composite type requiring determination of
+   --  index ranges from the actual according to the rules of 5.3.2.2, then
+   --  the expression shall be one of the following:
+   --
+   --  Return True iff EXPR is one of them (or is globally static).
+   function Is_Allowed_Unconstrained_Port_Actual (Expr : Iir) return Boolean
+   is
+      Choice : Iir;
+   begin
+      if Get_Expr_Staticness (Expr) >= Globally then
+         return True;
+      end if;
+
+      case Get_Kind (Expr) is
+         when Iir_Kinds_Denoting_And_External_Name =>
+            --  - The name of an object whose subtype is globally static
+            return Name_To_Object (Expr) /= Null_Iir
+              and then Is_Globally_Static_Subtype (Get_Type (Expr));
+         when Iir_Kind_Indexed_Name =>
+            --  - An indexed name whose prefix is one of the members of this
+            --    list
+            return Is_Allowed_Unconstrained_Port_Actual (Get_Prefix (Expr));
+         when Iir_Kind_Slice_Name =>
+            --  - A slice name whose prefix is one of the members of this list
+            --    and whose discrete range is a globally static discrete range
+            return Is_Allowed_Unconstrained_Port_Actual (Get_Prefix (Expr))
+              and then (Get_Type_Staticness
+                          (Get_Index_Type (Get_Type (Expr), 0))
+                          >= Globally);
+         when Iir_Kind_Aggregate =>
+            --  - An aggregate, provided all choices are locally static and
+            --    all expressions in element associations are expressions
+            --    described in this list
+            Choice := Get_Association_Choices_Chain (Expr);
+            while Choice /= Null_Iir loop
+               case Get_Kind (Choice) is
+                  when Iir_Kind_Choice_By_Expression
+                    | Iir_Kind_Choice_By_Range =>
+                     if Get_Choice_Staticness (Choice) /= Locally then
+                        return False;
+                     end if;
+                  when others =>
+                     null;
+               end case;
+               if not Get_Same_Alternative_Flag (Choice)
+                 and then not Is_Allowed_Unconstrained_Port_Actual
+                                (Get_Associated_Expr (Choice))
+               then
+                  return False;
+               end if;
+               Choice := Get_Chain (Choice);
+            end loop;
+            return True;
+         when Iir_Kind_Function_Call
+           | Iir_Kinds_Monadic_Operator
+           | Iir_Kinds_Dyadic_Operator =>
+            --  - A function call whose return type mark denotes a globally
+            --    static subtype
+            --  GHDL: an operator is a call to the function that implements
+            --  it.
+            return Is_Globally_Static_Subtype
+              (Get_Return_Type (Get_Implementation (Expr)));
+         when Iir_Kind_Qualified_Expression
+           | Iir_Kind_Type_Conversion =>
+            --  - A qualified expression or type conversion whose type mark
+            --    denotes a globally static subtype
+            return Is_Globally_Static_Subtype
+              (Get_Type (Get_Type_Mark (Expr)));
+         when Iir_Kind_Parenthesis_Expression =>
+            --  - An expression described in this list and enclosed in
+            --    parentheses
+            return Is_Allowed_Unconstrained_Port_Actual
+              (Get_Expression (Expr));
+         when others =>
+            return False;
+      end case;
+   end Is_Allowed_Unconstrained_Port_Actual;
+
    function Sem_Signal_Port_Association
      (Assoc : Iir; Formal : Iir; Formal_Base : Iir) return Iir
    is
@@ -596,6 +684,15 @@ package body Vhdl.Sem is
                   --  LRM08 6.5.6.3 Port clauses
                   Error_Msg_Sem
                     (+Actual, "actual expression must be globally static");
+               elsif not Is_Fully_Constrained_Type (Get_Type (Formal))
+                 and then not Is_Allowed_Unconstrained_Port_Actual (Actual)
+               then
+                  --  LRM08 6.5.6.3 Port clauses
+                  Error_Msg_Sem_Relaxed
+                    (Actual, Warnid_Static,
+                     "non globally static actual of an "
+                       & "unconstrained %n cannot determine its index ranges",
+                     (1 => +Formal_Base));
                end if;
             end if;
          else

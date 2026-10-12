@@ -309,6 +309,13 @@ package body Vhdl.Sem_Types is
                Set_Resolved_Flag (Ntype, False);
                Set_Type_Staticness (Ntype, Get_Expr_Staticness (Expr));
                Set_Signal_Type_Flag (Ntype, True);
+               --  LRM08 5.2.5.1 Floating-point types
+               --  The bounds of a floating type definition [...] shall be
+               --  locally static expressions.
+               if Get_Expr_Staticness (Rng) /= Locally then
+                  Error_Msg_Sem
+                    (+Decl, "range constraint of type must be locally static");
+               end if;
                Res := Ntype;
             end;
          when others =>

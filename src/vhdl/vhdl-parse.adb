@@ -12353,9 +12353,11 @@ package body Vhdl.Parse is
                   --  LRM08 13.1 Design units
                   --  It is an error if the context clause preceding a library
                   --  unit that is a context declaration is not empty.
-                  if Get_Context_Items (Unit) /= Null_Iir then
+                  --  GHDL: the context items parsed so far are in FIRST,
+                  --  they are set on UNIT only after the loop.
+                  if First /= Null_Iir then
                      Error_Msg_Parse
-                       (+Get_Context_Items (Unit),
+                       (+First,
                         "context declaration does not allow context "
                           & "clauses before it");
                   end if;

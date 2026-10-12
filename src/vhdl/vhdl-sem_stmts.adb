@@ -30,6 +30,7 @@ with Vhdl.Sem_Scopes; use Vhdl.Sem_Scopes;
 with Vhdl.Sem_Types;
 with Vhdl.Sem_Inst;
 with Vhdl.Sem_Psl;
+with Vhdl.Ieee.Std_Logic_1164;
 with Vhdl.Evaluation; use Vhdl.Evaluation;
 with Vhdl.Utils; use Vhdl.Utils;
 with Vhdl.Xrefs; use Vhdl.Xrefs;
@@ -661,6 +662,16 @@ package body Vhdl.Sem_Stmts is
            (+Target, "element of a target aggregate must be a static name");
       end if;
 
+      --  LRM08 10.6.2.1 Variable assignment statement
+      --  It is an error if the type of the target is a protected type.
+      if Get_Kind (Get_Base_Type (Get_Type (Target)))
+        = Iir_Kind_Protected_Type_Declaration
+      then
+         Error_Msg_Sem
+           (+Target, "target of a variable assignment cannot be of a "
+              & "protected type");
+      end if;
+
       Sem_Check_Pure (Target, Target_Object);
    end Check_Simple_Variable_Target;
 
@@ -904,6 +915,44 @@ package body Vhdl.Sem_Stmts is
       end loop;
    end Sem_Check_Waveform_Chain;
 
+   --  LRM08 10.9 Case statement
+   --  If the case statement is a matching case statement [...], the case
+   --  expression shall be of type BIT, STD_ULOGIC, or a one-dimensional
+   --  array type whose element type is BIT or STD_ULOGIC.
+   --
+   --  LRM08 10.5.4 Selected signal assignments
+   --  LRM08 10.6.4 Selected variable assignments
+   --  The selected assignment is equivalent to a case statement, so the
+   --  rule also applies to matching selected assignments.
+   procedure Check_Matching_Case_Expression (Expr : Iir)
+   is
+      use Vhdl.Ieee.Std_Logic_1164;
+
+      function Is_Bit_Or_Std_Ulogic (Atype : Iir) return Boolean
+      is
+         Base : constant Iir := Get_Base_Type (Atype);
+      begin
+         return Base = Bit_Type_Definition or else Base = Std_Ulogic_Type;
+      end Is_Bit_Or_Std_Ulogic;
+
+      Expr_Type : constant Iir := Get_Type (Expr);
+   begin
+      if Is_Error (Expr_Type) then
+         return;
+      end if;
+      if Is_Bit_Or_Std_Ulogic (Expr_Type) then
+         return;
+      end if;
+      if Is_One_Dimensional_Array_Type (Expr_Type)
+        and then Is_Bit_Or_Std_Ulogic (Get_Element_Subtype (Expr_Type))
+      then
+         return;
+      end if;
+      Error_Msg_Sem
+        (+Expr, "expression of a matching case or selected assignment must "
+           & "be of type bit, std_ulogic or a one-dimensional array of them");
+   end Check_Matching_Case_Expression;
+
    procedure Sem_Selected_Assignment_Expressions
      (Stmt : Iir; Chain : in out Iir)
    is
@@ -923,6 +972,9 @@ package body Vhdl.Sem_Stmts is
       Expr := Sem_Case_Expression (Get_Expression (Stmt));
       if Expr /= Null_Iir then
          Check_Read (Expr);
+         if Get_Matching_Flag (Stmt) then
+            Check_Matching_Case_Expression (Expr);
+         end if;
          Set_Expression (Stmt, Expr);
          Sem_Case_Choices (Expr, Chain, Get_Location (Stmt));
       end if;
@@ -1753,6 +1805,9 @@ package body Vhdl.Sem_Stmts is
       Expr := Sem_Case_Expression (Expr);
       if Expr /= Null_Iir then
          Check_Read (Expr);
+         if Get_Matching_Flag (Stmt) then
+            Check_Matching_Case_Expression (Expr);
+         end if;
          Set_Expression (Stmt, Expr);
 
          Sem_Case_Choices (Expr, Chain, Get_Location (Stmt));

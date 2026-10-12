@@ -357,9 +357,13 @@ package body Vhdl.Sem_Assocs is
             --  The actual designator associated with a formal
             --  of class file must be a file.
             case Get_Kind (Prefix) is
-               when Iir_Kind_Interface_File_Declaration
-                 | Iir_Kind_File_Declaration =>
+               when Iir_Kind_Interface_File_Declaration =>
                   null;
+               when Iir_Kind_File_Declaration =>
+                  --  LRM08 4.3  Subprogram bodies
+                  --  [A pure function] shall not contain a reference to an
+                  --  explicitly declared file object.
+                  Sem_Check_Pure (Actual, Prefix);
                when Iir_Kind_Variable_Declaration
                  | Iir_Kind_Interface_Variable_Declaration =>
                   if Flags.Vhdl_Std >= Vhdl_93
@@ -1771,7 +1775,19 @@ package body Vhdl.Sem_Assocs is
       --  An actual associated with a formal generic type must be a subtype
       --  indication.
       --  FIXME: ghdl only supports type_mark!
-      Actual := Sem_Types.Sem_Subtype_Indication (Actual);
+      case Get_Kind (Actual) is
+         when Iir_Kinds_Name
+           | Iir_Kind_Attribute_Name
+           | Iir_Kind_Subtype_Definition
+           | Iir_Kinds_Subtype_Definition
+           | Iir_Kind_Error =>
+            Actual := Sem_Types.Sem_Subtype_Indication (Actual);
+         when others =>
+            Error_Msg_Sem
+              (+Actual, "actual of a generic type must be a subtype "
+                 & "indication");
+            Actual := Create_Error_Type (Actual);
+      end case;
       Set_Actual (Assoc, Actual);
 
       --  Set type association for analysis of reference to this interface.
