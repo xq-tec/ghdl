@@ -1167,6 +1167,100 @@ package body Vhdl.Sem_Stmts is
 
    procedure Sem_Signal_Force_Release_Assignment (Stmt: Iir)
    is
+      --  Set ATYPE to the subtype of the member of an object denoted by
+      --  NAME, and RESOLVED to True iff that member is a member of a
+      --  resolved composite signal, that is if the subtype of the member
+      --  or of one of its enclosing members is a composite subtype with a
+      --  resolution function.  A member includes the object itself
+      --  (LRM08 Annex I).
+      --  The subtypes are those of the object and not those of the aliases
+      --  NAME goes through, as a resolution indication has no effect on
+      --  the declaration of an alias (LRM08 6.3).  ATYPE is Null_Iir when
+      --  RESOLVED is True or in case of error.
+      procedure Get_Resolved_Composite_Member
+        (Name : Iir; Atype : out Iir; Resolved : out Boolean)
+      is
+         Ent : Iir;
+         El  : Iir;
+      begin
+         Atype := Null_Iir;
+         Resolved := False;
+
+         case Get_Kind (Name) is
+            when Iir_Kind_Simple_Name
+              | Iir_Kind_Selected_Name =>
+               Ent := Get_Named_Entity (Name);
+               if Get_Kind (Ent) = Iir_Kind_Object_Alias_Declaration then
+                  Get_Resolved_Composite_Member
+                    (Get_Name (Ent), Atype, Resolved);
+                  return;
+               end if;
+               Atype := Get_Type (Name);
+            when Iir_Kind_Indexed_Name =>
+               Get_Resolved_Composite_Member
+                 (Get_Prefix (Name), Atype, Resolved);
+               if Atype = Null_Iir then
+                  return;
+               end if;
+               case Get_Kind (Atype) is
+                  when Iir_Kinds_Array_Type_Definition =>
+                     Atype := Get_Element_Subtype (Atype);
+                  when others =>
+                     Atype := Null_Iir;
+                     return;
+               end case;
+            when Iir_Kind_Slice_Name =>
+               --  A slice has the element subtype of its prefix, and isn't
+               --  resolved by itself.
+               Get_Resolved_Composite_Member
+                 (Get_Prefix (Name), Atype, Resolved);
+               return;
+            when Iir_Kind_Selected_Element =>
+               Get_Resolved_Composite_Member
+                 (Get_Prefix (Name), Atype, Resolved);
+               if Atype = Null_Iir then
+                  return;
+               end if;
+               case Get_Kind (Atype) is
+                  when Iir_Kind_Record_Type_Definition
+                    | Iir_Kind_Record_Subtype_Definition =>
+                     --  The element of the subtype of the object.
+                     El := Get_Nth_Element
+                       (Get_Elements_Declaration_List (Atype),
+                        Natural (Get_Element_Position
+                                   (Get_Named_Entity (Name))));
+                     Atype := Get_Type (El);
+                  when others =>
+                     Atype := Null_Iir;
+                     return;
+               end case;
+            when others =>
+               --  An object name, such as an external name.
+               Atype := Get_Type (Name);
+         end case;
+
+         --  An element resolution is not a resolution function, so a
+         --  composite with resolved elements (like std_logic_vector) is not
+         --  a resolved composite.
+         if Atype /= Null_Iir
+           and then Get_Kind (Atype) in Iir_Kinds_Composite_Subtype_Definition
+           and then Has_Resolution_Function (Atype) /= Null_Iir
+         then
+            Atype := Null_Iir;
+            Resolved := True;
+         end if;
+      end Get_Resolved_Composite_Member;
+
+      --  Return True iff TARGET is a member of a resolved composite signal.
+      function Is_Resolved_Composite_Member (Target : Iir) return Boolean
+      is
+         Atype    : Iir;
+         Resolved : Boolean;
+      begin
+         Get_Resolved_Composite_Member (Target, Atype, Resolved);
+         return Resolved;
+      end Is_Resolved_Composite_Member;
+
       Target        : Iir;
       Target_Type   : Iir;
       Target_Object : Iir;
@@ -1265,11 +1359,17 @@ package body Vhdl.Sem_Stmts is
             end case;
          end if;
 
-         --  TODO:
-         --  LRM08 10.5.2 Simple signal assignments
-         --  It is an error if a simple force assignemtn schedules a driving
-         --  value force or an effective value force for a member of a
-         --  resolved composite signal.
+         --  LRM08 10.5.2.2 Executing a simple assignment statement
+         --  It is an error if the target of a simple force assignment or a
+         --  simple release assignment is a member of a resolved composite
+         --  signal.
+         if Is_Signal_Object (Target_Prefix)
+           and then Is_Resolved_Composite_Member (Target)
+         then
+            Error_Msg_Sem
+              (+Stmt, "target of %n is a member of a resolved composite "
+                 & "signal", +Stmt);
+         end if;
       end if;
 
       if Get_Kind (Stmt) = Iir_Kind_Signal_Force_Assignment_Statement then

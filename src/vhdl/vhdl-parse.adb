@@ -8225,9 +8225,15 @@ package body Vhdl.Parse is
          when Tok_In =>
             Set_Force_Mode (Stmt, Iir_Force_In);
             Set_Has_Force_Mode (Stmt, True);
+
+            --  Skip 'in'.
+            Scan;
          when Tok_Out =>
             Set_Force_Mode (Stmt, Iir_Force_Out);
             Set_Has_Force_Mode (Stmt, True);
+
+            --  Skip 'out'.
+            Scan;
          when others =>
             null;
       end case;
@@ -8263,7 +8269,7 @@ package body Vhdl.Parse is
    --
    --  [ LRM08 10.5 Signal assignment statement ]
    --  simple_release_assignment ::=
-   --    target <= RELEASE [ force_mode ] expression ;
+   --    target <= RELEASE [ force_mode ] ;
    function Parse_Signal_Release_Assignment
      (Target : Iir; Loc : Location_Type) return Iir
    is

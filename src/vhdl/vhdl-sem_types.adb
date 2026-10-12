@@ -2010,7 +2010,8 @@ package body Vhdl.Sem_Types is
          if Resolv_Ind /= Null_Iir then
             case Get_Kind (Resolv_Ind) is
                when Iir_Kinds_Denoting_Name =>
-                  Error_Kind ("sem_array_constraint(resolution)", Resolv_Ind);
+                  --  Inherit the resolution function of the type mark.
+                  Resolv_Ind := Build_Reference_Name (Resolv_Ind);
                when Iir_Kind_Array_Element_Resolution =>
                   --  Already applied to the element.
                   Resolv_Ind := Null_Iir;
