@@ -1778,7 +1778,9 @@ package Vhdl.Nodes is
    -- Only for Iir_Kind_Function_Instantiation_Declaration:
    --   Get/Set_Type (Alias Field1)
    --
-   --  A signature or a simple name.
+   --  A name, or a signature before analysis.  The analysis replaces the
+   --  signature with its prefix, whose named entity is the uninstantiated
+   --  subprogram.
    --   Get/Set_Uninstantiated_Subprogram_Name (Field7)
    --
    --   Get/Set_Generic_Map_Aspect_Chain (Field8)

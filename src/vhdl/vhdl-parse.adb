@@ -9053,6 +9053,7 @@ package body Vhdl.Parse is
    function Parse_Subprogram_Instantiation (Subprg : Iir) return Iir
    is
       Res : Iir;
+      Name : Iir;
    begin
       case Iir_Kinds_Subprogram_Declaration (Get_Kind (Subprg)) is
          when Iir_Kind_Function_Declaration =>
@@ -9079,7 +9080,12 @@ package body Vhdl.Parse is
       --  Skip 'new'.
       Scan;
 
-      Set_Uninstantiated_Subprogram_Name (Res, Parse_Signature_Name);
+      Name := Parse_Signature_Name;
+      if Get_Kind (Name) = Iir_Kind_String_Literal8 then
+         --  An operator symbol without a signature.
+         Name := String_To_Operator_Symbol (Name);
+      end if;
+      Set_Uninstantiated_Subprogram_Name (Res, Name);
 
       if Current_Token = Tok_Generic then
          Set_Generic_Map_Aspect_Chain (Res, Parse_Generic_Map_Aspect);

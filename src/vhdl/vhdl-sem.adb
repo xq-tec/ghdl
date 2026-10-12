@@ -2621,15 +2621,184 @@ package body Vhdl.Sem is
       end if;
    end Sem_Subprogram_Body;
 
+   --  If NAME, a type mark of a signature, is an expanded name whose prefix
+   --  denotes an uninstantiated subprogram (like 'gen_p.t') and that does
+   --  not occur within that subprogram, return the subprogram.  Otherwise
+   --  return Null_Iir.
+   function Get_Selected_Uninstantiated_Subprogram (Name : Iir) return Iir
+   is
+      function Is_Selected (Decl : Iir) return Boolean is
+      begin
+         return Get_Kind (Decl) in Iir_Kinds_Subprogram_Declaration
+           and then Is_Uninstantiated_Subprogram (Decl)
+           and then not Get_Is_Within_Flag (Decl);
+      end Is_Selected;
+
+      Prefix : Iir;
+      It : List_Iterator;
+      El : Iir;
+   begin
+      if Get_Kind (Name) /= Iir_Kind_Selected_Name then
+         return Null_Iir;
+      end if;
+      Prefix := Get_Prefix (Name);
+      if Get_Kind (Prefix) not in Iir_Kinds_Denoting_Name then
+         return Null_Iir;
+      end if;
+      Sem_Name (Prefix);
+      Prefix := Get_Named_Entity (Prefix);
+      if Is_Error (Prefix) then
+         return Null_Iir;
+      end if;
+      if not Is_Overload_List (Prefix) then
+         if Is_Selected (Prefix) then
+            return Prefix;
+         end if;
+         return Null_Iir;
+      end if;
+      It := List_Iterate (Get_Overload_List (Prefix));
+      while Is_Valid (It) loop
+         El := Get_Element (It);
+         if Is_Selected (El) then
+            return El;
+         end if;
+         Next (It);
+      end loop;
+      return Null_Iir;
+   end Get_Selected_Uninstantiated_Subprogram;
+
+   --  Report type marks of signature SIG that select a declaration (a
+   --  generic type) of an uninstantiated subprogram from outside it.  Return
+   --  True if there is none.
+   function Check_Signature_Type_Marks (Sig : Iir) return Boolean
+   is
+      List : constant Iir_Flist := Get_Type_Marks_List (Sig);
+      Res : Boolean;
+
+      procedure Check_Type_Mark (Mark : Iir)
+      is
+         Subprg : constant Iir :=
+           Get_Selected_Uninstantiated_Subprogram (Mark);
+      begin
+         if Subprg /= Null_Iir then
+            --  LRM08 8.3 Selected names
+            --  An expanded name denotes a named entity declared immediately
+            --  within a named construct if the prefix denotes a construct
+            --  that is [...] a subprogram declaration [...].  This form of
+            --  expanded name is only allowed within the construct itself
+            --  [...].
+            --  GHDL: per LRM08 12.3 r), the generic types are visible by
+            --  their simple names in the signature instead (not yet
+            --  supported).
+            Error_Msg_Sem
+              (+Mark, "a declaration of %n cannot be selected outside of it",
+               +Subprg);
+            Res := False;
+         end if;
+      end Check_Type_Mark;
+   begin
+      Res := True;
+      if List /= Null_Iir_Flist then
+         for I in Flist_First .. Flist_Last (List) loop
+            Check_Type_Mark (Get_Nth_Element (List, I));
+         end loop;
+      end if;
+      if Get_Return_Type_Mark (Sig) /= Null_Iir then
+         Check_Type_Mark (Get_Return_Type_Mark (Sig));
+      end if;
+      return Res;
+   end Check_Signature_Type_Marks;
+
+   --  Free signature SIG of a subprogram instantiation declaration after its
+   --  analysis.  Its prefix has been moved to the declaration, which has no
+   --  field for the signature itself.
+   procedure Free_Instantiation_Signature (Sig : Iir)
+   is
+      List : Iir_Flist;
+
+      procedure Free_Type_Mark (Mark : Iir) is
+      begin
+         case Get_Kind (Mark) is
+            when Iir_Kind_Simple_Name
+              | Iir_Kind_Selected_Name =>
+               Free_Name (Mark);
+            when others =>
+               --  Like an attribute ('Subtype).  Not freed (although not
+               --  referenced anymore).
+               null;
+         end case;
+      end Free_Type_Mark;
+   begin
+      List := Get_Type_Marks_List (Sig);
+      if List /= Null_Iir_Flist then
+         for I in Flist_First .. Flist_Last (List) loop
+            Free_Type_Mark (Get_Nth_Element (List, I));
+         end loop;
+         Destroy_Iir_Flist (List);
+      end if;
+      if Get_Return_Type_Mark (Sig) /= Null_Iir then
+         Free_Type_Mark (Get_Return_Type_Mark (Sig));
+      end if;
+      Free_Iir (Sig);
+   end Free_Instantiation_Signature;
+
    function Sem_Uninstantiated_Subprogram_Name (Decl : Iir) return Iir
    is
       Name : Iir;
+      Sig : Iir;
       Subprg : Iir;
    begin
       Name := Get_Uninstantiated_Subprogram_Name (Decl);
       if Get_Kind (Name) = Iir_Kind_Signature then
-         --  TODO
-         raise Internal_Error;
+         Sig := Name;
+         Name := Get_Signature_Prefix (Sig);
+         --  The prefix is now owned by the declaration.
+         Set_Signature_Prefix (Sig, Null_Iir);
+      else
+         Sig := Null_Iir;
+      end if;
+
+      --  The name is kept without the signature, so that it always denotes
+      --  the uninstantiated subprogram.
+      Set_Uninstantiated_Subprogram_Name (Decl, Name);
+
+      if Get_Kind (Name) not in Iir_Kinds_Denoting_Name then
+         Error_Msg_Sem (+Name, "uninstantiated subprogram name expected");
+         return Create_Error_Name (Name);
+      end if;
+
+      Sem_Name (Name);
+      Subprg := Get_Named_Entity (Name);
+      if Is_Error (Subprg) then
+         return Subprg;
+      end if;
+
+      if Sig /= Null_Iir then
+         --  LRM08 4.4 Subprogram instantiation declarations
+         --  The signature, if present, shall match the parameter and result
+         --  type profile of exactly one subprogram denoted by the name, in
+         --  which case the subprogram instantiation declaration defines an
+         --  instance of the uninstantiated subprogram whose parameter and
+         --  result type profile is matched by the signature.
+         if not Check_Signature_Type_Marks (Sig) then
+            Subprg := Create_Error_Name (Name);
+            Set_Named_Entity (Name, Subprg);
+            return Subprg;
+         end if;
+         Subprg := Sem_Signature (Subprg, Sig);
+         if Subprg = Null_Iir then
+            Subprg := Create_Error_Name (Name);
+            Set_Named_Entity (Name, Subprg);
+            return Subprg;
+         end if;
+         Set_Named_Entity (Name, Subprg);
+         Free_Instantiation_Signature (Sig);
+      elsif Is_Overload_List (Subprg) then
+         Error_Msg_Sem
+           (+Name, "%n is overloaded, a signature is required", +Name);
+         Subprg := Create_Error_Name (Name);
+         Set_Named_Entity (Name, Subprg);
+         return Subprg;
       end if;
 
       Name := Sem_Denoting_Name (Name);
@@ -2639,13 +2808,8 @@ package body Vhdl.Sem is
          return Subprg;
       end if;
 
-      if Is_Overload_List (Subprg) then
-         --  TODO
-         raise Internal_Error;
-      end if;
-
       if Get_Kind (Subprg) not in Iir_Kinds_Subprogram_Declaration then
-         Error_Class_Match (Name, "package");
+         Error_Class_Match (Name, "subprogram");
          return Create_Error (Subprg);
       end if;
 
