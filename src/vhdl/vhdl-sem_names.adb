@@ -461,10 +461,41 @@ package body Vhdl.Sem_Names is
                  (Get_Sequential_Statement_Chain (Decl_Body), Id);
             end;
          when Iir_Kind_Architecture_Body
-           | Iir_Kind_Entity_Declaration
            | Iir_Kind_Block_Statement =>
             Iterator_Decl_Chain (Get_Declaration_Chain (Decl), Id);
             Iterator_Decl_Chain (Get_Concurrent_Statement_Chain (Decl), Id);
+         when Iir_Kind_Entity_Declaration =>
+            Iterator_Decl_Chain (Get_Declaration_Chain (Decl), Id);
+            Iterator_Decl_Chain (Get_Concurrent_Statement_Chain (Decl), Id);
+
+            --  LRM08 8.3 Selected names
+            --  An expanded name denotes a named entity declared immediately
+            --  within an architecture body if the prefix denotes the entity
+            --  declaration corresponding to the architecture body and the
+            --  suffix is the simple name [...] of a named entity whose
+            --  declaration occurs immediately within the architecture body.
+            --  This form of expanded name is only allowed within the
+            --  architecture body.
+            if Vhdl_Std >= Vhdl_08 then
+               declare
+                  Design : constant Iir := Sem.Get_Current_Design_Unit;
+                  Unit : Iir;
+               begin
+                  if Design /= Null_Iir then
+                     Unit := Get_Library_Unit (Design);
+                  else
+                     Unit := Null_Iir;
+                  end if;
+                  if Unit /= Null_Iir
+                    and then Get_Kind (Unit) = Iir_Kind_Architecture_Body
+                    and then Get_Entity (Unit) = Decl
+                  then
+                     Iterator_Decl_Chain (Get_Declaration_Chain (Unit), Id);
+                     Iterator_Decl_Chain
+                       (Get_Concurrent_Statement_Chain (Unit), Id);
+                  end if;
+               end;
+            end if;
          when Iir_Kind_For_Generate_Statement =>
             declare
                Bod : constant Iir := Get_Generate_Statement_Body (Decl);
