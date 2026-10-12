@@ -44,7 +44,9 @@ package body Vhdl.Sem is
    -- Forward declarations.
    procedure Sem_Context_Clauses (Unit: Iir);
    procedure Sem_Block_Configuration
-     (Block_Conf : Iir_Block_Configuration; Father: Iir);
+     (Block_Conf : Iir_Block_Configuration;
+      Father : Iir;
+      Primary_Binding : Iir := Null_Iir);
    procedure Sem_Component_Configuration
      (Conf : Iir_Component_Configuration; Father : Iir);
 
@@ -1008,11 +1010,37 @@ package body Vhdl.Sem is
       return Res;
    end Sem_Block_Specification_Of_Statement;
 
+   --  LRM08 7.3.3 Default binding indication
+   --  Return the most recently analyzed architecture body of ENTITY, or
+   --  Null_Iir if there is none.  This is used when the rule is applied
+   --  during analysis, so when the current design unit is analyzed again
+   --  (like when it is loaded for elaboration), the architectures of its
+   --  library analyzed after it are ignored.
+   function Get_Latest_Architecture_At_Analysis (Entity : Iir) return Iir
+   is
+      Unit : constant Iir := Get_Current_Design_Unit;
+      Before : Date_Type;
+   begin
+      Before := Get_Date (Unit);
+      if Before not in Date_Valid
+        or else (Get_Library (Get_Design_File (Unit))
+                   /= Get_Library (Get_Design_File (Get_Design_Unit (Entity))))
+      then
+         Before := Date_Type'Last;
+      end if;
+      return Libraries.Get_Latest_Architecture (Entity, Before);
+   end Get_Latest_Architecture_At_Analysis;
+
    --  LRM 1.3.1  Block Configuration.
    --  FATHER is the block_configuration, configuration_declaration,
    --  component_configuration containing the block_configuration BLOCK_CONF.
+   --  If FATHER is a component configuration without an entity aspect,
+   --  PRIMARY_BINDING is the primary binding indication of its instances (if
+   --  any).
    procedure Sem_Block_Configuration
-     (Block_Conf : Iir_Block_Configuration; Father: Iir)
+     (Block_Conf : Iir_Block_Configuration;
+      Father : Iir;
+      Primary_Binding : Iir := Null_Iir)
    is
       El : Iir;
       Block : Iir;
@@ -1067,15 +1095,35 @@ package body Vhdl.Sem is
             --  architecture name must denote the same architecture body as
             --  that to which the corresponding components are bound.
             declare
+               Bind : constant Iir := Get_Binding_Indication (Father);
                Block_Spec : Iir;
                Arch : Iir_Architecture_Body;
                Design: Iir_Design_Unit;
                Entity_Aspect : Iir;
+               Is_Default : Boolean;
                Entity : Iir;
                Comp_Arch : Iir;
+               Latest_Arch : Iir;
             begin
-               Entity_Aspect :=
-                 Get_Entity_Aspect (Get_Binding_Indication (Father));
+               --  The corresponding components are bound by the explicit
+               --  binding indication, else by the implicit default binding
+               --  indication (LRM08 3.4.3), else by their primary binding
+               --  indication (incremental binding).
+               Entity_Aspect := Null_Iir;
+               Is_Default := False;
+               if Bind /= Null_Iir then
+                  Entity_Aspect := Get_Entity_Aspect (Bind);
+                  if Entity_Aspect = Null_Iir then
+                     Entity_Aspect := Get_Default_Entity_Aspect (Bind);
+                     Is_Default := Entity_Aspect /= Null_Iir;
+                  end if;
+               end if;
+               if Entity_Aspect = Null_Iir
+                 and then Primary_Binding /= Null_Iir
+               then
+                  Entity_Aspect := Get_Entity_Aspect (Primary_Binding);
+               end if;
+
                if Entity_Aspect = Null_Iir or else
                  Get_Kind (Entity_Aspect) /= Iir_Kind_Entity_Aspect_Entity
                then
@@ -1106,6 +1154,32 @@ package body Vhdl.Sem is
                Entity := Get_Entity (Entity_Aspect);
                if Entity = Null_Iir then
                   return;
+               end if;
+
+               --  LRM08 7.3.3 Default binding indication
+               --  [...] the architecture identifier is the same as the simple
+               --  name of the most recently analyzed architecture body
+               --  associated with the entity declaration.  If this rule is
+               --  applied [...] to a component configuration that does not
+               --  contain an explicit inner block configuration, then the
+               --  architecture identifier is determined during elaboration
+               --  [...].  In all other cases, this rule is applied during
+               --  analysis of the binding indication.
+               if Is_Default
+                 and then Get_Kind (Entity) = Iir_Kind_Entity_Declaration
+               then
+                  Latest_Arch := Get_Latest_Architecture_At_Analysis (Entity);
+                  if Latest_Arch /= Null_Iir
+                    and then (Get_Identifier (Latest_Arch)
+                                /= Get_Identifier (Block_Spec))
+                  then
+                     Error_Msg_Sem
+                       (+Block_Spec,
+                        "block specification %i is not the most recently "
+                          & "analyzed architecture of %n",
+                        (+Block_Spec, +Entity));
+                     return;
+                  end if;
                end if;
 
                Design := Load_Secondary_Unit (Get_Design_Unit (Entity),
@@ -1244,6 +1318,128 @@ package body Vhdl.Sem is
       end loop;
    end Check_Incremental_Binding;
 
+   --  LRM08 3.4.3 Component configuration
+   --  It is an error if a component configuration contains an explicit block
+   --  configuration and the component configuration does not bind all
+   --  identified component instances to the same design entity.
+   --
+   --  Check this for the component configuration CONF of CONFIGURED_BLOCK,
+   --  which has a block configuration but no entity aspect: each instance is
+   --  bound by its configuration specification, else by the default binding.
+   --  Return False (and report an error) if the instances are bound to
+   --  different design entities.
+   function Check_Same_Design_Entity (Configured_Block : Iir; Conf : Iir)
+                                     return Boolean
+   is
+      Comp : constant Iir := Get_Named_Entity (Get_Component_Name (Conf));
+
+      --  Set UNIT and ARCH to the design unit and to the architecture
+      --  identifier of the design entity INST is bound to.  UNIT is Null_Iir
+      --  if INST is not bound.  An architecture which is not specified is the
+      --  most recently analyzed one.
+      procedure Get_Bound_Design_Entity
+        (Inst : Iir; Unit : out Iir; Arch : out Name_Id)
+      is
+         Spec : constant Iir := Get_Configuration_Specification (Inst);
+         Bind : Iir;
+         Aspect : Iir;
+         Entity : Iir;
+         Arch_Name : Iir;
+         Latest_Arch : Iir;
+      begin
+         Unit := Null_Iir;
+         Arch := Null_Identifier;
+
+         if Spec /= Null_Iir then
+            Bind := Get_Binding_Indication (Spec);
+            if Bind = Null_Iir then
+               return;
+            end if;
+            Aspect := Get_Entity_Aspect (Bind);
+            if Aspect = Null_Iir then
+               return;
+            end if;
+            case Get_Kind (Aspect) is
+               when Iir_Kind_Entity_Aspect_Entity =>
+                  Entity := Get_Entity (Aspect);
+                  if Entity = Null_Iir then
+                     return;
+                  end if;
+                  Unit := Get_Design_Unit (Entity);
+                  Arch_Name := Get_Architecture (Aspect);
+                  if Arch_Name /= Null_Iir then
+                     Arch := Get_Identifier (Arch_Name);
+                  end if;
+               when Iir_Kind_Entity_Aspect_Configuration =>
+                  Entity := Get_Configuration (Aspect);
+                  if Entity /= Null_Iir then
+                     Unit := Get_Design_Unit (Entity);
+                  end if;
+                  return;
+               when others =>
+                  --  Open.
+                  return;
+            end case;
+         else
+            --  LRM08 3.4.3 Component configuration
+            --  If a given component instance is unbound in the corresponding
+            --  block, then any explicit component configuration for that
+            --  instance that does not contain an explicit binding indication
+            --  will contain an implicit, default binding indication.
+            Unit := Get_Visible_Entity_Declaration (Comp);
+            if Unit = Null_Iir then
+               return;
+            end if;
+            Entity := Get_Library_Unit (Unit);
+         end if;
+
+         if Arch = Null_Identifier
+           and then Get_Kind (Entity) = Iir_Kind_Entity_Declaration
+         then
+            Latest_Arch := Get_Latest_Architecture_At_Analysis (Entity);
+            if Latest_Arch /= Null_Iir then
+               Arch := Get_Identifier (Latest_Arch);
+            end if;
+         end if;
+      end Get_Bound_Design_Entity;
+
+      Inst : Iir;
+      First_Inst : Iir;
+      First_Unit, Unit : Iir;
+      First_Arch, Arch : Name_Id;
+   begin
+      First_Inst := Null_Iir;
+      First_Unit := Null_Iir;
+      First_Arch := Null_Identifier;
+      Inst := Get_Concurrent_Statement_Chain (Configured_Block);
+      while Inst /= Null_Iir loop
+         if Get_Kind (Inst) = Iir_Kind_Component_Instantiation_Statement
+           and then Get_Component_Configuration (Inst) = Conf
+         then
+            Get_Bound_Design_Entity (Inst, Unit, Arch);
+            if First_Inst = Null_Iir then
+               First_Inst := Inst;
+               First_Unit := Unit;
+               First_Arch := Arch;
+            elsif Unit /= First_Unit or else Arch /= First_Arch then
+               Report_Start_Group;
+               Error_Msg_Sem
+                 (+Get_Block_Configuration (Conf),
+                  "block configuration applies to instances bound to "
+                    & "different design entities");
+               Error_Msg_Sem
+                 (+Get_Block_Configuration (Conf),
+                  "(%n and %n)",
+                  (+First_Inst, +Inst));
+               Report_End_Group;
+               return False;
+            end if;
+         end if;
+         Inst := Get_Chain (Inst);
+      end loop;
+      return True;
+   end Check_Same_Design_Entity;
+
    --  LRM 1.3.2
    procedure Sem_Component_Configuration
      (Conf : Iir_Component_Configuration; Father : Iir)
@@ -1291,6 +1487,21 @@ package body Vhdl.Sem is
          return;
       end if;
 
+      --  LRM08 3.4.3 Component configuration
+      --  It is an error if a component configuration contains an explicit
+      --  block configuration and the component configuration does not bind
+      --  all identified component instances to the same design entity.
+      --  Without an entity aspect, each instance may be bound differently.
+      Block := Get_Block_Configuration (Conf);
+      Binding := Get_Binding_Indication (Conf);
+      if Block /= Null_Iir
+        and then (Binding = Null_Iir
+                    or else Get_Entity_Aspect (Binding) = Null_Iir)
+        and then not Check_Same_Design_Entity (Configured_Block, Conf)
+      then
+         Block := Null_Iir;
+      end if;
+
       --  FIXME: (todo)
       --  If a given component instance is unbound in the corresponding block,
       --  then any explicit component configuration for that instance that does
@@ -1301,7 +1512,6 @@ package body Vhdl.Sem is
       --  implicit, default binding indication.
       Open_Declarative_Region;
       Sem_Scopes.Add_Component_Declarations (Comp);
-      Binding := Get_Binding_Indication (Conf);
       if Binding /= Null_Iir then
          Sem_Binding_Indication (Binding, Conf, Primary_Binding);
 
@@ -1335,9 +1545,8 @@ package body Vhdl.Sem is
       Close_Declarative_Region;
 
       --  External block.
-      Block := Get_Block_Configuration (Conf);
-      if Block /= Null_Iir and then Binding /= Null_Iir then
-         Sem_Block_Configuration (Block, Conf);
+      if Block /= Null_Iir then
+         Sem_Block_Configuration (Block, Conf, Primary_Binding);
       end if;
       Close_Declarative_Region;
    end Sem_Component_Configuration;

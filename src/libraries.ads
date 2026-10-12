@@ -142,8 +142,10 @@ package Libraries is
    procedure Add_Design_File_Into_Library (File : in out Iir_Design_File);
 
    -- Return the latest architecture analysed for entity ENTITY.
-   function Get_Latest_Architecture (Entity: Iir_Entity_Declaration)
-                                    return Iir_Architecture_Body;
+   --  Only architectures analysed before date BEFORE are considered.
+   function Get_Latest_Architecture
+     (Entity: Iir_Entity_Declaration; Before : Date_Type := Date_Type'Last)
+     return Iir_Architecture_Body;
 
    --  Return the design unit (stubed if not loaded) from UNIT.
    --  UNIT may be either a design unit, in this case UNIT is returned,

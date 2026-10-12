@@ -1552,8 +1552,9 @@ package body Libraries is
    end Save_Work_Library;
 
    -- Return the name of the latest architecture analysed for an entity.
-   function Get_Latest_Architecture (Entity: Iir_Entity_Declaration)
-                                    return Iir_Architecture_Body
+   function Get_Latest_Architecture
+     (Entity: Iir_Entity_Declaration; Before : Date_Type := Date_Type'Last)
+     return Iir_Architecture_Body
    is
       Entity_Id : Name_Id;
       Lib : Iir_Library_Declaration;
@@ -1576,6 +1577,7 @@ package body Libraries is
                if Get_Kind (Library_Unit) = Iir_Kind_Architecture_Body
                  and then (Get_Entity_Identifier_Of_Architecture (Library_Unit)
                              = Entity_Id)
+                 and then Get_Date (Design_Unit) < Before
                then
                   if Res = Null_Iir then
                      Res := Design_Unit;
