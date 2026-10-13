@@ -1718,7 +1718,12 @@ package body Trans.Chap2 is
                   El_Type : constant Iir := Get_Element_Subtype (N);
                   El_Tinfo : constant Type_Info_Acc := Get_Info (El_Type);
                begin
-                  if El_Tinfo.S.Kind in Kind_Type_Array .. Kind_Type_Record
+                  --  EL_TINFO is null for an element subtype that was not
+                  --  translated, such as a resolved scalar subtype of an
+                  --  array element resolution.
+                  if El_Tinfo /= null
+                    and then
+                    El_Tinfo.S.Kind in Kind_Type_Array .. Kind_Type_Record
                     and then El_Tinfo.S.Subtype_Owner = Orig_Info
                   then
                      pragma Assert (Info /= null);
@@ -1735,7 +1740,9 @@ package body Trans.Chap2 is
                   while El /= Null_Iir loop
                      El_Type := Get_Type (El);
                      El_Tinfo := Get_Info (El_Type);
-                     if El_Tinfo.S.Kind in Kind_Type_Array .. Kind_Type_Record
+                     if El_Tinfo /= null
+                       and then
+                       El_Tinfo.S.Kind in Kind_Type_Array .. Kind_Type_Record
                        and then El_Tinfo.S.Subtype_Owner = Orig_Info
                      then
                         pragma Assert (Info /= null);

@@ -3115,7 +3115,9 @@ package Vhdl.Nodes is
    --  The indication as it appears in the sources.
    --   Get/Set_Resolution_Indication (Field5)
    --
-   --  The subtype definition of the element.  Owner of it.
+   --  The subtype definition of the element.  Owner of it, unless the array
+   --  subtype has an element constraint, which then owns it (and this field
+   --  is Null_Iir).
    --   Get/Set_Element_Subtype_Indication (Field2)
 
    -- Iir_Kind_Record_Resolution (Short)
@@ -3124,6 +3126,11 @@ package Vhdl.Nodes is
    --
    --  record_resolution ::=
    --     record_element_resolution { , record_element_resolution }
+   --
+   --  After analysis, it is the resolution indication of the record subtype,
+   --  which has no resolution function: each record element resolution
+   --  applies to the subtype of its element, a record element constraint of
+   --  the record subtype.
    --
    --   Get/Set_Record_Element_Resolution_Chain (Field1)
 
@@ -3138,6 +3145,9 @@ package Vhdl.Nodes is
    --
    --   Get/Set_Identifier (Field3)
    --
+   --  The indication as it appears in the sources.  Analysis moves it to the
+   --  element subtype (as the resolution indication of an array element
+   --  resolution) and clears it.
    --   Get/Set_Resolution_Indication (Field5)
 
    -- Iir_Kind_Record_Subtype_Definition (Medium)

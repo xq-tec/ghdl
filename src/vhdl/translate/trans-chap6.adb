@@ -1005,7 +1005,13 @@ package body Trans.Chap6 is
       if Prefix_Tinfo.S.Rec_Fields /= null then
          F := Prefix_Tinfo.S.Rec_Fields (Pos).Fields (Kind);
          El_Tinfo := Prefix_Tinfo.S.Rec_Fields (Pos).Tinfo;
-         pragma Assert (El_Tinfo = Res_Tinfo);
+         --  A scalar element keeps the representation of the base element
+         --  when the record subtype gives it a subtype with only a new
+         --  resolution function (record element resolution, LRM08 6.3).
+         pragma Assert (El_Tinfo = Res_Tinfo
+                          or else (El_Tinfo.Type_Mode in Type_Mode_Scalar
+                                     and then Res_Tinfo.Type_Mode
+                                                in Type_Mode_Scalar));
       else
          --  Use the base element.
          declare

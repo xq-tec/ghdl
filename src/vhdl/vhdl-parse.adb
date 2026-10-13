@@ -3699,10 +3699,15 @@ package body Vhdl.Parse is
                   Error_Msg_Parse (+Ind, "element name expected");
                   Id := Null_Identifier;
                end if;
-               Free_Iir (Ind);
 
                Def := Create_Iir (Iir_Kind_Record_Resolution);
                Set_Location (Def, Loc);
+
+               --  The first record element resolution is located at its
+               --  element name.
+               Loc := Get_Location (Ind);
+               Free_Iir (Ind);
+
                Chain_Init (First, Last);
                loop
                   El := Create_Iir (Iir_Kind_Record_Element_Resolution);

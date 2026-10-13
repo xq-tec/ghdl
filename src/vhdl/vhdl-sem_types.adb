@@ -1709,9 +1709,10 @@ package body Vhdl.Sem_Types is
    begin
       if Is_Null (Ind)
         or else Get_Kind (Ind) = Iir_Kind_Array_Element_Resolution
+        or else Get_Kind (Ind) = Iir_Kind_Record_Resolution
       then
-         --  No need to copy array_element_resolution, it is part of the
-         --  element_subtype.
+         --  No need to copy array_element_resolution or record_resolution,
+         --  they are part of the element subtypes.
          return Null_Iir;
       else
          return Build_Reference_Name (Ind);
@@ -1972,6 +1973,7 @@ package body Vhdl.Sem_Types is
       Resolv_El : Iir := Null_Iir;
       Resolv_Ind : Iir;
       Index_Staticness : Iir_Staticness;
+      Has_El_Constraint : Boolean;
    begin
       if Resolution /= Null_Iir then
          --  A resolution indication is present.
@@ -1996,6 +1998,10 @@ package body Vhdl.Sem_Types is
          --  There is no element_constraint.
          pragma Assert (Resolution /= Null_Iir);
          Res := Copy_Subtype_Indication (Type_Mark);
+         --  The resolution indication replaces the resolution function of
+         --  the type mark: free the copied name.
+         Free_Iir (Get_Resolution_Indication (Res));
+         Set_Resolution_Indication (Res, Null_Iir);
          El_Def := Null_Iir;
       else
          case Get_Kind (Def) is
@@ -2019,6 +2025,11 @@ package body Vhdl.Sem_Types is
                if Resolution = Null_Iir then
                   return Res;
                end if;
+
+               --  The resolution indication replaces the resolution function
+               --  of the type mark: free the copied name.
+               Free_Iir (Get_Resolution_Indication (Res));
+               Set_Resolution_Indication (Res, Null_Iir);
 
                Index_Staticness := None;
 
@@ -2052,23 +2063,23 @@ package body Vhdl.Sem_Types is
       end if;
 
       --  Element subtype.
+      Has_El_Constraint := El_Def /= Null_Iir;
       if Resolv_El /= Null_Iir or else El_Def /= Null_Iir then
          El_Def := Sem_Subtype_Constraint (El_Def, El_Type, Resolv_El);
          if Resolv_El /= Null_Iir then
-            --  Save EL_DEF so that it is owned.
-            Set_Element_Subtype_Indication (Resolution, El_Def);
             Set_Resolution_Indication (Resolution, Null_Iir);
+            if not Has_El_Constraint then
+               --  Save EL_DEF so that it is owned.  With an element
+               --  constraint, the array_element_constraint owns it.
+               Set_Element_Subtype_Indication (Resolution, El_Def);
+            end if;
          end if;
       end if;
       if El_Def = Null_Iir then
          El_Def := Get_Element_Subtype (Type_Mark);
-      else
-         if Def /= Null_Iir
-           and then Get_Kind (Def) = Iir_Kind_Array_Subtype_Definition
-         then
-            --  Update array_element_constraint.
-            Set_Array_Element_Constraint (Def, El_Def);
-         end if;
+      elsif Has_El_Constraint then
+         --  Update array_element_constraint.
+         Set_Array_Element_Constraint (Def, El_Def);
       end if;
       Set_Element_Subtype (Res, El_Def);
 
@@ -2114,61 +2125,70 @@ package body Vhdl.Sem_Types is
       El : Iir;
       Tm_El : Iir;
       El_Type : Iir;
-      Res_List : Iir_Flist;
       Cons_Chain : Iir;
+      Res_Chain : Iir;
    begin
-      case Get_Kind (Def) is
-         when Iir_Kind_Subtype_Definition =>
-            if Get_Range_Constraint (Def) /= Null_Iir then
+      if Def = Null_Iir then
+         --  An element of a record subtype with only a resolution
+         --  indication, from a record element resolution (LRM08 6.3).
+         pragma Assert (Resolution /= Null_Iir);
+         Res := Create_Iir (Iir_Kind_Record_Subtype_Definition);
+         Location_Copy (Res, Resolution);
+         Set_Signal_Type_Flag (Res, Get_Signal_Type_Flag (Type_Mark));
+         Set_Constraint_State (Res, Get_Constraint_State (Type_Mark));
+         Cons_Chain := Null_Iir;
+      else
+         case Get_Kind (Def) is
+            when Iir_Kind_Subtype_Definition =>
+               if Get_Range_Constraint (Def) /= Null_Iir then
+                  Error_Msg_Sem
+                    (+Def, "range constraints cannot be applied to a record");
+                  return Create_Error_Type (Def);
+               end if;
+
+               --  Just an alias, without new constraints.
+               Res := Create_Iir (Iir_Kind_Record_Subtype_Definition);
+               Location_Copy (Res, Def);
+               Set_Subtype_Type_Mark (Res, Get_Subtype_Type_Mark (Def));
+               Free_Iir (Def);
+               Set_Signal_Type_Flag (Res, Get_Signal_Type_Flag (Type_Mark));
+               Set_Constraint_State (Res, Get_Constraint_State (Type_Mark));
+               Cons_Chain := Null_Iir;
+
+            when Iir_Kind_Record_Subtype_Definition =>
+               Cons_Chain := Get_Owned_Elements_Chain (Def);
+               Res := Def;
+
+            when Iir_Kind_Array_Subtype_Definition =>
                Error_Msg_Sem
-                 (+Def, "range constraints cannot be applied to a record");
+                 (+Def, "index constraints cannot be applied to a record");
                return Create_Error_Type (Def);
-            end if;
 
-            --  Just an alias, without new constraints.
-            Res := Create_Iir (Iir_Kind_Record_Subtype_Definition);
-            Location_Copy (Res, Def);
-            Set_Subtype_Type_Mark (Res, Get_Subtype_Type_Mark (Def));
-            Free_Iir (Def);
-            Set_Signal_Type_Flag (Res, Get_Signal_Type_Flag (Type_Mark));
-            Set_Constraint_State (Res, Get_Constraint_State (Type_Mark));
-            Cons_Chain := Null_Iir;
-
-         when Iir_Kind_Record_Subtype_Definition =>
-            Cons_Chain := Get_Owned_Elements_Chain (Def);
-            Res := Def;
-
-         when Iir_Kind_Array_Subtype_Definition =>
-            Error_Msg_Sem
-              (+Def, "index constraints cannot be applied to a record");
-            return Create_Error_Type (Def);
-
-         when others =>
-            Error_Kind ("sem_record_constraint", Def);
-      end case;
+            when others =>
+               Error_Kind ("sem_record_constraint", Def);
+         end case;
+      end if;
 
       --  Record elements are already owned.
       Set_Is_Ref (Res, True);
       Set_Parent_Type (Res, Type_Mark);
 
-      --  By default, inherit resoultion.
-      if Get_Kind (Type_Mark) = Iir_Kind_Record_Subtype_Definition then
+      --  Without a resolution indication, inherit the resolution function.
+      --  A record resolution of the type mark is not inherited: it lives in
+      --  the element subtypes, which are inherited.
+      if Resolution = Null_Iir
+        and then Get_Kind (Type_Mark) = Iir_Kind_Record_Subtype_Definition
+      then
          Set_Resolution_Indication
-           (Res, Get_Resolution_Indication (Type_Mark));
+           (Res, Copy_Resolution_Indication (Type_Mark));
       end if;
 
       --  Handle resolution.
-      Res_List := Null_Iir_Flist;
+      Res_Chain := Null_Iir;
       if Resolution /= Null_Iir then
          case Get_Kind (Resolution) is
             when Iir_Kinds_Denoting_Name =>
                null;
-            when Iir_Kind_Record_Subtype_Definition =>
-               Res_List := Get_Elements_Declaration_List (Resolution);
-            when Iir_Kind_Array_Subtype_Definition =>
-               Error_Msg_Sem
-                 (+Resolution,
-                  "resolution indication must be an array element resolution");
             when Iir_Kind_Array_Element_Resolution =>
                --  LRM08 6.3 Subtype declarations
                --  If a resolution indication is in the form that contains an
@@ -2179,35 +2199,25 @@ package body Vhdl.Sem_Types is
                  (+Resolution,
                   "array element resolution not allowed for record subtype");
             when Iir_Kind_Record_Resolution =>
-               declare
-                  El_Res : Iir;
-                  Has_Error : Boolean;
-               begin
-                  --  LRM08 6.3 Subtype declarations
-                  --  For each record element resolution in the record
-                  --  resolution, the record subtype shall have an element
-                  --  with the same simple name as the record element simple
-                  --  name in the record element resolution, [...]
-                  Has_Error := False;
-                  El_Res := Get_Record_Element_Resolution_Chain (Resolution);
-                  while El_Res /= Null_Iir loop
-                     if Find_Name_In_Flist
-                       (Get_Elements_Declaration_List (Type_Mark),
-                        Get_Identifier (El_Res)) = Null_Iir
-                     then
-                        Error_Msg_Sem
-                          (+El_Res, "%n has no element %i",
-                           (+Type_Mark, +Get_Identifier (El_Res)));
-                        Has_Error := True;
-                     end if;
-                     El_Res := Get_Chain (El_Res);
-                  end loop;
-                  if not Has_Error then
-                     --  GHDL: record resolutions are not implemented.
-                     Error_Msg_Sem
-                       (+Resolution, "record resolution not supported");
-                  end if;
-               end;
+               --  LRM08 6.3 Subtype declarations
+               --  If a resolution indication is in the form that contains an
+               --  element resolution that is a record resolution, then the
+               --  subtype corresponding to the resolution indication shall be
+               --  a record subtype.  For each record element resolution in
+               --  the record resolution, the record subtype shall have an
+               --  element with the same simple name as the record element
+               --  simple name in the record element resolution, and the
+               --  resolution indication immediately following that record
+               --  element simple name in the record element resolution
+               --  corresponds to the element subtype of the element with
+               --  that simple name in the record subtype.
+               --
+               --  The record subtype itself has no resolution function; the
+               --  resolution indications are analyzed with the element
+               --  subtypes below.  The record resolution is kept (as an
+               --  array element resolution is) for the source form.
+               Res_Chain := Get_Record_Element_Resolution_Chain (Resolution);
+               Set_Resolution_Indication (Res, Resolution);
             when Iir_Kind_Attribute_Name =>
                Error_Msg_Sem
                  (+Resolution, "%n not allowed as resolution", +Resolution);
@@ -2217,13 +2227,15 @@ package body Vhdl.Sem_Types is
       end if;
 
       Tm_El_List := Get_Elements_Declaration_List (Type_Mark);
-      if Cons_Chain /= Null_Iir or Res_List /= Null_Iir_Flist then
+      if Cons_Chain /= Null_Iir or Res_Chain /= Null_Iir then
          --  Constraints (either range or resolution) have been added.
          declare
             Nbr_Els : constant Natural := Get_Nbr_Elements (Tm_El_List);
             Els : Iir_Array (0 .. Nbr_Els - 1) := (others => Null_Iir);
+            --  The record element resolution of each element, if any.
             Res_Els : Iir_Array (0 .. Nbr_Els - 1) := (others => Null_Iir);
             Pos : Natural;
+            Resolved : Boolean;
             El_Ntype : Iir;
             Constraint : Iir_Constraint;
             Composite_Found : Boolean;
@@ -2256,30 +2268,36 @@ package body Vhdl.Sem_Types is
                El := Get_Chain (El);
             end loop;
 
-            --  Fill Res_Els (handle resolution constraints).
-            if Res_List /= Null_Iir_Flist then
-               for I in Flist_First .. Flist_Last (Res_List) loop
-                  El := Get_Nth_Element (Res_List, I);
-                  Tm_El :=
-                    Find_Name_In_Flist (Tm_El_List, Get_Identifier (El));
-                  if Tm_El = Null_Iir then
-                     Error_Msg_Sem (+El, "%n has no %n", (+Type_Mark, +El));
+            --  Fill Res_Els (handle record element resolutions).
+            El := Res_Chain;
+            while El /= Null_Iir loop
+               Tm_El := Find_Name_In_Flist (Tm_El_List, Get_Identifier (El));
+               if Tm_El = Null_Iir then
+                  Error_Msg_Sem
+                    (+El, "%n has no element %i",
+                     (+Type_Mark, +Get_Identifier (El)));
+               elsif Get_Resolution_Indication (El) = Null_Iir then
+                  --  Parse error.
+                  null;
+               else
+                  Pos := Natural (Get_Element_Position (Tm_El));
+                  if Res_Els (Pos) /= Null_Iir then
+                     --  Two resolution indications would correspond to the
+                     --  same element subtype (LRM08 6.3), which can have
+                     --  only one resolution function.
+                     Report_Start_Group;
+                     Error_Msg_Sem
+                       (+El, "element %i was already resolved",
+                        +Get_Identifier (El));
+                     Error_Msg_Sem
+                       (+Res_Els (Pos), " (location of previous resolution)");
+                     Report_End_Group;
                   else
-                     Pos := Natural (Get_Element_Position (Tm_El));
-                     if Res_Els (Pos) /= Null_Iir then
-                        Report_Start_Group;
-                        Error_Msg_Sem (+El, "%n was already resolved", +El);
-                        Error_Msg_Sem
-                          (+Els (Pos), " (location of previous constrained)");
-                        Report_End_Group;
-                     else
-                        Res_Els (Pos) := Tm_El;
-                     end if;
+                     Res_Els (Pos) := El;
                   end if;
-                  --Free_Iir (El);
-               end loop;
-               Destroy_Iir_Flist (Res_List);
-            end if;
+               end if;
+               El := Get_Chain (El);
+            end loop;
 
             --  Build elements list.
             El_List := Create_Iir_Flist (Nbr_Els);
@@ -2287,6 +2305,7 @@ package body Vhdl.Sem_Types is
             Constraint := Fully_Constrained;
             Composite_Found := False;
             Staticness := Locally;
+            Resolved := True;
             for I in Els'Range loop
                Tm_El := Get_Nth_Element (Tm_El_List, I);
                if Els (I) = Null_Iir and Res_Els (I) = Null_Iir then
@@ -2296,10 +2315,11 @@ package body Vhdl.Sem_Types is
                   El_Type := Get_Type (El);
                else
                   if Els (I) = Null_Iir then
-                     --  Only a resolution constraint.
+                     --  Only a resolution indication.
                      El := Create_Iir (Iir_Kind_Record_Element_Constraint);
-                     Location_Copy (El, Tm_El);
+                     Location_Copy (El, Res_Els (I));
                      Set_Parent (El, Res);
+                     Set_Identifier (El, Get_Identifier (Tm_El));
                      El_Type := Null_Iir;
                      Append_Owned_Element_Constraint (Res, El);
                   else
@@ -2308,11 +2328,22 @@ package body Vhdl.Sem_Types is
                      pragma Assert
                        (Get_Kind (El) = Iir_Kind_Record_Element_Constraint);
                   end if;
-                  El_Ntype := Sem_Subtype_Constraint (El_Type,
-                                                      Get_Type (Tm_El),
-                                                      Res_Els (I));
+                  if Res_Els (I) = Null_Iir then
+                     El_Ntype := Sem_Subtype_Constraint
+                       (El_Type, Get_Type (Tm_El), Null_Iir);
+                  else
+                     --  The resolution indication of the record element
+                     --  resolution applies to the element subtype, which
+                     --  owns it from now on (as for an array element
+                     --  resolution).
+                     El_Ntype := Sem_Subtype_Constraint
+                       (El_Type, Get_Type (Tm_El),
+                        Get_Resolution_Indication (Res_Els (I)));
+                     Set_Resolution_Indication (Res_Els (I), Null_Iir);
+                  end if;
                   Set_Type (El, El_Ntype);
-                  if El_Ntype /= El_Type
+                  if El_Type /= Null_Iir
+                    and then El_Ntype /= El_Type
                     and then Get_Subtype_Indication (El) = El_Type
                   then
                      --  A new subtype constraint was created to complete it,
@@ -2326,14 +2357,22 @@ package body Vhdl.Sem_Types is
                Set_Nth_Element (El_List, I, El);
                Update_Record_Constraint (Constraint, Composite_Found, El_Type);
                Staticness := Min (Staticness, Get_Type_Staticness (El_Type));
+               Resolved := Resolved and Get_Resolved_Flag (El_Type);
             end loop;
             Set_Constraint_State (Res, Constraint);
             Set_Type_Staticness (Res, Staticness);
+            --  The record subtype is resolved if each of its elements is of
+            --  a resolved subtype, or if it has a resolution function
+            --  (inherited from the type mark, or set below).
+            Set_Resolved_Flag
+              (Res,
+               Resolved or else Has_Resolution_Function (Res) /= Null_Iir);
          end;
       else
          Copy_Record_Elements_Declaration_List (Res, Type_Mark);
          Set_Constraint_State (Res, Get_Constraint_State (Type_Mark));
          Set_Type_Staticness (Res, Get_Type_Staticness (Type_Mark));
+         Set_Resolved_Flag (Res, Get_Resolved_Flag (Type_Mark));
       end if;
 
       Set_Signal_Type_Flag (Res, Get_Signal_Type_Flag (Type_Mark));
@@ -2357,7 +2396,12 @@ package body Vhdl.Sem_Types is
       Tolerance : Iir;
    begin
       if Def = Null_Iir then
+         --  Only a resolution indication (element of an array element
+         --  resolution or of a record element resolution).  It replaces the
+         --  resolution function of the type mark: free the copied name.
          Res := Copy_Subtype_Indication (Type_Mark);
+         Free_Iir (Get_Resolution_Indication (Res));
+         Set_Resolution_Indication (Res, Null_Iir);
       elsif Get_Kind (Def) /= Iir_Kind_Subtype_Definition then
          --  FIXME: find the correct sentence from LRM
          --  GHDL: subtype_definition may also be used just to add
@@ -2441,8 +2485,11 @@ package body Vhdl.Sem_Types is
             Error_Msg_Sem
               (+Resolution, "resolution indication must be a function name");
          else
-            Sem_Resolution_Function (Resolution, Res);
+            --  Set the location first, for the errors: RES may be a copy
+            --  of the type mark (element of an array or record element
+            --  resolution).
             Location_Copy (Res, Resolution);
+            Sem_Resolution_Function (Resolution, Res);
          end if;
       end if;
       return Res;
@@ -2470,6 +2517,14 @@ package body Vhdl.Sem_Types is
             --  LRM93 4.2
             --  A subtype indication denoting an access type [or a file type]
             --  may not contain a resolution function.
+            if Def = Null_Iir then
+               --  Only a resolution indication (element of an array element
+               --  resolution or of a record element resolution).
+               Error_Msg_Sem
+                 (+Resolution,
+                  "resolution function not allowed for an access type");
+               return Copy_Subtype_Indication (Type_Mark);
+            end if;
             if Resolution /= Null_Iir then
                Error_Msg_Sem
                  (+Def, "resolution function not allowed for an access type");
@@ -2555,6 +2610,13 @@ package body Vhdl.Sem_Types is
             return Type_Mark;
 
          when Iir_Kind_Interface_Type_Definition =>
+            if Def = Null_Iir then
+               --  Only a resolution indication (element of an array element
+               --  resolution or of a record element resolution).
+               Error_Msg_Sem
+                 (+Resolution, "interface types can't be resolved");
+               return Type_Mark;
+            end if;
             Error_Msg_Sem (+Def, "interface types can't be constrained");
             return Type_Mark;
 

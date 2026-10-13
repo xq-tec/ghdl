@@ -440,22 +440,57 @@ package body Vhdl.Prints is
    procedure Disp_Resolution_Indication
      (Ctxt : in out Ctxt_Class; Subtype_Def: Iir)
    is
-      procedure Inner (Ind : Iir) is
+      --  Display IND, the resolution indication of subtype DEF.  After
+      --  analysis, the resolution indications of an array element
+      --  resolution or of a record element resolution are moved to the
+      --  element subtypes of DEF.
+      procedure Inner (Ind : Iir; Def : Iir) is
       begin
+         if Ind = Null_Iir then
+            --  After an analysis error.
+            return;
+         end if;
          case Get_Kind (Ind) is
             when Iir_Kinds_Denoting_Name =>
                Print (Ctxt, Ind);
             when Iir_Kind_Array_Element_Resolution =>
                declare
                   Res : constant Iir := Get_Resolution_Indication (Ind);
+                  El : Iir;
                begin
                   Disp_Token (Ctxt, Tok_Left_Paren);
                   if Is_Valid (Res) then
-                     Inner (Res);
+                     Inner (Res, Null_Iir);
                   else
-                     Print (Ctxt, Get_Resolution_Indication
-                                  (Get_Element_Subtype_Indication (Ind)));
+                     El := Get_Element_Subtype (Def);
+                     Inner (Get_Resolution_Indication (El), El);
                   end if;
+                  Disp_Token (Ctxt, Tok_Right_Paren);
+               end;
+            when Iir_Kind_Record_Resolution =>
+               declare
+                  El_Res : Iir;
+                  Res : Iir;
+                  El : Iir;
+               begin
+                  Disp_Token (Ctxt, Tok_Left_Paren);
+                  El_Res := Get_Record_Element_Resolution_Chain (Ind);
+                  while El_Res /= Null_Iir loop
+                     Disp_Ident (Ctxt, Get_Identifier (El_Res));
+                     Res := Get_Resolution_Indication (El_Res);
+                     if Is_Valid (Res) then
+                        Inner (Res, Null_Iir);
+                     else
+                        El := Find_Name_In_Flist
+                          (Get_Elements_Declaration_List (Def),
+                           Get_Identifier (El_Res));
+                        El := Get_Type (El);
+                        Inner (Get_Resolution_Indication (El), El);
+                     end if;
+                     El_Res := Get_Chain (El_Res);
+                     exit when El_Res = Null_Iir;
+                     Disp_Token (Ctxt, Tok_Comma);
+                  end loop;
                   Disp_Token (Ctxt, Tok_Right_Paren);
                end;
             when others =>
@@ -490,7 +525,7 @@ package body Vhdl.Prints is
          end;
       end if;
 
-      Inner (Ind);
+      Inner (Ind, Subtype_Def);
    end Disp_Resolution_Indication;
 
    procedure Disp_Element_Constraint (Ctxt : in out Ctxt_Class; Def : Iir);
@@ -549,6 +584,33 @@ package body Vhdl.Prints is
       end if;
    end Disp_Array_Element_Constraint;
 
+   --  True if element subtype indication IND has a constraint to display.
+   --  After analysis, a record element resolution (LRM08 6.3) creates
+   --  record element constraints whose subtype has only a resolution.
+   function Has_Element_Constraint (Ind : Iir) return Boolean
+   is
+      El : Iir;
+   begin
+      case Get_Kind (Ind) is
+         when Iir_Kind_Array_Subtype_Definition =>
+            return Get_Has_Array_Constraint_Flag (Ind)
+              or else Get_Has_Element_Constraint_Flag (Ind);
+         when Iir_Kind_Record_Subtype_Definition =>
+            El := Get_Owned_Elements_Chain (Ind);
+            while El /= Null_Iir loop
+               if Get_Kind (El) = Iir_Kind_Record_Element_Constraint
+                 and then Has_Element_Constraint (Get_Subtype_Indication (El))
+               then
+                  return True;
+               end if;
+               El := Get_Chain (El);
+            end loop;
+            return False;
+         when others =>
+            return False;
+      end case;
+   end Has_Element_Constraint;
+
    procedure Disp_Record_Element_Constraint
      (Ctxt : in out Ctxt_Class; Def : Iir)
    is
@@ -557,7 +619,9 @@ package body Vhdl.Prints is
    begin
       El := Get_Owned_Elements_Chain (Def);
       while El /= Null_Iir loop
-         if Get_Kind (El) = Iir_Kind_Record_Element_Constraint then
+         if Get_Kind (El) = Iir_Kind_Record_Element_Constraint
+           and then Has_Element_Constraint (Get_Subtype_Indication (El))
+         then
             if Has_El then
                Disp_Token (Ctxt, Tok_Comma);
             else

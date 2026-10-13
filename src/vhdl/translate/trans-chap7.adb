@@ -1030,7 +1030,12 @@ package body Trans.Chap7 is
                   Res_El := Get_Nth_Element (Res_Els, I);
                   Expr_El_Type := Get_Type (Expr_El);
                   Res_El_Type := Get_Type (Res_El);
-                  if Expr_El_Type /= Res_El_Type then
+                  --  A scalar element has no bounds (its subtype differs
+                  --  only by a resolution function, LRM08 6.3).
+                  if Expr_El_Type /= Res_El_Type
+                    and then (Get_Kind (Res_El_Type)
+                                not in Iir_Kinds_Scalar_Subtype_Definition)
+                  then
                      if S_Res_Bnd = Mnode_Null then
                         Res_El_Bnd := Mnode_Null;
                      else

@@ -1908,6 +1908,13 @@ package body Vhdl.Sem is
             then
                return False;
             end if;
+            --  The element constraint, which also owns the element subtype
+            --  of an array element resolution if both are present.
+            if not Are_Trees_Equal (Get_Array_Element_Constraint (Left),
+                                    Get_Array_Element_Constraint (Right))
+            then
+               return False;
+            end if;
             return True;
          when Iir_Kind_Record_Subtype_Definition =>
             if Get_Base_Type (Left) /= Get_Base_Type (Right) then
@@ -1918,6 +1925,34 @@ package body Vhdl.Sem is
               and then
               Are_Trees_List_Equal (Get_Elements_Declaration_List (Left),
                                     Get_Elements_Declaration_List (Right));
+         when Iir_Kind_Array_Element_Resolution =>
+            --  After analysis, the resolution indication is moved to the
+            --  element subtype.
+            return Are_Trees_Equal (Get_Resolution_Indication (Left),
+                                    Get_Resolution_Indication (Right))
+              and then
+              Are_Trees_Equal (Get_Element_Subtype_Indication (Left),
+                               Get_Element_Subtype_Indication (Right));
+         when Iir_Kind_Record_Resolution =>
+            --  After analysis, the resolution indications are moved to the
+            --  element subtypes, which are compared with the elements of
+            --  the record subtypes.
+            El_Left := Get_Record_Element_Resolution_Chain (Left);
+            El_Right := Get_Record_Element_Resolution_Chain (Right);
+            loop
+               if El_Left = Null_Iir or El_Right = Null_Iir then
+                  return El_Left = El_Right;
+               end if;
+               if Get_Identifier (El_Left) /= Get_Identifier (El_Right)
+                 or else
+                 not Are_Trees_Equal (Get_Resolution_Indication (El_Left),
+                                      Get_Resolution_Indication (El_Right))
+               then
+                  return False;
+               end if;
+               El_Left := Get_Chain (El_Left);
+               El_Right := Get_Chain (El_Right);
+            end loop;
          when Iir_Kind_Record_Element_Constraint =>
             if Get_Identifier (Left) /= Get_Identifier (Right) then
                return False;

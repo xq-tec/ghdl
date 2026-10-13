@@ -3052,9 +3052,13 @@ package body Simul.Vhdl_Simul is
            and then Get_Kind (Sig_Type) in Iir_Kinds_Subtype_Definition
          then
             Resolv_Func := Get_Resolution_Indication (Sig_Type);
+            --  An array element resolution or a record resolution
+            --  resolves the subelements (with their own subtypes), not
+            --  the signal itself.
             if Resolv_Func /= Null_Node
               and then
               Get_Kind (Resolv_Func) /= Iir_Kind_Array_Element_Resolution
+              and then Get_Kind (Resolv_Func) /= Iir_Kind_Record_Resolution
             then
                Resolv_Func := Get_Named_Entity (Resolv_Func);
             else

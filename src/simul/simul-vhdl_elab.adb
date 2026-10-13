@@ -117,7 +117,11 @@ package body Simul.Vhdl_Elab is
       if not Already_Resolved
         and then Get_Kind (Sig_Type) in Iir_Kinds_Subtype_Definition
       then
-         Sub_Resolved := Get_Resolution_Indication (Sig_Type) /= Null_Iir;
+         --  A record resolution resolves only some elements, with their
+         --  own subtypes.
+         Sub_Resolved := Get_Resolution_Indication (Sig_Type) /= Null_Iir
+           and then (Get_Kind (Get_Resolution_Indication (Sig_Type))
+                       /= Iir_Kind_Record_Resolution);
       else
          Sub_Resolved := Already_Resolved;
       end if;

@@ -1122,7 +1122,7 @@ package body Vhdl.Sem_Assocs is
             Set_Parent_Type (Ntype, Atype);
             if Get_Kind (Atype) = Iir_Kind_Record_Subtype_Definition then
                Set_Resolution_Indication
-                 (Ntype, Get_Resolution_Indication (Atype));
+                 (Ntype, Sem_Types.Copy_Resolution_Indication (Atype));
             end if;
             if Get_Kind (Inter) = Iir_Kind_Interface_Signal_Declaration then
                --  The subtype is used for signals.

@@ -495,8 +495,17 @@ package body Vhdl.Sem_Inst is
                         when Iir_Kind_Array_Subtype_Definition =>
                            List := Get_Index_Constraint_List (Res);
                            if List = Null_Iir_Flist then
-                              List := Get_Index_Subtype_List
-                                (Get_Denoted_Type_Mark (Res));
+                              if Get_Subtype_Type_Mark (Res) /= Null_Iir then
+                                 List := Get_Index_Subtype_List
+                                   (Get_Denoted_Type_Mark (Res));
+                              else
+                                 --  A copy of the parent type, without type
+                                 --  mark (such as the element subtype of an
+                                 --  array or record element resolution).
+                                 List := Get_Index_Subtype_List
+                                   (Instantiate_Iir
+                                      (Get_Parent_Type (N), True));
+                              end if;
                            end if;
                         when others =>
                            --  All the nodes where Index_Subtype_List appears
