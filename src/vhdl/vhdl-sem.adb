@@ -1702,6 +1702,16 @@ package body Vhdl.Sem is
       return True;
    end Are_Trees_List_Equal;
 
+   --  Return TRUE iff the designators and the defaults of interface
+   --  subprograms LEFT and RIGHT conform (LRM08 4.10).
+   function Are_Interface_Subprograms_Head_Equal (Left, Right : Iir)
+                                                 return Boolean is
+   begin
+      return Get_Identifier (Left) = Get_Identifier (Right)
+        and then Are_Trees_Equal (Get_Default_Subprogram (Left),
+                                  Get_Default_Subprogram (Right));
+   end Are_Interface_Subprograms_Head_Equal;
+
    --  Return TRUE iff LEFT and RIGHT are (in depth) equal.
    --  This corresponds to conformance rules, LRM93 2.7
    function Are_Trees_Equal (Left, Right : Iir) return Boolean
@@ -1745,6 +1755,19 @@ package body Vhdl.Sem is
                then
                   return True;
                end if;
+               --  An expanded name whose prefix denotes an interface package
+               --  of the subprogram: each specification has its own instance
+               --  of the package, so compare the declarations they come from.
+               if Kind = Iir_Kind_Selected_Name
+                 and then Get_Kind (Right) = Iir_Kind_Selected_Name
+                 and then Sem_Inst.Get_Origin (Name_Left) /= Null_Iir
+                 and then (Sem_Inst.Get_Origin (Name_Left)
+                             = Sem_Inst.Get_Origin (Name_Right))
+                 and then Are_Trees_Equal (Get_Prefix (Left),
+                                           Get_Prefix (Right))
+               then
+                  return True;
+               end if;
                return False;
             end;
          else
@@ -1766,6 +1789,11 @@ package body Vhdl.Sem is
             then
                return False;
             end if;
+            if Kind = Iir_Kind_Interface_Procedure_Declaration
+              and then not Are_Interface_Subprograms_Head_Equal (Left, Right)
+            then
+               return False;
+            end if;
             return Are_Trees_Chain_Equal
               (Get_Interface_Declaration_Chain (Left),
                Get_Interface_Declaration_Chain (Right));
@@ -1774,6 +1802,11 @@ package body Vhdl.Sem is
             if Kind = Iir_Kind_Function_Declaration
               and then not Are_Trees_Chain_Equal (Get_Generic_Chain (Left),
                                                   Get_Generic_Chain (Right))
+            then
+               return False;
+            end if;
+            if Kind = Iir_Kind_Interface_Function_Declaration
+              and then not Are_Interface_Subprograms_Head_Equal (Left, Right)
             then
                return False;
             end if;
@@ -1825,6 +1858,18 @@ package body Vhdl.Sem is
             return True;
          when Iir_Kind_Interface_Type_Declaration =>
             return Get_Identifier (Left) = Get_Identifier (Right);
+         when Iir_Kind_Interface_Package_Declaration =>
+            return Get_Identifier (Left) = Get_Identifier (Right)
+              and then
+              Are_Trees_Equal (Get_Uninstantiated_Package_Name (Left),
+                               Get_Uninstantiated_Package_Name (Right))
+              and then (Get_Generic_Map_Default_Flag (Left)
+                          = Get_Generic_Map_Default_Flag (Right))
+              and then
+              Are_Trees_Chain_Equal (Get_Generic_Map_Aspect_Chain (Left),
+                                     Get_Generic_Map_Aspect_Chain (Right));
+         when Iir_Kind_Box_Name =>
+            return True;
          when Iir_Kind_Interface_Type_Definition =>
             return Are_Trees_Equal (Get_Type_Declarator (Left),
                                     Get_Type_Declarator (Right));
@@ -1937,6 +1982,15 @@ package body Vhdl.Sem is
                                         Get_Actual_Conversion (Right))
               and then Are_Trees_Equal (Get_Formal_Conversion (Left),
                                         Get_Formal_Conversion (Right));
+         when Iir_Kind_Association_Element_By_Name
+           | Iir_Kind_Association_Element_Package
+           | Iir_Kind_Association_Element_Type
+           | Iir_Kind_Association_Element_Subprogram =>
+            return Are_Trees_Equal (Get_Actual (Left), Get_Actual (Right))
+              and then Are_Trees_Equal (Get_Formal (Left), Get_Formal (Right));
+         when Iir_Kind_Association_Element_Open
+           | Iir_Kind_Association_Element_By_Individual =>
+            return Are_Trees_Equal (Get_Formal (Left), Get_Formal (Right));
 
          when Iir_Kind_Type_Conversion
            | Iir_Kind_Qualified_Expression =>
@@ -2095,6 +2149,9 @@ package body Vhdl.Sem is
       Interpretation : Name_Interpretation_Type;
       Decl1: Iir;
       Hash : Iir_Int32;
+      --  An uninstantiated subprogram with the same profile as DECL, that
+      --  DECL does not conform to.
+      Same_Profile : Iir := Null_Iir;
    begin
       Hash := Get_Subprogram_Hash (Decl);
       Interpretation := Get_Interpretation (Get_Identifier (Decl));
@@ -2103,7 +2160,7 @@ package body Vhdl.Sem is
             --  The declaration does not belong to the current declarative
             --  region, neither will the following one.  So, we do not found
             --  it.
-            return Null_Iir;
+            exit;
          end if;
          Decl1 := Get_Declaration (Interpretation);
          --  Should be sure DECL1 and DECL belongs to the same declarative
@@ -2125,13 +2182,28 @@ package body Vhdl.Sem is
             if Get_Generic_Chain (Decl) /= Null_Iir
               and then Get_Generic_Chain (Decl1) /= Null_Iir
             then
-               --  For uninstantiated subprogam.
-               return Decl1;
+               --  For uninstantiated subprograms: the profile may name
+               --  generic types, which differ between the declaration and
+               --  the body, so the body belongs to the declaration it
+               --  conforms to (LRM08 4.10).  A body that conforms to no
+               --  declaration declares a new (overloaded) subprogram,
+               --  unless it has the same (non-generic) profile as one, in
+               --  which case it is reported as not conforming, as for
+               --  ordinary subprograms.
+               if Are_Trees_Equal (Decl, Decl1) then
+                  return Decl1;
+               end if;
+               if Same_Profile = Null_Iir
+                 and then Get_Subprogram_Hash (Decl1) = Hash
+                 and then Is_Same_Profile (Decl, Decl1)
+               then
+                  Same_Profile := Decl1;
+               end if;
             end if;
          end if;
          Interpretation := Get_Next_Interpretation (Interpretation);
       end loop;
-      return Null_Iir;
+      return Same_Profile;
    end Find_Subprogram_Specification;
 
    procedure Set_Subprogram_Overload_Number (Decl : Iir)
