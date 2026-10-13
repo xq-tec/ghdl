@@ -264,7 +264,8 @@ package body Vhdl.Sem is
          when Iir_Kind_Signal_Declaration
            | Iir_Kind_Interface_Signal_Declaration
            | Iir_Kind_Guard_Signal_Declaration
-           | Iir_Kind_External_Signal_Name =>
+           | Iir_Kind_External_Signal_Name
+           | Iir_Kinds_Signal_Attribute =>
             null;
          when Iir_Kind_Object_Alias_Declaration =>
             return Get_Resolver (Get_Name (Obj));
@@ -648,6 +649,19 @@ package body Vhdl.Sem is
                end;
             when Iir_Kind_Signal_Declaration =>
                Set_Use_Flag (Prefix, True);
+            when Iir_Kinds_Signal_Attribute =>
+               --  The value of an implicit signal is defined by its
+               --  attribute (LRM08 14.7.4, 16.2.4), so it cannot be the
+               --  actual of a port that drives it, as for signal parameters.
+               if Get_Kind (Formal_Base)
+                 = Iir_Kind_Interface_Signal_Declaration
+                 and then Get_Mode (Formal_Base) /= Iir_In_Mode
+               then
+                  Error_Msg_Sem
+                    (+N_Assoc, "cannot associate a signal attribute with "
+                       & Get_Mode_Name (Get_Mode (Formal_Base))
+                       & " %n", +Formal_Base);
+               end if;
             when others =>
                --  FIXME: attributes ?
                null;

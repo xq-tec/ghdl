@@ -205,6 +205,10 @@ package body Vhdl.Sem_Names is
       case Get_Kind (Name) is
          when Iir_Kinds_External_Name =>
             return Name;
+         when Iir_Kinds_Signal_Value_Attribute =>
+            --  A value, like a function call: the base of an indexed, slice
+            --  or selected name of 'LAST_VALUE or 'DRIVING_VALUE.
+            return Name;
          when others =>
             return Get_Base_Name (Name);
       end case;
@@ -2577,7 +2581,14 @@ package body Vhdl.Sem_Names is
            | Iir_Kind_Dereference
            | Iir_Kind_Implicit_Dereference
            | Iir_Kind_Attribute_Value
-           | Iir_Kind_Function_Call =>
+           | Iir_Kind_Function_Call
+           | Iir_Kinds_Signal_Attribute
+           | Iir_Kinds_Signal_Value_Attribute =>
+            --  LRM08 8.3 Selected names
+            --  The prefix of a selected element shall be appropriate for a
+            --  record type; this includes a signal attribute of a record
+            --  signal, such as S'DELAYED(1 ns).A or S'LAST_VALUE.A
+            --  (LRM08 16.2.4).
             if Get_Kind (Get_Type (Prefix))
               = Iir_Kind_Protected_Type_Declaration
             then
@@ -3131,16 +3142,13 @@ package body Vhdl.Sem_Names is
             Add_Result (Res, Sem_As_Indexed_Or_Slice_Name (Prefix, True));
 
          when Iir_Kinds_Signal_Value_Attribute =>
-            if Get_Kind (Get_Base_Type (Get_Type (Prefix)))
-              = Iir_Kind_Array_Type_Definition
-            then
-               --  GHDL: not implemented.
-               Error_Msg_Sem
-                 (+Name, "indexed or slice name of %n not supported",
-                  +Prefix);
-            else
-               Error_Msg_Sem (+Name, "type of prefix is not an array");
-            end if;
+            --  LRM08 8.4 Indexed names, 8.5 Slice names
+            --  The prefix of an indexed or slice name shall be appropriate
+            --  for an array type: the value of 'LAST_VALUE or
+            --  'DRIVING_VALUE of an array signal (LRM08 16.2.4) is one.
+            --  These attributes have no parameter, so the parenthesis is
+            --  an index or a slice.  The others are not arrays.
+            Add_Result (Res, Sem_As_Indexed_Or_Slice_Name (Prefix, True));
 
          when Iir_Kinds_Array_Attribute =>
             if Actual /= Null_Iir then
@@ -3176,8 +3184,17 @@ package body Vhdl.Sem_Names is
          when Iir_Kind_Stable_Attribute
            | Iir_Kind_Quiet_Attribute
            | Iir_Kind_Delayed_Attribute =>
-            if Get_Parameter (Prefix) /= Null_Iir then
+            if Get_Parameter (Prefix) /= Null_Iir
+              or else Slice_Index_Kind = Iir_Kind_Slice_Name
+            then
                --  Attribute is complete, so it is now index or slice.
+               --
+               --  LRM08 16.2.4 Predefined attributes of signals
+               --  The parameter of these attributes is an expression of type
+               --  TIME, so a discrete range in the parenthesis cannot be one:
+               --  it is the slice of the attribute without a parameter
+               --  (LRM08 8.5), such as S'DELAYED(1 to 2).  'STABLE and 'QUIET
+               --  are not arrays, which the slice reports.
                Add_Result (Res, Sem_As_Indexed_Or_Slice_Name (Prefix, True));
             elsif Actual /= Null_Iir then
                Finish_Sem_Signal_Attribute_Signal (Prefix, Actual);

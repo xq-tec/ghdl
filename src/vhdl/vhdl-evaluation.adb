@@ -3495,7 +3495,16 @@ package body Vhdl.Evaluation is
       Pos : Iir_Index32;
    begin
       Idx := Eval_Static_Expr (Get_Nth_Element (Indexes, 0));
+      if not Eval_Is_In_Bound (Idx, Index_Type) then
+         return Build_Overflow (Expr, Get_Type (Expr));
+      end if;
       Pos := Eval_Pos_In_Range (Index_Range, Idx);
+
+      --  The type of a folded string (such as the result of 'IMAGE) may be
+      --  unconstrained, so also check the index against the length.
+      if Pos >= Iir_Index32 (Get_String_Length (Str)) then
+         return Build_Overflow (Expr, Get_Type (Expr));
+      end if;
 
       return Build_Enumeration_Constant
         (Iir_Index32 (Str_Table.Element_String8 (Id, Int32 (Pos + 1))), Expr);
@@ -3515,7 +3524,6 @@ package body Vhdl.Evaluation is
       El : Iir;
    begin
       Idx := Eval_Static_Expr (Get_Nth_Element (Indexes, 0));
-      Set_Nth_Element (Indexes, 0, Idx);
       Pos := Eval_Pos_In_Range (Index_Range, Idx);
 
       El := Get_Nth_Element (Get_Simple_Aggregate_List (Aggr), Natural (Pos));
@@ -3538,11 +3546,14 @@ package body Vhdl.Evaluation is
          Index : Iir;
       begin
          for I in Flist_First .. Flist_Last (Indexes_Type) loop
-            Prefix_Index := Get_Nth_Element (Indexes_Type, I);
+            --  The index subtype list of an unconstrained prefix type (such
+            --  as STRING, the type of 'IMAGE) holds type marks.
+            Prefix_Index := Get_Index_Type (Indexes_Type, I);
 
-            --  Eval index.
+            --  Eval index.  A name of an enumeration literal is kept, as
+            --  the literal is a node of another tree.
             Index := Get_Nth_Element (Indexes_List, I);
-            Index := Eval_Static_Expr (Index);
+            Index := Eval_Expr_Keep_Orig (Index, False);
             Set_Nth_Element (Indexes_List, I, Index);
 
             --  Return overflow if out of range.
@@ -3561,10 +3572,19 @@ package body Vhdl.Evaluation is
          when Iir_Kind_Aggregate =>
             return Eval_Indexed_Aggregate (Prefix, Expr);
          when Iir_Kind_String_Literal8 =>
-            return Eval_Indexed_String_Literal8 (Prefix, Expr);
+            declare
+               Res : constant Iir :=
+                 Eval_Indexed_String_Literal8 (Prefix, Expr);
+            begin
+               --  The result is a new literal: free the string folded from
+               --  the prefix (such as the value of 'IMAGE), if created.
+               Free_Eval_Static_Expr (Prefix, Get_Prefix (Expr));
+               return Res;
+            end;
          when Iir_Kind_Simple_Aggregate =>
             return Eval_Indexed_Simple_Aggregate (Prefix, Expr);
          when Iir_Kind_Overflow_Literal =>
+            Free_Eval_Static_Expr (Prefix, Get_Prefix (Expr));
             return Build_Overflow (Expr, Get_Type (Expr));
          when others =>
             Error_Kind ("eval_indexed_name", Prefix);
@@ -3594,6 +3614,21 @@ package body Vhdl.Evaluation is
       Idx_Type := Get_Index_Type (Get_Type (Prefix), 0);
       Idx_Rng := Get_Range_Constraint (Idx_Type);
 
+      --  The type of the prefix may be unconstrained (such as STRING, the
+      --  type of 'IMAGE), so analysis may not have checked the direction
+      --  and the bounds: check them against the index subtype here, and
+      --  against the folded value below.
+      --
+      --  LRM08 8.5 Slice names
+      --  It is an error if the direction of the discrete range is not the
+      --  same as that of the index range of the array denoted by the prefix
+      --  of the slice name.
+      if Dir /= Get_Direction (Idx_Rng)
+        or else not Eval_Is_In_Bound (Left, Idx_Type)
+        or else not Eval_Is_In_Bound (Right, Idx_Type)
+      then
+         return Build_Overflow (Expr, Get_Type (Expr));
+      end if;
       Pos := Eval_Pos_In_Range (Idx_Rng, Left);
 
       Prefix := Eval_Static_Expr (Prefix);
@@ -3603,9 +3638,21 @@ package body Vhdl.Evaluation is
             declare
                use Str_Table;
                Str_Id : constant String8_Id := Get_String8_Id (Prefix);
+               Res : Iir;
             begin
-               return Build_String (String8_Substring (Str_Id, Int32 (Pos)),
-                 Nat32 (Len), Expr);
+               if Int64 (Pos) + Int64 (Len)
+                 > Int64 (Get_String_Length (Prefix))
+               then
+                  Res := Build_Overflow (Expr, Get_Type (Expr));
+               else
+                  Res := Build_String
+                    (String8_Substring (Str_Id, Int32 (Pos)),
+                     Nat32 (Len), Expr);
+               end if;
+               --  Free the string folded from the prefix (such as the value
+               --  of 'IMAGE), if created.
+               Free_Eval_Static_Expr (Prefix, Get_Prefix (Expr));
+               return Res;
             end;
          when Iir_Kind_Simple_Aggregate =>
             declare
@@ -3614,6 +3661,11 @@ package body Vhdl.Evaluation is
                Rlist : Iir_Flist;
                El : Iir;
             begin
+               if Int64 (Pos) + Int64 (Len)
+                 > Int64 (Get_Nbr_Elements (Plist))
+               then
+                  return Build_Overflow (Expr, Get_Type (Expr));
+               end if;
                Rlist := Create_Iir_Flist (Natural (Len));
 
                for I in 0 .. Natural (Len - 1) loop
@@ -3623,6 +3675,7 @@ package body Vhdl.Evaluation is
                return Build_Simple_Aggregate (Rlist, Expr, Get_Type (Expr));
             end;
          when Iir_Kind_Overflow_Literal =>
+            Free_Eval_Static_Expr (Prefix, Get_Prefix (Expr));
             return Build_Overflow (Expr, Get_Type (Expr));
          when others =>
             Error_Kind ("eval_slice_name", Prefix);
@@ -3912,50 +3965,58 @@ package body Vhdl.Evaluation is
                end if;
             end;
          when Iir_Kind_Image_Attribute =>
+            --  The parameter is kept: its value may be a node of another
+            --  tree, such as an enumeration literal or the default value of
+            --  a constant.
             declare
-               Param : Iir;
-               Param_Type : Iir;
+               Param : constant Iir := Get_Parameter (Expr);
+               Val : Iir;
+               Val_Type : Iir;
+               Res : Iir;
             begin
-               Param := Get_Parameter (Expr);
-               Param := Eval_Static_Expr (Param);
-               Set_Parameter (Expr, Param);
+               Val := Eval_Static_Expr_Orig (Param, Param);
 
                --  Special case for overflow.
-               if not Eval_Is_In_Bound (Param, Get_Type (Get_Prefix (Expr)))
+               if not Eval_Is_In_Bound (Val, Get_Type (Get_Prefix (Expr)))
                then
-                  return Build_Overflow (Expr);
+                  Res := Build_Overflow (Expr);
+               else
+                  Val_Type := Get_Base_Type (Get_Type (Val));
+                  case Get_Kind (Val_Type) is
+                     when Iir_Kind_Integer_Type_Definition =>
+                        Res := Eval_Integer_Image (Get_Value (Val), Expr);
+                     when Iir_Kind_Floating_Type_Definition =>
+                        Res := Eval_Floating_Image (Get_Fp_Value (Val), Expr);
+                     when Iir_Kind_Enumeration_Type_Definition =>
+                        Res := Eval_Enumeration_Image (Val, Expr);
+                     when Iir_Kind_Physical_Type_Definition =>
+                        Res := Eval_Physical_Image (Val, Expr);
+                     when others =>
+                        Error_Kind ("eval_static_expr('image)", Val);
+                  end case;
                end if;
-
-               Param_Type := Get_Base_Type (Get_Type (Param));
-               case Get_Kind (Param_Type) is
-                  when Iir_Kind_Integer_Type_Definition =>
-                     return Eval_Integer_Image (Get_Value (Param), Expr);
-                  when Iir_Kind_Floating_Type_Definition =>
-                     return Eval_Floating_Image (Get_Fp_Value (Param), Expr);
-                  when Iir_Kind_Enumeration_Type_Definition =>
-                     return Eval_Enumeration_Image (Param, Expr);
-                  when Iir_Kind_Physical_Type_Definition =>
-                     return Eval_Physical_Image (Param, Expr);
-                  when others =>
-                     Error_Kind ("eval_static_expr('image)", Param);
-               end case;
+               Free_Eval_Static_Expr (Val, Param);
+               return Res;
             end;
          when Iir_Kind_Value_Attribute =>
+            --  The parameter is kept, as for 'IMAGE.
             declare
-               Param : Iir;
+               Param : constant Iir := Get_Parameter (Expr);
+               Val : Iir;
+               Res : Iir;
             begin
-               Param := Get_Parameter (Expr);
-               Param := Eval_Static_Expr (Param);
-               Set_Parameter (Expr, Param);
-               if Get_Kind (Param) /= Iir_Kind_String_Literal8 then
+               Val := Eval_Static_Expr_Orig (Param, Param);
+               if Get_Kind (Val) /= Iir_Kind_String_Literal8 then
                   --  FIXME: Isn't it an implementation restriction.
                   Warning_Msg_Sem (Warnid_Runtime_Error, +Expr,
                                    "'value argument not a string");
-                  return Build_Overflow (Expr);
+                  Res := Build_Overflow (Expr);
                else
-                  return Eval_Value_Attribute
-                    (Image_String_Lit (Param), Get_Type (Expr), Expr);
+                  Res := Eval_Value_Attribute
+                    (Image_String_Lit (Val), Get_Type (Expr), Expr);
                end if;
+               Free_Eval_Static_Expr (Val, Param);
+               return Res;
             end;
 
          when Iir_Kind_Left_Type_Attribute =>
