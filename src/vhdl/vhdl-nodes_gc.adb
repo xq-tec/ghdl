@@ -261,6 +261,10 @@ package body Vhdl.Nodes_GC is
       declare
          Fields : constant Fields_Array := Get_Fields (Get_Kind (N));
          F : Fields_Enum;
+         --  The return type of an uninstantiated function can be a generic
+         --  type, declared in the generic chain that follows it in the
+         --  fields.  Its reference is checked after all fields.
+         Has_Return_Type : Boolean := False;
       begin
          for I in Fields'Range loop
             F := Fields (I);
@@ -270,7 +274,11 @@ package body Vhdl.Nodes_GC is
                      when Attr_None =>
                         Mark_Iir (Get_Iir (N, F));
                      when Attr_Ref =>
-                        Mark_Iir_Ref_Field (N, F);
+                        if F = Field_Return_Type then
+                           Has_Return_Type := True;
+                        else
+                           Mark_Iir_Ref_Field (N, F);
+                        end if;
                      when Attr_Forward_Ref
                        | Attr_Chain_Next =>
                         null;
@@ -361,6 +369,9 @@ package body Vhdl.Nodes_GC is
                   null;
             end case;
          end loop;
+         if Has_Return_Type then
+            Mark_Iir_Ref_Field (N, Field_Return_Type);
+         end if;
       end;
    end Mark_Iir;
 

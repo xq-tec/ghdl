@@ -114,6 +114,9 @@ architecture behav of tb is
   function f2 is new f [integer, bit return integer] generic map (t => bit);
   procedure p1 is new p [integer, integer] generic map (t => bit);
   procedure p2 is new p [bit, integer] generic map (t => bit);
+  -- Signatures naming the generic type (LRM08 12.3 r).
+  function g1 is new g [t return integer] generic map (t => bit);
+  function g2 is new g [t, integer return integer] generic map (t => bit);
 
   function fn (v : integer) return integer is
   begin
@@ -192,6 +195,8 @@ begin
     assert r = 13 severity failure;
     p2 ('0', r);
     assert r = 20 severity failure;
+    assert g1 ('0') = 30 severity failure;
+    assert g2 ('0', 5) = 5 severity failure;
     assert h1 (4) = 8 severity failure;
     assert h2 ('1') = 40 severity failure;
     q1 (2, r);

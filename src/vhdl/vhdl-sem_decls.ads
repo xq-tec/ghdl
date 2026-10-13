@@ -65,6 +65,12 @@ package Vhdl.Sem_Decls is
    procedure Sem_Iterator (Iterator : Iir_Iterator_Declaration;
                            Staticness : Iir_Staticness);
 
+   --  True if the parameter and result type profile of N_ENTITY is matched
+   --  by signature SIG (LRM08 4.5.3).  The Type field of each type mark of
+   --  SIG holds the base type it denotes.
+   function Signature_Match (N_Entity : Iir; Sig : Iir_Signature)
+                            return Boolean;
+
    --  Extract from NAME the named entity whose profile matches SIG.  If NAME
    --  is an overload list, it is destroyed.
    function Sem_Signature (Name : Iir; Sig : Iir_Signature) return Iir;

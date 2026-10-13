@@ -514,6 +514,13 @@ package body Vhdl.Sem_Inst is
                   --  This is a forward reference.  Not yet solved.
                   Set_Subprogram_Body (Res, Null_Iir);
 
+               when Field_Return_Type =>
+                  --  The return type of an uninstantiated function can be
+                  --  one of its generic types, which are instantiated with
+                  --  the generic chain that follows it in the fields.  It is
+                  --  instantiated after all fields.
+                  null;
+
                when Field_Subprogram_Specification =>
                   --  Resolve it.
                   Instantiate_Iir_Field (Res, N, F);
@@ -740,6 +747,11 @@ package body Vhdl.Sem_Inst is
          --  TODO: other forward references:
          --  incomplete constant
          --  incomplete type
+
+         if Has_Return_Type (Kind) then
+            Set_Return_Type
+              (Res, Instantiate_Iir (Get_Return_Type (N), True));
+         end if;
 
          if Get_Kind (Res) in Iir_Kinds_Subprogram_Declaration then
             --  Recompute the hash as the interface may have
@@ -1264,8 +1276,10 @@ package body Vhdl.Sem_Inst is
       --  Be sure Get_Origin_Priv can be called on existing nodes.
       Expand_Origin_Table;
 
-      --  For Parent: the instance of PKG is INST.
-      Set_Origin (Subprg, Inst);
+      --  For Parent: the instance of SUBPRG is INST.  SUBPRG can itself be
+      --  an instance (declared in an instantiated package), so its origin
+      --  is saved and restored by Restore_Origin.
+      Set_Instance (Subprg, Inst);
 
       --  Manually instantiate the package declaration.
       Set_Generic_Chain
@@ -1280,8 +1294,6 @@ package body Vhdl.Sem_Inst is
       Set_Interface_Declaration_Chain
         (Inst,
          Instantiate_Iir_Chain (Get_Interface_Declaration_Chain (Subprg)));
-
-      Set_Origin (Subprg, Null_Iir);
 
       Instance_File := Prev_Instance_File;
       Restore_Origin (Mark);

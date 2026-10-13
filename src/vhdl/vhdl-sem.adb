@@ -2872,8 +2872,8 @@ package body Vhdl.Sem is
             --  expanded name is only allowed within the construct itself
             --  [...].
             --  GHDL: per LRM08 12.3 r), the generic types are visible by
-            --  their simple names in the signature instead (not yet
-            --  supported).
+            --  their simple names in the signature instead (see
+            --  Sem_Instantiation_Signature).
             Error_Msg_Sem
               (+Mark, "a declaration of %n cannot be selected outside of it",
                +Subprg);
@@ -2926,6 +2926,261 @@ package body Vhdl.Sem is
       Free_Iir (Sig);
    end Free_Instantiation_Signature;
 
+   --  Return the generic type declaration of uninstantiated subprogram
+   --  candidate CAND whose identifier is ID, or Null_Iir if there is none.
+   function Find_Generic_Type (Cand : Iir; Id : Name_Id) return Iir
+   is
+      Inter : Iir;
+   begin
+      if Get_Kind (Cand) not in Iir_Kinds_Subprogram_Declaration
+        or else not Is_Uninstantiated_Subprogram (Cand)
+      then
+         return Null_Iir;
+      end if;
+      Inter := Get_Generic_Chain (Cand);
+      while Inter /= Null_Iir loop
+         if Get_Kind (Inter) = Iir_Kind_Interface_Type_Declaration
+           and then Get_Identifier (Inter) = Id
+         then
+            return Inter;
+         end if;
+         Inter := Get_Chain (Inter);
+      end loop;
+      return Null_Iir;
+   end Find_Generic_Type;
+
+   --  True if type mark MARK of a signature is a simple name of a generic
+   --  type of a candidate of NAME (a subprogram or an overload list).
+   function Is_Generic_Type_Mark (Name : Iir; Mark : Iir) return Boolean
+   is
+      Id : Name_Id;
+      Ov_It : List_Iterator;
+   begin
+      if Get_Kind (Mark) /= Iir_Kind_Simple_Name then
+         return False;
+      end if;
+      Id := Get_Identifier (Mark);
+      if Is_Overload_List (Name) then
+         Ov_It := List_Iterate (Get_Overload_List (Name));
+         while Is_Valid (Ov_It) loop
+            if Find_Generic_Type (Get_Element (Ov_It), Id) /= Null_Iir then
+               return True;
+            end if;
+            Next (Ov_It);
+         end loop;
+         return False;
+      else
+         return Find_Generic_Type (Name, Id) /= Null_Iir;
+      end if;
+   end Is_Generic_Type_Mark;
+
+   --  Return the base type that the simple name MARK denotes in the
+   --  enclosing scope, or Null_Iir if it does not denote a type there.  No
+   --  error is reported.
+   function Outer_Type_Mark_Base_Type (Mark : Iir) return Iir
+   is
+      Interp : constant Name_Interpretation_Type :=
+        Get_Interpretation (Get_Identifier (Mark));
+      Decl : Iir;
+   begin
+      if not Valid_Interpretation (Interp) then
+         return Null_Iir;
+      end if;
+      Decl := Get_Non_Alias_Declaration (Interp);
+      case Get_Kind (Decl) is
+         when Iir_Kind_Type_Declaration =>
+            return Get_Base_Type (Get_Type_Definition (Decl));
+         when Iir_Kind_Subtype_Declaration
+           | Iir_Kind_Interface_Type_Declaration =>
+            return Get_Base_Type (Get_Type (Decl));
+         when others =>
+            return Null_Iir;
+      end case;
+   end Outer_Type_Mark_Base_Type;
+
+   --  Extract from NAME (an uninstantiated subprogram or an overload list)
+   --  the subprogram whose parameter and result type profile is matched by
+   --  signature SIG of a subprogram instantiation declaration, as
+   --  Sem_Signature does, but with the generic types of each candidate
+   --  visible in SIG.
+   --
+   --  LRM08 12.3 Visibility
+   --  r) For a generic type declared in the generic list of an
+   --     uninstantiated subprogram, [the declaration is visible] within the
+   --     signature, if any, of a subprogram instantiation declaration whose
+   --     uninstantiated subprogram name denotes the uninstantiated
+   --     subprogram.
+   --
+   --  So a type mark that is a simple name of a generic type of a candidate
+   --  denotes that generic type for that candidate, hiding an outer
+   --  declaration of the same name.  For a candidate without such a generic
+   --  type, it denotes what it denotes in the enclosing scope.  Any other
+   --  type mark is analyzed once in the enclosing scope.  If NAME is an
+   --  overload list, it is destroyed.
+   function Sem_Instantiation_Signature (Name : Iir; Sig : Iir_Signature)
+                                        return Iir
+   is
+      List : constant Iir_Flist := Get_Type_Marks_List (Sig);
+      Nbr_Marks : Natural;
+   begin
+      if List = Null_Iir_Flist then
+         Nbr_Marks := 0;
+      else
+         Nbr_Marks := Get_Nbr_Elements (List);
+      end if;
+
+      declare
+         --  Type marks of SIG, the return type mark last.
+         Marks : Iir_Array (1 .. Nbr_Marks + 1);
+         --  True for a simple name of a generic type of a candidate.
+         Is_Gen : array (Marks'Range) of Boolean;
+         --  For a generic type mark, its base type in the enclosing scope
+         --  (or Null_Iir).
+         Outer : Iir_Array (Marks'Range);
+         Last : Natural;
+         Has_Gen : Boolean;
+         Res : Iir;
+         El : Iir;
+         Error : Boolean;
+         Ov_It : List_Iterator;
+
+         --  Set the Type field of the generic type marks for candidate
+         --  CAND.  Return False if one of them denotes no type.
+         function Set_Candidate_Types (Cand : Iir) return Boolean
+         is
+            Gen : Iir;
+         begin
+            for I in 1 .. Last loop
+               if Is_Gen (I) then
+                  Gen := Find_Generic_Type (Cand, Get_Identifier (Marks (I)));
+                  if Gen /= Null_Iir then
+                     Set_Type (Marks (I), Get_Type (Gen));
+                  elsif Outer (I) /= Null_Iir then
+                     Set_Type (Marks (I), Outer (I));
+                  else
+                     return False;
+                  end if;
+               end if;
+            end loop;
+            return True;
+         end Set_Candidate_Types;
+
+         function Candidate_Match (Cand : Iir) return Boolean is
+         begin
+            return Set_Candidate_Types (Cand)
+              and then Sem_Decls.Signature_Match (Cand, Sig);
+         end Candidate_Match;
+
+         --  Replace mark I of SIG with NEW_MARK.
+         procedure Set_Mark (I : Positive; New_Mark : Iir) is
+         begin
+            Marks (I) := New_Mark;
+            if I <= Nbr_Marks then
+               Set_Nth_Element (List, Flist_First + I - 1, New_Mark);
+            else
+               Set_Return_Type_Mark (Sig, New_Mark);
+            end if;
+         end Set_Mark;
+      begin
+         for I in 1 .. Nbr_Marks loop
+            Marks (I) := Get_Nth_Element (List, Flist_First + I - 1);
+         end loop;
+         Last := Nbr_Marks;
+         if Get_Return_Type_Mark (Sig) /= Null_Iir then
+            Last := Last + 1;
+            Marks (Last) := Get_Return_Type_Mark (Sig);
+         end if;
+
+         Has_Gen := False;
+         for I in 1 .. Last loop
+            Is_Gen (I) := Is_Generic_Type_Mark (Name, Marks (I));
+            Has_Gen := Has_Gen or Is_Gen (I);
+         end loop;
+         if not Has_Gen then
+            return Sem_Signature (Name, Sig);
+         end if;
+
+         --  Analyze the other type marks once, as Sem_Signature does.
+         for I in 1 .. Last loop
+            if Is_Gen (I) then
+               Outer (I) := Outer_Type_Mark_Base_Type (Marks (I));
+            else
+               Outer (I) := Null_Iir;
+               El := Sem_Type_Mark (Marks (I));
+               --  Reuse the Type field of the name for the base type, as
+               --  Sem_Signature does.
+               Set_Type (El, Get_Base_Type (Get_Type (El)));
+               Set_Mark (I, El);
+            end if;
+         end loop;
+
+         Res := Null_Iir;
+         Error := False;
+         if Is_Overload_List (Name) then
+            Ov_It := List_Iterate (Get_Overload_List (Name));
+            while Is_Valid (Ov_It) loop
+               El := Get_Element (Ov_It);
+               if Candidate_Match (El) then
+                  if Res = Null_Iir then
+                     Res := El;
+                  else
+                     if not Error then
+                        Error := True;
+                        Report_Start_Group;
+                        Error_Msg_Sem
+                          (+Sig, "cannot resolve signature, "
+                             & "many matching subprograms:");
+                        Error_Msg_Sem (+Res, "found: %n", +Res);
+                     end if;
+                     Error_Msg_Sem (+El, "found: %n", +El);
+                  end if;
+               end if;
+               Next (Ov_It);
+            end loop;
+            if Error then
+               Report_End_Group;
+            end if;
+
+            declare
+               Name_Ov : Iir;
+            begin
+               Name_Ov := Name;
+               Free_Overload_List (Name_Ov);
+            end;
+         elsif Candidate_Match (Name) then
+            Res := Name;
+         end if;
+
+         if Error then
+            return Null_Iir;
+         end if;
+         if Res = Null_Iir then
+            Error_Msg_Sem
+              (+Sig, "cannot resolve signature, no matching subprogram");
+            return Null_Iir;
+         end if;
+
+         --  Give the generic type marks the meaning they have for the
+         --  chosen candidate.
+         for I in 1 .. Last loop
+            if Is_Gen (I) then
+               El := Find_Generic_Type (Res, Get_Identifier (Marks (I)));
+               if El /= Null_Iir then
+                  Set_Named_Entity (Marks (I), El);
+                  Set_Type (Marks (I), Get_Type (El));
+               else
+                  Set_Type (Marks (I), Null_Iir);
+                  El := Sem_Type_Mark (Marks (I));
+                  Set_Type (El, Get_Base_Type (Get_Type (El)));
+                  Set_Mark (I, El);
+               end if;
+            end if;
+         end loop;
+
+         return Res;
+      end;
+   end Sem_Instantiation_Signature;
+
    function Sem_Uninstantiated_Subprogram_Name (Decl : Iir) return Iir
    is
       Name : Iir;
@@ -2969,7 +3224,7 @@ package body Vhdl.Sem is
             Set_Named_Entity (Name, Subprg);
             return Subprg;
          end if;
-         Subprg := Sem_Signature (Subprg, Sig);
+         Subprg := Sem_Instantiation_Signature (Subprg, Sig);
          if Subprg = Null_Iir then
             Subprg := Create_Error_Name (Name);
             Set_Named_Entity (Name, Subprg);
@@ -3092,6 +3347,18 @@ package body Vhdl.Sem is
       Subprg := Sem_Uninstantiated_Subprogram_Name (Decl);
       if Subprg = Null_Iir or Is_Error (Subprg) then
          --  What could be done ?
+         return;
+      end if;
+
+      if Sem_Inst.Get_Origin (Subprg) /= Null_Iir
+        and then Get_Subprogram_Body (Subprg) = Null_Iir
+      then
+         --  SUBPRG is declared in an instantiated package (or an interface
+         --  package), whose body is not instantiated, so the body of the
+         --  instance cannot be built.
+         Error_Msg_Sem
+           (+Decl, "instantiation of %n declared in a package instance "
+              & "is not supported", +Subprg);
          return;
       end if;
 

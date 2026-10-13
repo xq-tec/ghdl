@@ -17,6 +17,11 @@ analyze_failure err_overloaded.vhdl
 analyze_failure err_overloaded_operator.vhdl
 analyze_failure err_generic_type_selection.vhdl
 analyze_failure err_not_a_name.vhdl
+analyze_failure err_generic_type_ambiguous.vhdl
+# The signature must match, so the error is the unsupported instantiation.
+analyze_failure err_package_instance.vhdl 2> err_package_instance.err
+grep -q "is not supported" err_package_instance.err
+rm -f err_package_instance.err
 
 clean
 
