@@ -1119,6 +1119,13 @@ package body Simul.Vhdl_Compile is
                if Get_Generic_Map_Aspect_Chain (Decl) /= Null_Node then
                   --  Also instantiated.
                   Build_Package_Instantiation (Mem, Pkg_Inst, Decl);
+               elsif Get_Info (Get_Uninstantiated_Package_Decl (Decl)) = null
+               then
+                  --  The uninstantiated package is macro-expanded: the
+                  --  interface shares the info of the actual package (see
+                  --  Trans.Chap4.Translate_Interface_Package),
+                  --  which is built on its own.
+                  null;
                else
                   pragma Assert (Id <= Instance_To_Mem_Table.Last);
                   Pkg_Mem := Instance_To_Mem_Table.Table (Id);

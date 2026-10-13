@@ -1318,7 +1318,11 @@ package body Vhdl.Sem_Scopes is
                   --  is visible through a use clause.  But in fact it refer
                   --  to the associated subprogram.
                   Assoc := Get_Associated_Subprogram (Inter);
-                  pragma Assert (Assoc /= Null_Iir);
+                  if Assoc = Null_Iir then
+                     --  Not associated: a use clause of an interface
+                     --  package in the uninstantiated unit.
+                     Assoc := Inter;
+                  end if;
                   Add_Name (Assoc, Id, Potentially);
                else
                   --  Called only when resolving associations (the identifiers

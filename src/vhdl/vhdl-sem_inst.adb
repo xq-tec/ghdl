@@ -523,6 +523,12 @@ package body Vhdl.Sem_Inst is
                   --  This is a forward reference.  Not yet solved.
                   Set_Subprogram_Body (Res, Null_Iir);
 
+               when Field_Instance_Subprogram_Body =>
+                  --  Likewise, set when the body of the subprogram
+                  --  instantiation is instantiated (with the body of the
+                  --  enclosing unit), see Field_Subprogram_Specification.
+                  Set_Instance_Subprogram_Body (Res, Null_Iir);
+
                when Field_Return_Type =>
                   --  The return type of an uninstantiated function can be
                   --  one of its generic types, which are instantiated with
@@ -535,13 +541,24 @@ package body Vhdl.Sem_Inst is
                   Instantiate_Iir_Field (Res, N, F);
 
                   --  Set body.
-                  pragma Assert (Kind_In (Res, Iir_Kind_Procedure_Body,
-                                          Iir_Kind_Function_Body));
                   declare
                      Spec : constant Iir := Get_Subprogram_Specification (Res);
                   begin
-                     pragma Assert (Get_Subprogram_Body (Spec) = Null_Iir);
-                     Set_Subprogram_Body (Spec, Res);
+                     case Get_Kind (Res) is
+                        when Iir_Kind_Procedure_Body
+                          | Iir_Kind_Function_Body =>
+                           pragma Assert
+                             (Get_Subprogram_Body (Spec) = Null_Iir);
+                           Set_Subprogram_Body (Spec, Res);
+                        when Iir_Kind_Subprogram_Instantiation_Body =>
+                           --  The body of a subprogram instantiation, like
+                           --  those appended to a package body by canon.
+                           pragma Assert
+                             (Get_Instance_Subprogram_Body (Spec) = Null_Iir);
+                           Set_Instance_Subprogram_Body (Spec, Res);
+                        when others =>
+                           raise Internal_Error;
+                     end case;
                   end;
 
                when Field_Incomplete_Type_Ref_Chain =>
@@ -671,10 +688,15 @@ package body Vhdl.Sem_Inst is
                   null;
 
                when Field_Instance_Source_File =>
-                  Set_Instance_Source_File
-                    (Res, Files_Map.Create_Instance_Source_File
-                       (Get_Instance_Source_File (N),
-                        Get_Location (Res), Res));
+                  --  None for the interface package of a package instance
+                  --  (see Instantiate_Generic_Chain).
+                  if Get_Instance_Source_File (N) /= No_Source_File_Entry
+                  then
+                     Set_Instance_Source_File
+                       (Res, Files_Map.Create_Instance_Source_File
+                          (Get_Instance_Source_File (N),
+                           Get_Location (Res), Res));
+                  end if;
 
                when Field_Generic_Chain
                  | Field_Declaration_Chain =>
@@ -856,6 +878,8 @@ package body Vhdl.Sem_Inst is
                     (Get_Interface_Declaration_Chain (Inter)));
                if Get_Kind (Res) = Iir_Kind_Interface_Function_Declaration then
                   Set_Return_Type (Res, Get_Return_Type (Inter));
+                  Set_Pure_Flag (Res, Get_Pure_Flag (Inter));
+                  Set_Has_Pure (Res, Get_Has_Pure (Inter));
                end if;
                Sem_Utils.Compute_Subprogram_Hash (Res);
             when others =>
@@ -879,6 +903,8 @@ package body Vhdl.Sem_Inst is
    procedure Set_Instance_On_Chain (Chain : Iir; Inst_Chain : Iir);
    procedure Set_Instance_On_Iir_List (N : Iir_List; Inst : Iir_List);
    procedure Set_Instance_On_Iir_Flist (N : Iir_Flist; Inst : Iir_Flist);
+   procedure Set_Instance_On_Actual_Generic_Chain (Chain : Iir;
+                                                   Actual_Chain : Iir);
 
    procedure Set_Instance_On_Iir (N : Iir; Inst : Iir) is
    begin
@@ -908,14 +934,20 @@ package body Vhdl.Sem_Inst is
          Set_Instance (N, Inst);
 
          if Kind = Iir_Kind_Interface_Package_Declaration then
+            if Get_Generic_Chain (N) = Null_Iir then
+               --  The interface of a package instance has neither generics
+               --  nor declarations (see Instantiate_Generic_Chain).
+               return;
+            end if;
+
             --  For interface package, this is not symetric.
             --  The nodes to set instance on are in the interface package,
             --  while the instances are in the associated package.
             declare
                Pkg_Actual : constant Iir := Get_Associated_Package (Inst);
             begin
-               Set_Instance_On_Chain (Get_Generic_Chain (N),
-                                      Get_Generic_Chain (Pkg_Actual));
+               Set_Instance_On_Actual_Generic_Chain
+                 (Get_Generic_Chain (N), Get_Generic_Chain (Pkg_Actual));
                Set_Instance_On_Chain (Get_Declaration_Chain (N),
                                       Get_Declaration_Chain (Pkg_Actual));
                Set_Instance_On_Chain (Get_Attribute_Value_Chain (N),
@@ -1070,6 +1102,104 @@ package body Vhdl.Sem_Inst is
       pragma Assert (Inst_El = Null_Iir);
    end Set_Instance_On_Chain;
 
+   --  INTER, an interface subprogram, is replaced by the subprogram ACTUAL.
+   --  Redirect references to the parameters of INTER (the formals of named
+   --  associations in calls) to the parameters of ACTUAL, whose profile
+   --  conforms (LRM08 6.5.7.2).
+   procedure Set_Instance_On_Subprogram_Parameters (Inter : Iir;
+                                                    Actual : Iir)
+   is
+      Inter_Param : Iir;
+      Act_Param : Iir;
+   begin
+      if Actual = Null_Iir then
+         --  In case of error.
+         return;
+      end if;
+
+      case Get_Kind (Actual) is
+         when Iir_Kinds_Subprogram_Declaration
+           | Iir_Kinds_Interface_Subprogram_Declaration
+           | Iir_Kinds_Subprogram_Instantiation_Declaration =>
+            null;
+         when others =>
+            --  In case of error, or an enumeration literal.
+            return;
+      end case;
+
+      Inter_Param := Get_Interface_Declaration_Chain (Inter);
+      Act_Param := Get_Interface_Declaration_Chain (Actual);
+      while Inter_Param /= Null_Iir and then Act_Param /= Null_Iir loop
+         Set_Instance (Inter_Param, Act_Param);
+         Inter_Param := Get_Chain (Inter_Param);
+         Act_Param := Get_Chain (Act_Param);
+      end loop;
+   end Set_Instance_On_Subprogram_Parameters;
+
+   --  Like Set_Instance_On_Chain, for CHAIN the generics of an interface
+   --  package and ACTUAL_CHAIN the generics of the actual package.  As the
+   --  actual is instantiated, references to an interface type or an
+   --  interface subprogram (and the implicit operators of an interface type)
+   --  are redirected to the associated type or subprogram, like references
+   --  to the interfaces of the instantiated unit itself.
+   procedure Set_Instance_On_Actual_Generic_Chain (Chain : Iir;
+                                                   Actual_Chain : Iir)
+   is
+      El : Iir;
+      Act : Iir;
+   begin
+      El := Chain;
+      Act := Actual_Chain;
+      while El /= Null_Iir loop
+         pragma Assert (Act /= Null_Iir);
+         case Get_Kind (El) is
+            when Iir_Kind_Interface_Type_Declaration =>
+               Set_Instance (El, Act);
+               declare
+                  Def : constant Iir := Get_Interface_Type_Definition (Act);
+                  Assoc_Type : constant Iir := Get_Associated_Type (Def);
+                  Subprg, Act_Subprg, Assoc_Subprg : Iir;
+               begin
+                  if Assoc_Type /= Null_Iir then
+                     Set_Instance (Get_Interface_Type_Definition (El),
+                                   Assoc_Type);
+                  else
+                     --  The actual is itself an interface package.
+                     Set_Instance (Get_Interface_Type_Definition (El), Def);
+                  end if;
+
+                  Subprg := Get_Interface_Type_Subprograms (El);
+                  Act_Subprg := Get_Interface_Type_Subprograms (Act);
+                  while Subprg /= Null_Iir loop
+                     Assoc_Subprg := Get_Associated_Subprogram (Act_Subprg);
+                     if Assoc_Subprg = Null_Iir then
+                        Assoc_Subprg := Act_Subprg;
+                     end if;
+                     Set_Instance (Subprg, Assoc_Subprg);
+                     Subprg := Get_Chain (Subprg);
+                     Act_Subprg := Get_Chain (Act_Subprg);
+                  end loop;
+               end;
+            when Iir_Kinds_Interface_Subprogram_Declaration =>
+               declare
+                  Assoc_Subprg : Iir;
+               begin
+                  Assoc_Subprg := Get_Associated_Subprogram (Act);
+                  if Assoc_Subprg = Null_Iir then
+                     Assoc_Subprg := Act;
+                  end if;
+                  Set_Instance (El, Assoc_Subprg);
+                  Set_Instance_On_Subprogram_Parameters (El, Assoc_Subprg);
+               end;
+            when others =>
+               Set_Instance_On_Iir (El, Act);
+         end case;
+         El := Get_Chain (El);
+         Act := Get_Chain (Act);
+      end loop;
+      pragma Assert (Act = Null_Iir);
+   end Set_Instance_On_Actual_Generic_Chain;
+
    --  In ASSOC (which is the association for interface INTER), adjust
    --  references to the instance, so that any name designating an interface
    --  is substitued by the instance.
@@ -1126,8 +1256,9 @@ package body Vhdl.Sem_Inst is
                --  to the actual package.
                Set_Instance (Orig_Inter, Sub_Inst);
                Set_Associated_Package (Inter, Sub_Inst);
-               Set_Instance_On_Chain (Get_Generic_Chain (Orig_Inter),
-                                      Get_Generic_Chain (Sub_Inst));
+               Set_Instance_On_Actual_Generic_Chain
+                 (Get_Generic_Chain (Orig_Inter),
+                  Get_Generic_Chain (Sub_Inst));
                Set_Instance_On_Chain (Get_Declaration_Chain (Orig_Inter),
                                       Get_Declaration_Chain (Sub_Inst));
             end;
@@ -1183,6 +1314,8 @@ package body Vhdl.Sem_Inst is
                   end if;
                end if;
                Set_Instance (Orig_Inter, Actual_Subprg);
+               Set_Instance_On_Subprogram_Parameters
+                 (Orig_Inter, Actual_Subprg);
                --  Also set the associated subprogram to the interface
                --  subprogram, so that it can referenced through its name.
                Set_Associated_Subprogram (Inter, Actual_Subprg);
@@ -1473,15 +1606,42 @@ package body Vhdl.Sem_Inst is
                end;
 
             when Iir_Kinds_Interface_Subprogram_Declaration =>
-               if Get_Kind (Assoc_El) = Iir_Kind_Association_Element_Open then
-                  Set_Instance (Orig_El, Get_Open_Actual (Assoc_El));
-               else
-                  Set_Instance (Orig_El,
-                                Get_Named_Entity (Get_Actual (Assoc_El)));
-               end if;
+               declare
+                  Actual_Subprg : Iir;
+               begin
+                  if Get_Kind (Assoc_El) = Iir_Kind_Association_Element_Open
+                  then
+                     Actual_Subprg := Get_Open_Actual (Assoc_El);
+                  else
+                     Actual_Subprg := Get_Named_Entity (Get_Actual (Assoc_El));
+                  end if;
+                  Set_Instance (Orig_El, Actual_Subprg);
+                  Set_Instance_On_Subprogram_Parameters
+                    (Orig_El, Actual_Subprg);
+               end;
 
             when Iir_Kind_Interface_Constant_Declaration =>
                null;
+
+            when Iir_Kind_Interface_Package_Declaration =>
+               --  Redirect the interface package, its generics and its
+               --  declarations to the actual package, as done by
+               --  Instantiate_Generic_Map for the declaration.
+               declare
+                  Actual : constant Iir := Get_Associated_Package (Inter_El);
+               begin
+                  --  In case of error (already reported), there may be no
+                  --  actual package.
+                  if Actual /= Null_Iir then
+                     Set_Instance (Orig_El, Actual);
+                     Set_Instance_On_Actual_Generic_Chain
+                       (Get_Generic_Chain (Orig_El),
+                        Get_Generic_Chain (Actual));
+                     Set_Instance_On_Chain (Get_Declaration_Chain (Orig_El),
+                                            Get_Declaration_Chain (Actual));
+                  end if;
+               end;
+
             when others =>
                --  TODO.
                raise Internal_Error;
@@ -1836,7 +1996,9 @@ package body Vhdl.Sem_Inst is
       Orig : Iir;
    begin
       if Get_Kind (Spec) in Iir_Kinds_Subprogram_Instantiation_Declaration then
-         return Get_Instance_Subprogram_Body (Spec);
+         --  Null in an instance of a package whose body is not instantiated:
+         --  use the body of the origin.
+         Res := Get_Instance_Subprogram_Body (Spec);
       else
          Res := Get_Subprogram_Body (Spec);
       end if;

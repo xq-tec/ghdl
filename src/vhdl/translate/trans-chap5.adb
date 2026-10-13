@@ -1013,22 +1013,28 @@ package body Trans.Chap5 is
                   Actual_Info : constant Ortho_Info_Acc := Get_Info (Actual);
                   Spec_Addr, Body_Addr : O_Enode;
                begin
-                  Spec_Addr := New_Address
-                    (Get_Instance_Ref
-                       (Actual_Info.Package_Instance_Spec_Scope),
-                     Uninst_Info.Package_Spec_Ptr_Type);
-                  Body_Addr  := New_Address
-                    (Get_Instance_Ref
-                       (Actual_Info.Package_Instance_Body_Scope),
-                     Uninst_Info.Package_Body_Ptr_Type);
-                  Set_Map_Env (Formal_Env);
-                  New_Assign_Stmt
-                    (Get_Var (Formal_Info.Package_Instance_Spec_Var),
-                     Spec_Addr);
-                  New_Assign_Stmt
-                    (Get_Var (Formal_Info.Package_Instance_Body_Var),
-                     Body_Addr);
-                  Set_Map_Env (Actual_Env);
+                  --  If the uninstantiated package is macro-expanded, the
+                  --  interface shares the info of the actual (see
+                  --  Chap4.Translate_Interface_Package), which is
+                  --  elaborated on its own.
+                  if Uninst_Info /= null then
+                     Spec_Addr := New_Address
+                       (Get_Instance_Ref
+                          (Actual_Info.Package_Instance_Spec_Scope),
+                        Uninst_Info.Package_Spec_Ptr_Type);
+                     Body_Addr  := New_Address
+                       (Get_Instance_Ref
+                          (Actual_Info.Package_Instance_Body_Scope),
+                        Uninst_Info.Package_Body_Ptr_Type);
+                     Set_Map_Env (Formal_Env);
+                     New_Assign_Stmt
+                       (Get_Var (Formal_Info.Package_Instance_Spec_Var),
+                        Spec_Addr);
+                     New_Assign_Stmt
+                       (Get_Var (Formal_Info.Package_Instance_Body_Var),
+                        Body_Addr);
+                     Set_Map_Env (Actual_Env);
+                  end if;
                end;
             when Iir_Kind_Association_Element_Type =>
                --  TODO: also elaborate the type ??

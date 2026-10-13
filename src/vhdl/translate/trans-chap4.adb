@@ -2012,7 +2012,16 @@ package body Trans.Chap4 is
 
    procedure Translate_Interface_Package (Decl : Iir) is
    begin
-      if Get_Generic_Map_Aspect_Chain (Decl) /= Null_Iir then
+      if Get_Info (Get_Uninstantiated_Package_Decl (Decl)) = null
+        and then Get_Associated_Package (Decl) /= Null_Iir
+      then
+         --  The uninstantiated package is macro-expanded, so the unit with
+         --  this interface (an instance) is macro-expanded too, and its
+         --  references to the interface package were redirected to the
+         --  actual package.  Share the info of the actual so that the
+         --  interface can be referenced from outside.
+         Set_Info (Decl, Get_Info (Get_Associated_Package (Decl)));
+      elsif Get_Generic_Map_Aspect_Chain (Decl) /= Null_Iir then
          --  The package is instantiated by the interface.
          Chap2.Translate_Package_Instantiation_Declaration (Decl);
       else
