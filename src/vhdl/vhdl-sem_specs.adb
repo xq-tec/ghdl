@@ -1611,6 +1611,15 @@ package body Vhdl.Sem_Specs is
                   case Get_Kind (Primary_Aspect) is
                      when Iir_Kind_Entity_Aspect_Entity =>
                         Entity := Get_Entity (Primary_Aspect);
+                     when Iir_Kind_Entity_Aspect_Configuration =>
+                        --  The entity of the configuration.
+                        Entity := Get_Configuration (Primary_Aspect);
+                        if Entity /= Null_Iir then
+                           Entity := Get_Entity (Entity);
+                        end if;
+                     when Iir_Kind_Entity_Aspect_Open =>
+                        --  No entity: no map aspect is allowed.
+                        Entity := Null_Iir;
                      when others =>
                         Error_Kind
                           ("sem_binding_indication", Primary_Aspect);

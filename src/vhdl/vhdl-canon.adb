@@ -2916,100 +2916,143 @@ package body Vhdl.Canon is
          --  Designator_all and designator_others must have been replaced
          --  by a list during canon.
          pragma Assert (Instances not in Iir_Flists_All_Others);
+         if Get_Nbr_Elements (Instances) = 0 then
+            --  No instance left (like a component configuration whose
+            --  instances are all incrementally bound, see
+            --  Canon_Incremental_Binding).
+            return;
+         end if;
          Bind := Get_Default_Binding_Indication
            (Get_Named_Entity (Get_Nth_Element (Instances, 0)));
          if Bind = Null_Iir then
             --  Component is not bound.
             return;
          end if;
-         Set_Binding_Indication (Cfg, Bind);
-         Set_Is_Ref (Cfg, True);
-         Add_Binding_Indication_Dependence (Top, Bind);
-         if Is_Config then
-            Entity_Aspect := Get_Entity_Aspect (Bind);
-            Entity := Get_Entity_From_Entity_Aspect (Entity_Aspect);
-            case Get_Kind (Entity) is
-               when Iir_Kind_Entity_Declaration =>
-                  Sem_Specs.Sem_Check_Missing_Generic_Association
-                    (Get_Generic_Chain (Entity),
-                     Get_Generic_Map_Aspect_Chain (Bind),
-                     Null_Iir,
-                     Cfg);
-               when Iir_Kind_Foreign_Module =>
-                  null;
-               when others =>
-                  raise Internal_Error;
-            end case;
-         end if;
-         return;
-      else
-         Entity_Aspect := Get_Entity_Aspect (Bind);
-         if Entity_Aspect = Null_Iir then
-            Entity_Aspect := Get_Default_Entity_Aspect (Bind);
-            Set_Entity_Aspect (Bind, Entity_Aspect);
-         end if;
-         if Entity_Aspect /= Null_Iir then
+         if Is_Config and then Get_Block_Configuration (Cfg) /= Null_Iir
+         then
+            --  LRM08 3.4.3 Component configuration
+            --  The component configuration contains an implicit, default
+            --  binding indication.  Its block configuration (allowed when
+            --  some instances of CFG are bound by configuration
+            --  specifications, see Canon_Incremental_Binding) sets the
+            --  architecture of the binding: give CFG its own copy of the
+            --  default binding indication, handled as an explicit one.
+            Bind := Sem_Inst.Copy_Tree (Bind);
+            Set_Binding_Indication (Cfg, Bind);
+            Entity := Get_Entity_From_Entity_Aspect (Get_Entity_Aspect (Bind));
+            if Get_Kind (Entity) = Iir_Kind_Entity_Declaration then
+               Sem_Specs.Sem_Check_Missing_Generic_Association
+                 (Get_Generic_Chain (Entity),
+                  Get_Generic_Map_Aspect_Chain (Bind),
+                  Null_Iir,
+                  Cfg);
+            end if;
+         else
+            Set_Binding_Indication (Cfg, Bind);
+            Set_Is_Ref (Cfg, True);
             Add_Binding_Indication_Dependence (Top, Bind);
-            Entity := Get_Entity_From_Entity_Aspect (Entity_Aspect);
-            Comp := Get_Named_Entity (Get_Component_Name (Cfg));
-
-            --  Canon generic map
-            Map_Chain := Get_Generic_Map_Aspect_Chain (Bind);
-            if Map_Chain = Null_Iir then
-               if Is_Config and then Is_Valid (Entity) then
-                  Map_Chain := Sem_Specs.Create_Default_Map_Aspect
-                    (Comp, Entity, Sem_Specs.Map_Generic, Bind);
-                  --  Check all non-associated generics have a default value.
-                  Sem_Specs.Sem_Check_Missing_Generic_Association
-                    (Get_Generic_Chain (Entity), Map_Chain, Null_Iir, Bind);
-               end if;
-            else
-               Map_Chain := Canon_Association_Chain
-                 (Get_Generic_Chain (Entity), Map_Chain, Map_Chain);
-            end if;
-            Set_Generic_Map_Aspect_Chain (Bind, Map_Chain);
-
-            --  Canon port map
-            Map_Chain := Get_Port_Map_Aspect_Chain (Bind);
-            if Map_Chain = Null_Iir then
-               if Is_Config and then Is_Valid (Entity) then
-                  Map_Chain := Sem_Specs.Create_Default_Map_Aspect
-                    (Comp, Entity, Sem_Specs.Map_Port, Bind);
-               end if;
-            else
-               Map_Chain := Canon_Association_Chain
-                 (Get_Port_Chain (Entity), Map_Chain, Map_Chain);
-            end if;
-            Set_Port_Map_Aspect_Chain (Bind, Map_Chain);
-
             if Is_Config then
-               Block := Get_Block_Configuration (Cfg);
-               if Block /= Null_Iir then
-                  --  If there is no architecture_identifier in the binding,
-                  --  set it from the block_configuration.
-                  if Get_Kind (Entity_Aspect) = Iir_Kind_Entity_Aspect_Entity
-                    and then Get_Architecture (Entity_Aspect) = Null_Iir
-                  then
-                     Entity := Get_Entity (Entity_Aspect);
-                     pragma Assert
-                       (Get_Kind (Entity) = Iir_Kind_Entity_Declaration);
-                     Set_Architecture
-                       (Entity_Aspect,
-                        Build_Reference_Name
-                          (Get_Block_Specification (Block)));
-                  end if;
-                  Canon_Block_Configuration (Top, Block);
+               Entity_Aspect := Get_Entity_Aspect (Bind);
+               Entity := Get_Entity_From_Entity_Aspect (Entity_Aspect);
+               case Get_Kind (Entity) is
+                  when Iir_Kind_Entity_Declaration =>
+                     Sem_Specs.Sem_Check_Missing_Generic_Association
+                       (Get_Generic_Chain (Entity),
+                        Get_Generic_Map_Aspect_Chain (Bind),
+                        Null_Iir,
+                        Cfg);
+                  when Iir_Kind_Foreign_Module =>
+                     null;
+                  when others =>
+                     raise Internal_Error;
+               end case;
+            end if;
+            return;
+         end if;
+      end if;
+
+      Entity_Aspect := Get_Entity_Aspect (Bind);
+      if Entity_Aspect = Null_Iir then
+         --  Move the default entity aspect, so that it has only one
+         --  owner.
+         Entity_Aspect := Get_Default_Entity_Aspect (Bind);
+         Set_Default_Entity_Aspect (Bind, Null_Iir);
+         Set_Entity_Aspect (Bind, Entity_Aspect);
+      end if;
+      if Entity_Aspect /= Null_Iir then
+         Add_Binding_Indication_Dependence (Top, Bind);
+         Entity := Get_Entity_From_Entity_Aspect (Entity_Aspect);
+         Comp := Get_Named_Entity (Get_Component_Name (Cfg));
+
+         --  Canon generic map
+         Map_Chain := Get_Generic_Map_Aspect_Chain (Bind);
+         if Map_Chain = Null_Iir then
+            if Is_Config and then Is_Valid (Entity) then
+               Map_Chain := Sem_Specs.Create_Default_Map_Aspect
+                 (Comp, Entity, Sem_Specs.Map_Generic, Bind);
+               --  Check all non-associated generics have a default value.
+               Sem_Specs.Sem_Check_Missing_Generic_Association
+                 (Get_Generic_Chain (Entity), Map_Chain, Null_Iir, Bind);
+            end if;
+         else
+            Map_Chain := Canon_Association_Chain
+              (Get_Generic_Chain (Entity), Map_Chain, Map_Chain);
+         end if;
+         Set_Generic_Map_Aspect_Chain (Bind, Map_Chain);
+
+         --  Canon port map
+         Map_Chain := Get_Port_Map_Aspect_Chain (Bind);
+         if Map_Chain = Null_Iir then
+            if Is_Config and then Is_Valid (Entity) then
+               Map_Chain := Sem_Specs.Create_Default_Map_Aspect
+                 (Comp, Entity, Sem_Specs.Map_Port, Bind);
+            end if;
+         else
+            Map_Chain := Canon_Association_Chain
+              (Get_Port_Chain (Entity), Map_Chain, Map_Chain);
+         end if;
+         Set_Port_Map_Aspect_Chain (Bind, Map_Chain);
+
+         if Is_Config then
+            Block := Get_Block_Configuration (Cfg);
+            if Block /= Null_Iir then
+               --  If there is no architecture_identifier in the binding,
+               --  set it from the block_configuration.
+               if Get_Kind (Entity_Aspect) = Iir_Kind_Entity_Aspect_Entity
+                 and then Get_Architecture (Entity_Aspect) = Null_Iir
+               then
+                  Entity := Get_Entity (Entity_Aspect);
+                  pragma Assert
+                    (Get_Kind (Entity) = Iir_Kind_Entity_Declaration);
+                  Set_Architecture
+                    (Entity_Aspect,
+                     Build_Reference_Name
+                       (Get_Block_Specification (Block)));
                end if;
+               Canon_Block_Configuration (Top, Block);
             end if;
          end if;
       end if;
    end Canon_Component_Configuration;
 
    --  Create the 'final' binding indication in case of incremental binding.
+   --
+   --  LRM08 7.3.2.1 Binding indication
+   --  [...] the binding indication of the configuration specification is the
+   --  primary binding indication, and the binding indication of the
+   --  component configuration (if any) is an incremental binding indication.
+   --
+   --  The instances of COMP_CONF bound by CONF_SPEC are moved from COMP_CONF
+   --  to a new component configuration, inserted after COMP_CONF, whose
+   --  binding indication merges the primary binding indication with the
+   --  incremental one.  COMP_CONF may have no binding indication: LRM08
+   --  3.4.3 allows a component configuration with only a block configuration
+   --  for instances bound by a configuration specification.  The block
+   --  configuration of COMP_CONF applies to the new component configuration:
+   --  it is moved to it if COMP_CONF has no instance left, else copied.
    procedure Canon_Incremental_Binding
      (Conf_Spec : Iir_Configuration_Specification;
-      Comp_Conf : Iir_Component_Configuration;
-      Parent : Iir)
+      Comp_Conf : Iir_Component_Configuration)
    is
       --  Merge associations from FIRST_CHAIN and SEC_CHAIN.
       function Merge_Association_Chain
@@ -3147,7 +3190,11 @@ package body Vhdl.Canon is
       Comp : constant Iir := Get_Named_Entity (Comp_Name);
       Cs_Binding : constant Iir := Get_Binding_Indication (Conf_Spec);
       Cc_Binding : constant Iir := Get_Binding_Indication (Comp_Conf);
+      Cs_Aspect : constant Iir := Get_Entity_Aspect (Cs_Binding);
       Res : Iir_Component_Configuration;
+      Cc_Generic_Chain : Iir;
+      Cc_Port_Chain : Iir;
+      Block : Iir;
       Cs_Chain : Iir;
       Res_Binding : Iir_Binding_Indication;
       Entity : Iir;
@@ -3161,52 +3208,67 @@ package body Vhdl.Canon is
       --  Create the new component configuration
       Res := Create_Iir (Iir_Kind_Component_Configuration);
       Location_Copy (Res, Comp_Conf);
-      Set_Parent (Res, Parent);
+      Set_Parent (Res, Get_Parent (Comp_Conf));
       Set_Component_Name (Res, Build_Reference_Name (Comp_Name));
 
       Res_Binding := Create_Iir (Iir_Kind_Binding_Indication);
       Location_Copy (Res_Binding, Res);
       Set_Binding_Indication (Res, Res_Binding);
 
-      Entity := Get_Entity_From_Entity_Aspect (Get_Entity_Aspect (Cs_Binding));
-
-      --  Merge generic map aspect.
-      Cs_Chain := Get_Generic_Map_Aspect_Chain (Cs_Binding);
-      Free_Chain_P := False;
-      if Cs_Chain = Null_Iir then
-         Cs_Chain := Sem_Specs.Create_Default_Map_Aspect
-           (Comp, Entity, Sem_Specs.Map_Generic, Cs_Binding);
-         Free_Chain_P := True;
-      end if;
-      Set_Generic_Map_Aspect_Chain
-        (Res_Binding,
-         Merge_Association_Chain (Get_Generic_Chain (Entity),
-                                  Cs_Chain,
-                                  Get_Generic_Map_Aspect_Chain (Cc_Binding)));
-      if Free_Chain_P then
-         Free_Map_Aspect_Chain (Cs_Chain);
+      if Cs_Aspect = Null_Iir then
+         --  Unbound.
+         Entity := Null_Iir;
+      else
+         Entity := Get_Entity_From_Entity_Aspect (Cs_Aspect);
       end if;
 
-      --  Merge port map aspect.
-      Cs_Chain := Get_Port_Map_Aspect_Chain (Cs_Binding);
-      Free_Chain_P := False;
-      if Cs_Chain = Null_Iir then
-         Cs_Chain := Sem_Specs.Create_Default_Map_Aspect
-           (Comp, Entity, Sem_Specs.Map_Port, Cs_Binding);
-         Free_Chain_P := True;
+      --  Without a binding indication in the component configuration, the
+      --  maps are those of the primary binding indication.
+      if Cc_Binding = Null_Iir then
+         Cc_Generic_Chain := Null_Iir;
+         Cc_Port_Chain := Null_Iir;
+      else
+         Cc_Generic_Chain := Get_Generic_Map_Aspect_Chain (Cc_Binding);
+         Cc_Port_Chain := Get_Port_Map_Aspect_Chain (Cc_Binding);
       end if;
-      Set_Port_Map_Aspect_Chain
-        (Res_Binding,
-         Merge_Association_Chain (Get_Port_Chain (Entity),
-                                  Cs_Chain,
-                                  Get_Port_Map_Aspect_Chain (Cc_Binding)));
-      if Free_Chain_P then
-         Free_Map_Aspect_Chain (Cs_Chain);
+
+      --  Nothing to merge if the primary binding indication is open.
+      if Entity /= Null_Iir then
+         --  Merge generic map aspect.
+         Cs_Chain := Get_Generic_Map_Aspect_Chain (Cs_Binding);
+         Free_Chain_P := False;
+         if Cs_Chain = Null_Iir then
+            Cs_Chain := Sem_Specs.Create_Default_Map_Aspect
+              (Comp, Entity, Sem_Specs.Map_Generic, Cs_Binding);
+            Free_Chain_P := True;
+         end if;
+         Set_Generic_Map_Aspect_Chain
+           (Res_Binding,
+            Merge_Association_Chain (Get_Generic_Chain (Entity),
+                                     Cs_Chain, Cc_Generic_Chain));
+         if Free_Chain_P then
+            Free_Map_Aspect_Chain (Cs_Chain);
+         end if;
+
+         --  Merge port map aspect.
+         Cs_Chain := Get_Port_Map_Aspect_Chain (Cs_Binding);
+         Free_Chain_P := False;
+         if Cs_Chain = Null_Iir then
+            Cs_Chain := Sem_Specs.Create_Default_Map_Aspect
+              (Comp, Entity, Sem_Specs.Map_Port, Cs_Binding);
+            Free_Chain_P := True;
+         end if;
+         Set_Port_Map_Aspect_Chain
+           (Res_Binding,
+            Merge_Association_Chain (Get_Port_Chain (Entity),
+                                     Cs_Chain, Cc_Port_Chain));
+         if Free_Chain_P then
+            Free_Map_Aspect_Chain (Cs_Chain);
+         end if;
       end if;
 
       --  Set entity aspect.
-      Set_Entity_Aspect
-        (Res_Binding, Sem_Inst.Copy_Tree (Get_Entity_Aspect (Cs_Binding)));
+      Set_Entity_Aspect (Res_Binding, Sem_Inst.Copy_Tree (Cs_Aspect));
 
       --  Create list of instances:
       --   * keep common instances
@@ -3230,6 +3292,22 @@ package body Vhdl.Canon is
       Set_Instantiation_List (Comp_Conf,
                               Truncate_Flist (Conf_Instance_List, N_Nbr));
       Set_Instantiation_List (Res, List_To_Flist (Instance_List));
+
+      --  LRM08 3.4.3 Component configuration
+      --  The block configuration of the component configuration applies to
+      --  the instances bound by CONF_SPEC.  It is canonicalized with RES (and
+      --  separately for each other holder), so each holder owns its own.
+      Block := Get_Block_Configuration (Comp_Conf);
+      if Block /= Null_Iir then
+         if N_Nbr = 0 then
+            --  No instance left in COMP_CONF: move it.
+            Set_Block_Configuration (Comp_Conf, Null_Iir);
+         else
+            Block := Sem_Inst.Copy_Tree (Block);
+         end if;
+         Set_Parent (Block, Res);
+         Set_Block_Configuration (Res, Block);
+      end if;
 
       --  Insert RES.
       Set_Chain (Res, Get_Chain (Comp_Conf));
@@ -3257,26 +3335,62 @@ package body Vhdl.Canon is
                Set_Is_Forward_Ref (Inst, True);
                Append_Element (List, Inst);
                Set_Component_Configuration (El, Conf);
+            elsif Get_Kind (Comp_Conf) = Iir_Kind_Configuration_Specification
+              and then Get_Kind (Conf) = Iir_Kind_Component_Configuration
+            then
+               --  LRM08 3.4.3 Component configuration, 7.3.1 General
+               --  The component is bound by a configuration specification:
+               --  both ALL and OTHERS apply to it, as only the instances
+               --  named in a previous component configuration are excluded.
+               --  The instance keeps its configuration specification, so
+               --  that Canon_Incremental_Bindings merges both.
+               Inst := Build_Simple_Name (El, El);
+               Set_Is_Forward_Ref (Inst, True);
+               Append_Element (List, Inst);
             else
-               --  The component is already configured.
-               --  Handle incremental configuration.
-               if Get_Kind (Comp_Conf) = Iir_Kind_Configuration_Specification
-                 and then Spec = Iir_Flist_All
-               then
-                  --  FIXME: handle incremental configuration.
-                  raise Internal_Error;
-               end if;
-               --  Several component configuration for an instance.
-               --  Must have been caught by sem.
+               --  Already configured by a previous configuration
+               --  specification (for a configuration specification) or a
+               --  previous component configuration.  Several configurations
+               --  for an instance must have been caught by sem.
                pragma Assert (Spec = Iir_Flist_Others);
+               null;
             end if;
          end if;
          El := Get_Chain (El);
       end loop;
    end Canon_Component_Specification_All_Others;
 
+   --  Split the instances of the component configuration CONF that are bound
+   --  by configuration specifications: one merged component configuration
+   --  per configuration specification (see Canon_Incremental_Binding).
+   procedure Canon_Incremental_Bindings (Conf : Iir)
+   is
+      List : Iir_Flist;
+      Inst : Iir;
+      Spec : Iir;
+   begin
+      loop
+         --  Find an instance still bound by a configuration specification.
+         --  Canon_Incremental_Binding removes all the instances bound by
+         --  that specification from the list of CONF.
+         List := Get_Instantiation_List (Conf);
+         Spec := Null_Iir;
+         for I in Flist_First .. Flist_Last (List) loop
+            Inst := Get_Named_Entity (Get_Nth_Element (List, I));
+            if Get_Kind (Get_Component_Configuration (Inst))
+              = Iir_Kind_Configuration_Specification
+            then
+               Spec := Get_Component_Configuration (Inst);
+               exit;
+            end if;
+         end loop;
+         exit when Spec = Null_Iir;
+         Canon_Incremental_Binding (Spec, Conf);
+      end loop;
+   end Canon_Incremental_Bindings;
+
    procedure Canon_Component_Specification_List
-     (Conf : Iir; Parent : Iir; Spec : Iir_Flist)
+     (Conf : Iir; Spec : Iir_Flist)
    is
       El : Iir;
       Comp_Conf : Iir;
@@ -3287,11 +3401,14 @@ package body Vhdl.Canon is
          El := Get_Named_Entity (El);
          Comp_Conf := Get_Component_Configuration (El);
          if Comp_Conf /= Null_Iir and then Comp_Conf /= Conf then
+            --  Incremental binding: the instance keeps its configuration
+            --  specification, handled by Canon_Incremental_Bindings once
+            --  the whole list is seen.
             pragma Assert
               (Get_Kind (Comp_Conf) = Iir_Kind_Configuration_Specification);
             pragma Assert
               (Get_Kind (Conf) = Iir_Kind_Component_Configuration);
-            Canon_Incremental_Binding (Comp_Conf, Conf, Parent);
+            null;
          else
             Set_Component_Configuration (El, Conf);
          end if;
@@ -3312,7 +3429,11 @@ package body Vhdl.Canon is
          Set_Instantiation_List (Conf, List_To_Flist (List));
       else
          --  Has Already a designator list.
-         Canon_Component_Specification_List (Conf, Parent, Spec);
+         Canon_Component_Specification_List (Conf, Spec);
+      end if;
+
+      if Get_Kind (Conf) = Iir_Kind_Component_Configuration then
+         Canon_Incremental_Bindings (Conf);
       end if;
    end Canon_Component_Specification;
 

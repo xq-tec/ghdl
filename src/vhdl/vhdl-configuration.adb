@@ -580,7 +580,12 @@ package body Vhdl.Configuration is
       Comp : Iir;
    begin
       if Bind = Null_Iir then
-         if Is_Warning_Enabled (Warnid_Binding) then
+         if Is_Warning_Enabled (Warnid_Binding)
+           and then Get_Nbr_Elements (Get_Instantiation_List (Conf)) > 0
+         then
+            --  A component configuration may apply to no instance, like
+            --  when its instances are incrementally bound (see
+            --  Canon_Incremental_Binding).
             Inst := Get_Nth_Element (Get_Instantiation_List (Conf), 0);
             Inst := Strip_Denoting_Name (Inst);
             Comp := Get_Instantiated_Unit (Inst);

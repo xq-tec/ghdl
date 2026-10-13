@@ -1378,9 +1378,24 @@ package body Vhdl.Sem is
       --  Check each component instantiation of the block configured by CONF.
       Inst := Get_Concurrent_Statement_Chain (Configured_Block);
       while Inst /= Null_Iir loop
-         if Get_Kind (Inst) = Iir_Kind_Component_Instantiation_Statement
-           and then Get_Component_Configuration (Inst) = Conf
+         if Get_Kind (Inst) /= Iir_Kind_Component_Instantiation_Statement
+           or else Get_Component_Configuration (Inst) /= Conf
          then
+            null;
+         elsif Get_Configuration_Specification (Inst) = Null_Iir then
+            --  LRM08 7.3.2.1 Binding indication
+            --  A binding indication appearing in a component configuration
+            --  shall have an entity aspect unless the block corresponding to
+            --  the block configuration in which the given component
+            --  configuration appears has one or more configuration
+            --  specifications that together configure all component
+            --  instances denoted in the given component configuration.
+            if Get_Entity_Aspect (Binding) = Null_Iir then
+               Error_Msg_Sem
+                 (+Binding, "entity aspect required as %n is not bound by "
+                    & "a configuration specification", +Inst);
+            end if;
+         else
             --  Check this instantiation.
             declare
                Primary_Binding : constant Iir := Get_Binding_Indication

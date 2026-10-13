@@ -156,6 +156,9 @@ package body Vhdl.Sem_Inst is
    --  True if currently instantiated a shared generic.
    Is_Within_Shared_Instance : Boolean := False;
 
+   --  True within Copy_Tree (and not within an instantiation).
+   Is_Copy_Tree : Boolean := False;
+
    --  Get the new location.
    function Relocate (Loc : Location_Type) return Location_Type is
    begin
@@ -280,8 +283,15 @@ package body Vhdl.Sem_Inst is
                         raise Internal_Error;
                      when Attr_Maybe_Forward_Ref =>
                         if Get_Is_Forward_Ref (N) then
-                           --  Likewise: must be explicitly handled.
-                           raise Internal_Error;
+                           if Is_Copy_Tree then
+                              --  A copy refers to the same node (like an
+                              --  instance label in a component
+                              --  configuration).
+                              R := S;
+                           else
+                              --  Likewise: must be explicitly handled.
+                              raise Internal_Error;
+                           end if;
                         else
                            R := Instantiate_Iir (S, True);
                         end if;
@@ -1224,10 +1234,12 @@ package body Vhdl.Sem_Inst is
    function Copy_Tree (Orig : Iir) return Iir
    is
       Prev_Instance_File : constant Source_File_Entry := Instance_File;
+      Prev_Is_Copy_Tree : constant Boolean := Is_Copy_Tree;
       Mark : constant Instance_Index_Type := Prev_Instance_Table.Last;
       Res : Iir;
    begin
       Instance_File := No_Source_File_Entry;
+      Is_Copy_Tree := True;
 
       --  Be sure Get_Origin_Priv can be called on existing nodes.
       Expand_Origin_Table;
@@ -1235,6 +1247,7 @@ package body Vhdl.Sem_Inst is
       Res := Instantiate_Iir (Orig, False);
 
       Instance_File := Prev_Instance_File;
+      Is_Copy_Tree := Prev_Is_Copy_Tree;
       Restore_Origin (Mark);
 
       return Res;
