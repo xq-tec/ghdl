@@ -1818,7 +1818,8 @@ package body Trans.Chap3 is
       while El /= Null_Iir loop
          case Get_Kind (El) is
             when Iir_Kind_Function_Declaration
-               | Iir_Kind_Procedure_Declaration =>
+               | Iir_Kind_Procedure_Declaration
+               | Iir_Kinds_Subprogram_Instantiation_Declaration =>
                --  Translate only if used.
                if Get_Info (El) /= null then
                   Chap2.Translate_Subprogram_Declaration (El);

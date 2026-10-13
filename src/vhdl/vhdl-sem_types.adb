@@ -580,6 +580,64 @@ package body Vhdl.Sem_Types is
    is
       Decl : constant Iir_Protected_Type_Declaration :=
         Get_Type_Definition (Type_Decl);
+
+      --  Check the parameters and the result of method METH, a subprogram
+      --  declaration or a subprogram instantiation declaration.
+      procedure Check_Method (Meth : Iir)
+      is
+         --  The interfaces of an instantiation are copies located at the
+         --  uninstantiated subprogram, so report at the instantiation.
+         Is_Inst : constant Boolean :=
+           Get_Kind (Meth) in Iir_Kinds_Subprogram_Instantiation_Declaration;
+         Inter : Iir;
+         Inter_Type : Iir;
+         Loc : Iir;
+      begin
+         --  LRM08 3.5.1 Protected type declarations
+         --  Such formal parameters must not be of an access type or
+         --  a file type; moreover, they must not have a subelement
+         --  that is an access type of a file type.
+         Inter := Get_Interface_Declaration_Chain (Meth);
+         while Inter /= Null_Iir loop
+            Inter_Type := Get_Type (Inter);
+            if Inter_Type /= Null_Iir
+              and then Get_Signal_Type_Flag (Inter_Type) = False
+              and then Get_Kind (Inter_Type)
+              /= Iir_Kind_Protected_Type_Declaration
+            then
+               if Is_Inst then
+                  Loc := Meth;
+               else
+                  Loc := Inter;
+               end if;
+               Error_Msg_Sem
+                 (+Loc, "formal parameter method must not be "
+                  & "access or file type");
+            end if;
+            Inter := Get_Chain (Inter);
+         end loop;
+
+         --  LRM08 3.5.1 Protected type declarations
+         --  Additionally, in the case of a function subprogram, the
+         --  return type of the function must not be of an access type
+         --  or file type; moreover, it must not have a subelement
+         --  that is an access type of a file type.
+         if Vhdl_Std < Vhdl_19
+           and then
+           (Get_Kind (Meth) = Iir_Kind_Function_Declaration
+              or else
+            Get_Kind (Meth) = Iir_Kind_Function_Instantiation_Declaration)
+         then
+            Inter_Type := Get_Return_Type (Meth);
+            if Inter_Type /= Null_Iir
+              and then Get_Signal_Type_Flag (Inter_Type) = False
+            then
+               Error_Msg_Sem
+                 (+Meth, "method cannot return an access or a file");
+            end if;
+         end if;
+      end Check_Method;
+
       El : Iir;
    begin
       Set_Resolved_Flag (Decl, False);
@@ -607,47 +665,17 @@ package body Vhdl.Sem_Types is
               | Iir_Kind_Attribute_Specification =>
                null;
             when Iir_Kind_Procedure_Declaration
-              | Iir_Kind_Function_Declaration =>
-               declare
-                  Inter : Iir;
-                  Inter_Type : Iir;
-               begin
-                  --  LRM08 3.5.1 Protected type declarations
-                  --  Such formal parameters must not be of an access type or
-                  --  a file type; moreover, they must not have a subelement
-                  --  that is an access type of a file type.
-                  Inter := Get_Interface_Declaration_Chain (El);
-                  while Inter /= Null_Iir loop
-                     Inter_Type := Get_Type (Inter);
-                     if Inter_Type /= Null_Iir
-                       and then Get_Signal_Type_Flag (Inter_Type) = False
-                       and then Get_Kind (Inter_Type)
-                       /= Iir_Kind_Protected_Type_Declaration
-                     then
-                        Error_Msg_Sem
-                          (+Inter, "formal parameter method must not be "
-                           & "access or file type");
-                     end if;
-                     Inter := Get_Chain (Inter);
-                  end loop;
-
-                  --  LRM08 3.5.1 Protected type declarations
-                  --  Additionally, in the case of a function subprogram, the
-                  --  return type of the function must not be of an access type
-                  --  or file type; moreover, it must not have a subelement
-                  --  that is an access type of a file type.
-                  if Vhdl_Std < Vhdl_19
-                     and then Get_Kind (El) = Iir_Kind_Function_Declaration
-                  then
-                     Inter_Type := Get_Return_Type (El);
-                     if Inter_Type /= Null_Iir
-                       and then Get_Signal_Type_Flag (Inter_Type) = False
-                     then
-                        Error_Msg_Sem
-                          (+El, "method cannot return an access or a file");
-                     end if;
-                  end if;
-               end;
+              | Iir_Kind_Function_Declaration
+              | Iir_Kinds_Subprogram_Instantiation_Declaration =>
+               --  LRM08 5.6.2 Protected type declarations
+               --  protected_type_declarative_item ::=
+               --       subprogram_declaration
+               --     | subprogram_instantiation_declaration
+               --     | [...]
+               --
+               --  The rules for the parameters and the result of methods
+               --  apply to the generic-mapped subprogram as well.
+               Check_Method (El);
             when Iir_Kind_Anonymous_Type_Declaration =>
                --  This is an error, but an anonynmous type declaration is
                --  followed by a subtype declaration, which is also an error.
@@ -663,6 +691,43 @@ package body Vhdl.Sem_Types is
 
       Close_Declarative_Region;
    end Sem_Protected_Type_Declaration;
+
+   --  LRM08 4.4 Subprogram instantiation declarations
+   --  If the subprogram instantiation declaration occurs immediately within
+   --  an enclosing protected type declaration, the generic-mapped
+   --  subprogram body occurs at the end of the protected type body
+   --  corresponding to the enclosing protected type declaration.
+   --
+   --  So the body of the uninstantiated subprogram of each subprogram
+   --  instantiation of protected type declaration DECL must be known at the
+   --  end of its protected type body.
+   procedure Check_Instantiation_Bodies (Decl : Iir)
+   is
+      El : Iir;
+      Name : Iir;
+      Subprg : Iir;
+   begin
+      El := Get_Declaration_Chain (Decl);
+      while El /= Null_Iir loop
+         if Get_Kind (El) in Iir_Kinds_Subprogram_Instantiation_Declaration
+         then
+            Name := Get_Uninstantiated_Subprogram_Name (El);
+            if Name /= Null_Iir then
+               Subprg := Get_Named_Entity (Name);
+               if Subprg /= Null_Iir
+                 and then
+                 Get_Kind (Subprg) in Iir_Kinds_Subprogram_Declaration
+                 and then Get_Subprogram_Body (Subprg) = Null_Iir
+               then
+                  Error_Msg_Sem
+                    (+El, "cannot instantiate %n, its body is missing",
+                     +Subprg);
+               end if;
+            end if;
+         end if;
+         El := Get_Chain (El);
+      end loop;
+   end Check_Instantiation_Bodies;
 
    procedure Sem_Protected_Type_Body (Bod : Iir)
    is
@@ -752,6 +817,7 @@ package body Vhdl.Sem_Types is
       --  the corresponding protected type body.
       if Decl /= Null_Iir then
          Sem_Decls.Check_Full_Declaration (Decl, Bod);
+         Check_Instantiation_Bodies (Decl);
       end if;
 
       Unelaborated_Use_Allowed := Prev_Unelaborated_Use_Allowed;

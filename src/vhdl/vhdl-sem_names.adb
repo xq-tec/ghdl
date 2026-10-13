@@ -160,7 +160,8 @@ package body Vhdl.Sem_Names is
       while Is_Valid (It) loop
          Decl := Get_Element (It);
          case Get_Kind (Decl) is
-            when Iir_Kind_Function_Declaration =>
+            when Iir_Kind_Function_Declaration
+              | Iir_Kind_Function_Instantiation_Declaration =>
                Add_Element (Res_List, Get_Return_Type (Decl));
             when Iir_Kind_Enumeration_Literal
               | Iir_Kind_Function_Call
@@ -572,9 +573,13 @@ package body Vhdl.Sem_Names is
    is
       Inter : Iir;
    begin
-      if Get_Kind (Prefix) /= Iir_Kind_Function_Declaration then
-         return True;
-      end if;
+      case Get_Kind (Prefix) is
+         when Iir_Kind_Function_Declaration
+           | Iir_Kind_Function_Instantiation_Declaration =>
+            null;
+         when others =>
+            return True;
+      end case;
       Inter := Get_Interface_Declaration_Chain (Prefix);
       while Inter /= Null_Iir loop
          if Get_Default_Value (Inter) = Null_Iir then
@@ -656,7 +661,9 @@ package body Vhdl.Sem_Names is
    --  else return SPEC.
    function Maybe_Insert_Function_Call (Name : Iir; Spec : Iir) return Iir is
    begin
-      if Get_Kind (Spec) = Iir_Kind_Function_Declaration then
+      if Get_Kind (Spec) = Iir_Kind_Function_Declaration
+        or else Get_Kind (Spec) = Iir_Kind_Function_Instantiation_Declaration
+      then
          return Sem_As_Function_Call (Name, Spec, Null_Iir);
       else
          return Spec;
@@ -1106,7 +1113,10 @@ package body Vhdl.Sem_Names is
          if Get_Kind (Prefix) in Iir_Kinds_Denoting_Name
            and then
            (Get_Kind (Get_Named_Entity (Prefix))
-              = Iir_Kind_Function_Declaration)
+              = Iir_Kind_Function_Declaration
+            or else
+            Get_Kind (Get_Named_Entity (Prefix))
+              = Iir_Kind_Function_Instantiation_Declaration)
          then
             Prefix := Function_Declaration_To_Call (Prefix);
          end if;
@@ -2215,6 +2225,14 @@ package body Vhdl.Sem_Names is
       is
          Sub_Res : Iir;
       begin
+         if Get_Kind (Sub_Name)
+           in Iir_Kinds_Subprogram_Instantiation_Declaration
+         then
+            --  An instantiation has no declarative region of its own (its
+            --  body is a copy), so it is never the prefix of an expanded
+            --  name.
+            return;
+         end if;
          if Get_Is_Within_Flag (Sub_Name) then
             Sub_Res := Find_Declarations_In_List (Sub_Name, Name, Keep_Alias);
             if Sub_Res /= Null_Iir then
@@ -2312,8 +2330,17 @@ package body Vhdl.Sem_Names is
          Method := Get_Declaration_Chain (Prot_Type);
          while Method /= Null_Iir loop
             case Get_Kind (Method) is
-               when Iir_Kind_Function_Declaration |
-                 Iir_Kind_Procedure_Declaration =>
+               when Iir_Kind_Function_Declaration
+                 | Iir_Kind_Procedure_Declaration
+                 | Iir_Kinds_Subprogram_Instantiation_Declaration =>
+                  --  LRM08 5.6.2 Protected type declarations
+                  --  Each subprogram specified within a given protected type
+                  --  declaration defines an abstract operation, called a
+                  --  method, [...]
+                  --
+                  --  LRM08 4.4 Subprogram instantiation declarations
+                  --  The subprogram instantiation declaration is equivalent
+                  --  to a subprogram declaration and a subprogram body [...]
                   if Get_Identifier (Method) = Suffix then
                      Add_Result (Res, Method);
                   end if;
@@ -2534,7 +2561,8 @@ package body Vhdl.Sem_Names is
                   end if;
                end if;
             end if;
-         when Iir_Kind_Function_Declaration =>
+         when Iir_Kind_Function_Declaration
+           | Iir_Kind_Function_Instantiation_Declaration =>
             Sem_As_Expanded_Name (Prefix);
             if Res = Null_Iir then
                Sem_As_Selected_Element (Prefix);
@@ -3296,7 +3324,8 @@ package body Vhdl.Sem_Names is
            | Iir_Kind_Indexed_Name
            | Iir_Kind_Function_Call =>
             Sem_As_Selected_By_All_Name (Prefix);
-         when Iir_Kind_Function_Declaration =>
+         when Iir_Kind_Function_Declaration
+           | Iir_Kind_Function_Instantiation_Declaration =>
             Prefix := Sem_As_Function_Call (Name => Prefix_Name,
                                             Spec => Prefix,
                                             Assoc_Chain => Null_Iir);
@@ -3692,6 +3721,7 @@ package body Vhdl.Sem_Names is
            | Iir_Kinds_Object_Declaration
            | Iir_Kind_Function_Call
            | Iir_Kind_Function_Declaration
+           | Iir_Kind_Function_Instantiation_Declaration
            | Iir_Kind_Selected_Element
            | Iir_Kind_Indexed_Name
            | Iir_Kind_Slice_Name
@@ -4705,9 +4735,11 @@ package body Vhdl.Sem_Names is
       while Is_Valid (It) loop
          El := Get_Element (It);
          case Get_Kind (El) is
-            when Iir_Kind_Procedure_Declaration =>
+            when Iir_Kind_Procedure_Declaration
+              | Iir_Kind_Procedure_Instantiation_Declaration =>
                null;
-            when Iir_Kind_Function_Declaration =>
+            when Iir_Kind_Function_Declaration
+              | Iir_Kind_Function_Instantiation_Declaration =>
                if Maybe_Function_Call (El) then
                   Append_Element (New_List, El);
                end if;
@@ -4909,7 +4941,10 @@ package body Vhdl.Sem_Names is
            | Iir_Kind_Character_Literal
            | Iir_Kind_Selected_Name =>
             Expr := Get_Named_Entity (Res);
-            if Get_Kind (Expr) = Iir_Kind_Function_Declaration then
+            if Get_Kind (Expr) = Iir_Kind_Function_Declaration
+              or else
+              Get_Kind (Expr) = Iir_Kind_Function_Instantiation_Declaration
+            then
                return Function_Declaration_To_Call (Res);
             else
                Set_Type (Res, Get_Type (Expr));

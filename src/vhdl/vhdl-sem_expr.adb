@@ -402,6 +402,7 @@ package body Vhdl.Sem_Expr is
            | Iir_Kind_Library_Clause
            | Iir_Kind_Component_Declaration
            | Iir_Kind_Procedure_Declaration
+           | Iir_Kind_Procedure_Instantiation_Declaration
            | Iir_Kind_Range_Array_Attribute
            | Iir_Kind_Reverse_Range_Array_Attribute
            | Iir_Kind_Base_Attribute
@@ -414,7 +415,8 @@ package body Vhdl.Sem_Expr is
            | Iir_Kind_Interface_Terminal_Declaration
            | Iir_Kind_Terminal_Declaration =>
             return False;
-         when Iir_Kind_Function_Declaration =>
+         when Iir_Kind_Function_Declaration
+           | Iir_Kind_Function_Instantiation_Declaration =>
             return True;
          when Iir_Kind_Overload_List =>
             return True;
@@ -1253,6 +1255,7 @@ package body Vhdl.Sem_Expr is
    procedure Sem_Subprogram_Call_Finish (Expr : Iir; Imp : Iir)
    is
       Subprg : constant Iir := Get_Current_Subprogram;
+      Callee : Iir;
    begin
       Set_Function_Call_Staticness (Expr, Imp);
       Sem_Decls.Mark_Subprogram_Used (Imp);
@@ -1272,21 +1275,36 @@ package body Vhdl.Sem_Expr is
          --  Not inside a suprogram or a process.
          return;
       end if;
-      if Subprg = Imp then
+
+      --  LRM08 4.3 Subprogram bodies
+      --  An instantiated subprogram is a parent of a given subprogram S if
+      --  the uninstantiated subprogram of which the instantiated subprogram
+      --  is an instance is a parent of S.
+      --
+      --  The body of the instance is the body of the uninstantiated
+      --  subprogram, so check the call as a call to the latter (whose states
+      --  are computed from its body).
+      if Get_Kind (Imp) in Iir_Kinds_Subprogram_Instantiation_Declaration then
+         Callee := Get_Named_Entity (Get_Uninstantiated_Subprogram_Name (Imp));
+      else
+         Callee := Imp;
+      end if;
+
+      if Subprg = Callee then
          --  Recursive call.
          return;
       end if;
 
-      if Is_Implicit_Subprogram (Imp) then
+      if Is_Implicit_Subprogram (Callee) then
          --  FIXME: impure predefined functions.
          null;
       else
-         Sem_Call_Purity_Check (Subprg, Imp, Expr);
-         Sem_Call_All_Sensitized_Check (Subprg, Imp, Expr);
-         if Get_Kind (Imp) = Iir_Kind_Procedure_Declaration then
-            Sem_Call_Wait_Check (Subprg, Imp, Expr);
+         Sem_Call_Purity_Check (Subprg, Callee, Expr);
+         Sem_Call_All_Sensitized_Check (Subprg, Callee, Expr);
+         if Get_Kind (Callee) = Iir_Kind_Procedure_Declaration then
+            Sem_Call_Wait_Check (Subprg, Callee, Expr);
             --  Check passive.
-            if Get_Passive_Flag (Imp) = False then
+            if Get_Passive_Flag (Callee) = False then
                case Get_Kind (Subprg) is
                   when Iir_Kinds_Process_Statement =>
                      if Get_Passive_Flag (Subprg) then

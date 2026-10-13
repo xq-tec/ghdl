@@ -2975,6 +2975,26 @@ package body Vhdl.Sem is
       end if;
    end Load_Subprogram_Body;
 
+   --  True if DECL is declared in the design unit being analyzed or, when
+   --  that unit is a package body, in the corresponding package declaration.
+   --  The body of such a declaration may still follow in the current unit.
+   function Is_In_Current_Unit_Or_Its_Package (Decl : Iir) return Boolean
+   is
+      Cur_Unit : constant Iir := Get_Current_Design_Unit;
+      Cur_Lib_Unit : constant Iir := Get_Library_Unit (Cur_Unit);
+      Unit : Iir;
+   begin
+      Unit := Get_Parent (Decl);
+      while Get_Kind (Unit) /= Iir_Kind_Design_Unit loop
+         Unit := Get_Parent (Unit);
+      end loop;
+      if Unit = Cur_Unit then
+         return True;
+      end if;
+      return Get_Kind (Cur_Lib_Unit) = Iir_Kind_Package_Body
+        and then Get_Library_Unit (Unit) = Get_Package (Cur_Lib_Unit);
+   end Is_In_Current_Unit_Or_Its_Package;
+
    procedure Sem_Subprogram_Instantiation_Declaration (Decl : Iir)
    is
       Subprg : Iir;
@@ -3012,12 +3032,27 @@ package body Vhdl.Sem is
       --  an enclosing package declaration, then generic-mapped subprogram
       --  body occurs at the end of the package body corresponding to the
       --  enclosing pakage declaration.
+      --
+      --  LRM08 4.4 Subprogram instantiation declarations
+      --  If the subprogram instantiation declaration occurs immediately within
+      --  an enclosing protected type declaration, the generic-mapped
+      --  subprogram body occurs at the end of the protected type body
+      --  corresponding to the enclosing protected type declaration.
       Parent := Get_Parent (Decl);
-      if Get_Kind (Parent) = Iir_Kind_Package_Declaration then
-         null;
-      else
-         Load_Subprogram_Body (Subprg, Decl);
-      end if;
+      case Get_Kind (Parent) is
+         when Iir_Kind_Package_Declaration =>
+            null;
+         when Iir_Kind_Protected_Type_Declaration =>
+            --  The body of SUBPRG may follow in the unit being analyzed (or,
+            --  for a protected type declared in a package declaration, in
+            --  its package body); Sem_Protected_Type_Body checks it.  A
+            --  subprogram of another unit must have its body loaded now.
+            if not Is_In_Current_Unit_Or_Its_Package (Subprg) then
+               Load_Subprogram_Body (Subprg, Decl);
+            end if;
+         when others =>
+            Load_Subprogram_Body (Subprg, Decl);
+      end case;
 
       --  Add DECL.  Must be done after parameters creation to handle
       --  homographs.

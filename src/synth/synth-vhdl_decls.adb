@@ -549,10 +549,12 @@ package body Synth.Vhdl_Decls is
               | Iir_Kind_Package_Declaration
               | Iir_Kind_Package_Body
               | Iir_Kind_Function_Declaration
-              | Iir_Kind_Procedure_Declaration =>
+              | Iir_Kind_Procedure_Declaration
+              | Iir_Kinds_Subprogram_Instantiation_Declaration =>
                Elab.Vhdl_Decls.Elab_Declaration (Obj_Inst, Decl, Last_Type);
             when Iir_Kind_Function_Body
-              | Iir_Kind_Procedure_Body =>
+              | Iir_Kind_Procedure_Body
+              | Iir_Kind_Subprogram_Instantiation_Body =>
                null;
             when others => Vhdl.Errors.Error_Kind ("create_protected_object",
                                                    Decl);

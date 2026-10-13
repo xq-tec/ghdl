@@ -161,6 +161,10 @@ package body Elab.Vhdl_Annotations is
             when Iir_Kind_Function_Declaration
               | Iir_Kind_Procedure_Declaration =>
                Annotate_Subprogram_Interfaces_Type (Block_Info, Decl);
+            when Iir_Kinds_Subprogram_Instantiation_Declaration =>
+               Annotate_Interface_List
+                 (Block_Info, Get_Generic_Chain (Decl), True);
+               Annotate_Subprogram_Interfaces_Type (Block_Info, Decl);
             when Iir_Kind_Use_Clause =>
                null;
             when others => Error_Kind ("annotate_protected_type_declaration",
@@ -174,7 +178,8 @@ package body Elab.Vhdl_Annotations is
       while Decl /= Null_Iir loop
          case Get_Kind (Decl) is
             when Iir_Kind_Function_Declaration
-              | Iir_Kind_Procedure_Declaration =>
+              | Iir_Kind_Procedure_Declaration
+              | Iir_Kinds_Subprogram_Instantiation_Declaration =>
                Annotate_Subprogram_Specification (Block_Info, Decl);
             when Iir_Kind_Use_Clause =>
                null;

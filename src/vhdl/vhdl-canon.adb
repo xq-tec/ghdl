@@ -3454,14 +3454,26 @@ package body Vhdl.Canon is
    is
       Parent : constant Iir := Get_Parent (Decl);
    begin
-      if Get_Kind (Parent) /= Iir_Kind_Package_Declaration then
-         --  TODO: also package instantiation ?
-         return True;
-      end if;
-      if not Get_Need_Body (Parent) then
-         return True;
-      end if;
-      return False;
+      case Get_Kind (Parent) is
+         when Iir_Kind_Package_Declaration =>
+            if not Get_Need_Body (Parent) then
+               return True;
+            end if;
+            return False;
+         when Iir_Kind_Protected_Type_Declaration =>
+            --  LRM08 4.4 Subprogram instantiation declarations
+            --  If the subprogram instantiation declaration occurs immediately
+            --  within an enclosing protected type declaration, the
+            --  generic-mapped subprogram body occurs at the end of the
+            --  protected type body corresponding to the enclosing protected
+            --  type declaration.
+            --
+            --  See Canon_Instantiation_Protected_Body.
+            return False;
+         when others =>
+            --  TODO: also package instantiation ?
+            return True;
+      end case;
    end Instantiation_Needs_Immediate_Body_P;
 
    --  Return the new package declaration (if any).
@@ -3527,10 +3539,13 @@ package body Vhdl.Canon is
       end if;
    end Canon_Subprogram_Instantiation_Declaration;
 
-   --  Add bodies or package or subprograms instantiation in package body BOD.
-   procedure Canon_Instantiation_Package_Body (Bod : Iir; Last_Decl : Iir)
+   --  Append to the declarations of BOD, after LAST_DECL (the last
+   --  declaration of BOD or Null_Iir), the bodies of the package and
+   --  subprogram instantiations declared in DECLS_PARENT, the package
+   --  declaration or protected type declaration that corresponds to BOD.
+   procedure Canon_Instantiation_Bodies
+     (Decls_Parent : Iir; Bod : Iir; Last_Decl : Iir)
    is
-      Pkg : constant Iir := Get_Package (Bod);
       Pkg_Decl : Iir;
       Prev_Decl : Iir;
       Spec : Iir;
@@ -3538,8 +3553,8 @@ package body Vhdl.Canon is
    begin
       Prev_Decl := Last_Decl;
 
-      --  For each declaration of the package
-      Pkg_Decl := Get_Declaration_Chain (Pkg);
+      --  For each declaration of the package or protected type
+      Pkg_Decl := Get_Declaration_Chain (Decls_Parent);
       while Pkg_Decl /= Null_Iir loop
          Inst_Bod := Null_Iir;
          case Get_Kind (Pkg_Decl) is
@@ -3585,7 +3600,32 @@ package body Vhdl.Canon is
 
          Pkg_Decl := Get_Chain (Pkg_Decl);
       end loop;
+   end Canon_Instantiation_Bodies;
+
+   --  Add bodies or package or subprograms instantiation in package body BOD.
+   procedure Canon_Instantiation_Package_Body (Bod : Iir; Last_Decl : Iir) is
+   begin
+      Canon_Instantiation_Bodies (Get_Package (Bod), Bod, Last_Decl);
    end Canon_Instantiation_Package_Body;
+
+   --  Add bodies of subprogram instantiations in protected type body BOD.
+   procedure Canon_Instantiation_Protected_Body (Bod : Iir)
+   is
+      Decl : constant Iir := Get_Protected_Type_Declaration (Bod);
+      Last_Decl : Iir;
+      El : Iir;
+   begin
+      if Decl = Null_Iir then
+         return;
+      end if;
+      Last_Decl := Null_Iir;
+      El := Get_Declaration_Chain (Bod);
+      while El /= Null_Iir loop
+         Last_Decl := El;
+         El := Get_Chain (El);
+      end loop;
+      Canon_Instantiation_Bodies (Decl, Bod, Last_Decl);
+   end Canon_Instantiation_Protected_Body;
 
    procedure Canon_Package_Body (Bod : Iir)
    is
@@ -3658,6 +3698,9 @@ package body Vhdl.Canon is
 
          when Iir_Kind_Protected_Type_Body =>
             Canon_Declarations (Top, Decl, Null_Iir);
+            if Vhdl_Std >= Vhdl_08 then
+               Canon_Instantiation_Protected_Body (Decl);
+            end if;
 
          when Iir_Kind_Variable_Declaration
             | Iir_Kind_Signal_Declaration
