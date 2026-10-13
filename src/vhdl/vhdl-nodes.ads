@@ -1570,8 +1570,14 @@ package Vhdl.Nodes is
    --
    --  interface_package_generic_map_aspect ::=
    --       generic_map_aspect
-   --     | GENERIC MAP ( <> )                  --  Represented by Null_Iir
-   --     | GENERIC MAP ( DEFAULT )             --  Not yet implemented
+   --     | GENERIC MAP ( <> )
+   --     | GENERIC MAP ( DEFAULT )
+   --
+   --  The box form is a null Generic_Map_Aspect_Chain with
+   --  Generic_Map_Default_Flag cleared.  The DEFAULT form sets
+   --  Generic_Map_Default_Flag; the parser leaves the chain null, and the
+   --  analysis of the (empty) chain may add the artificial open associations
+   --  of the box subprogram defaults (LRM08 6.5.5).
    --
    --   Get/Set_Parent (Field0)
    --
@@ -1588,6 +1594,9 @@ package Vhdl.Nodes is
    --   Get/Set_Generic_Chain (Field6)
    --
    --   Get/Set_Generic_Map_Aspect_Chain (Field8)
+   --
+   --  True for GENERIC MAP ( DEFAULT ).
+   --   Get/Set_Generic_Map_Default_Flag (Flag1)
    --
    --   Get/Set_Declaration_Chain (Field1)
    --
@@ -10195,4 +10204,10 @@ package Vhdl.Nodes is
    --  Field: Field5 Ref
    function Get_Suspend_State_Decl (N : Iir) return Iir;
    procedure Set_Suspend_State_Decl (N : Iir; Chain : Iir);
+
+   --  True if an interface package declaration has the generic map aspect
+   --  GENERIC MAP ( DEFAULT ).
+   --  Field: Flag1
+   function Get_Generic_Map_Default_Flag (Inter : Iir) return Boolean;
+   procedure Set_Generic_Map_Default_Flag (Inter : Iir; Flag : Boolean);
 end Vhdl.Nodes;

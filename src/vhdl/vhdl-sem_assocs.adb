@@ -1590,6 +1590,454 @@ package body Vhdl.Sem_Assocs is
       end if;
    end Sem_Association_Package_Type_Finish;
 
+   --  LRM08 6.5.7.2 Generic map aspects
+   --  a) If the formal generic package declaration includes an interface
+   --     package generic map aspect in the form of a generic map aspect,
+   --     then the generic map aspect of the package instantiation
+   --     declaration that declares the instantiated package denoted by the
+   --     actual shall match the generic map aspect of the formal generic
+   --     package declaration.  The two generic map aspects match if, for
+   --     each generic, the corresponding associated actuals, whether
+   --     explicit or implicit, match [...]
+   --  c) If the formal generic package declaration includes an interface
+   --     package generic map aspect in the form that includes the reserved
+   --     word DEFAULT, then the generic map aspect [...] shall match the
+   --     implicit generic map aspect defined in 6.5.5.
+   --
+   --  GHDL: the match is checked only when it can be decided at analysis:
+   --  constants whose actuals are both locally static scalars or
+   --  one-dimensional arrays folded to literals, types whose actuals are
+   --  both locally static (but base types and constraint states are always
+   --  compared), and subprograms and packages.  Other actuals are accepted.
+
+   --  Return the literal of a locally static folded scalar or
+   --  one-dimensional array value EXPR, or Null_Iir if EXPR is not such a
+   --  literal.
+   function Get_Generic_Match_Literal (Expr : Iir) return Iir
+   is
+      Res : Iir;
+   begin
+      if Expr = Null_Iir then
+         return Null_Iir;
+      end if;
+      Res := Expr;
+      if Get_Kind (Res) in Iir_Kinds_Denoting_Name then
+         Res := Get_Named_Entity (Res);
+         if Res = Null_Iir then
+            return Null_Iir;
+         end if;
+      end if;
+      case Get_Kind (Res) is
+         when Iir_Kind_Integer_Literal
+           | Iir_Kind_Floating_Point_Literal
+           | Iir_Kind_Physical_Int_Literal
+           | Iir_Kind_Physical_Fp_Literal
+           | Iir_Kind_Enumeration_Literal
+           | Iir_Kind_Unit_Declaration
+           | Iir_Kind_String_Literal8
+           | Iir_Kind_Simple_Aggregate =>
+            return Res;
+         when others =>
+            return Null_Iir;
+      end case;
+   end Get_Generic_Match_Literal;
+
+   --  Return False iff the values of the actuals L and R of a generic
+   --  constant are known to differ.
+   function Generic_Constants_Match (L, R : Iir) return Boolean
+   is
+      use String_Utils;
+      L_Lit, R_Lit : Iir;
+   begin
+      if L = R then
+         return True;
+      end if;
+      if Get_Expr_Staticness (L) /= Locally
+        or else Get_Expr_Staticness (R) /= Locally
+      then
+         return True;
+      end if;
+      L_Lit := Get_Generic_Match_Literal (L);
+      R_Lit := Get_Generic_Match_Literal (R);
+      if L_Lit = Null_Iir or else R_Lit = Null_Iir then
+         return True;
+      end if;
+      if Get_Base_Type (Get_Type (L_Lit)) /= Get_Base_Type (Get_Type (R_Lit))
+      then
+         --  Can happen with generic types; the types are compared.
+         return True;
+      end if;
+
+      case Get_Kind (L_Lit) is
+         when Iir_Kind_String_Literal8
+           | Iir_Kind_Simple_Aggregate =>
+            if not Kind_In (R_Lit, Iir_Kind_String_Literal8,
+                            Iir_Kind_Simple_Aggregate)
+            then
+               return True;
+            end if;
+            declare
+               L_Info : constant Str_Info := Get_Str_Info (L_Lit);
+               R_Info : constant Str_Info := Get_Str_Info (R_Lit);
+               El_Type : constant Iir := Get_Base_Type
+                 (Get_Element_Subtype (Get_Base_Type (Get_Type (L_Lit))));
+               L_El, R_El : Iir;
+            begin
+               if L_Info.Len /= R_Info.Len then
+                  return False;
+               end if;
+               for I in 0 .. L_Info.Len - 1 loop
+                  if L_Info.Is_String and R_Info.Is_String then
+                     if Get_Pos (L_Info, I) /= Get_Pos (R_Info, I) then
+                        return False;
+                     end if;
+                  else
+                     --  Positions in a string literal are enumeration
+                     --  positions.
+                     if (L_Info.Is_String or R_Info.Is_String)
+                       and then (Get_Kind (El_Type)
+                                   /= Iir_Kind_Enumeration_Type_Definition)
+                     then
+                        return True;
+                     end if;
+                     if L_Info.Is_String then
+                        L_El := Null_Iir;
+                     else
+                        L_El := Get_Generic_Match_Literal
+                          (Get_Nth_Element (L_Info.List, Natural (I)));
+                        if L_El = Null_Iir then
+                           return True;
+                        end if;
+                     end if;
+                     if R_Info.Is_String then
+                        R_El := Null_Iir;
+                     else
+                        R_El := Get_Generic_Match_Literal
+                          (Get_Nth_Element (R_Info.List, Natural (I)));
+                        if R_El = Null_Iir then
+                           return True;
+                        end if;
+                     end if;
+                     if L_El = Null_Iir then
+                        if Int64 (Get_Pos (L_Info, I)) /= Eval_Pos (R_El) then
+                           return False;
+                        end if;
+                     elsif R_El = Null_Iir then
+                        if Eval_Pos (L_El) /= Int64 (Get_Pos (R_Info, I)) then
+                           return False;
+                        end if;
+                     elsif not Eval_Is_Eq (L_El, R_El) then
+                        return False;
+                     end if;
+                  end if;
+               end loop;
+               return True;
+            end;
+         when others =>
+            if Kind_In (R_Lit, Iir_Kind_String_Literal8,
+                        Iir_Kind_Simple_Aggregate)
+            then
+               return True;
+            end if;
+            return Eval_Is_Eq (L_Lit, R_Lit);
+      end case;
+   end Generic_Constants_Match;
+
+   --  Return False iff scalar ranges L and R are known to differ (bounds or
+   --  direction).
+   function Generic_Ranges_Match (L, R : Iir) return Boolean
+   is
+      L_Left, L_Right, R_Left, R_Right : Iir;
+   begin
+      if L = R then
+         return True;
+      end if;
+      if L = Null_Iir or else R = Null_Iir
+        or else Get_Kind (L) /= Iir_Kind_Range_Expression
+        or else Get_Kind (R) /= Iir_Kind_Range_Expression
+      then
+         return True;
+      end if;
+      L_Left := Get_Generic_Match_Literal (Get_Left_Limit (L));
+      L_Right := Get_Generic_Match_Literal (Get_Right_Limit (L));
+      R_Left := Get_Generic_Match_Literal (Get_Left_Limit (R));
+      R_Right := Get_Generic_Match_Literal (Get_Right_Limit (R));
+      if L_Left = Null_Iir or else L_Right = Null_Iir
+        or else R_Left = Null_Iir or else R_Right = Null_Iir
+      then
+         return True;
+      end if;
+      return Get_Direction (L) = Get_Direction (R)
+        and then Eval_Is_Eq (L_Left, R_Left)
+        and then Eval_Is_Eq (L_Right, R_Right);
+   end Generic_Ranges_Match;
+
+   --  Return False iff the subtypes L and R, actuals of a generic type, are
+   --  known to differ: different base types, constraint states, or locally
+   --  static constraints.
+   function Generic_Subtypes_Match (L, R : Iir) return Boolean is
+   begin
+      if L = R then
+         return True;
+      end if;
+      if L = Null_Iir or else R = Null_Iir
+        or else Is_Error (L) or else Is_Error (R)
+      then
+         return True;
+      end if;
+      if Get_Kind (Get_Base_Type (L)) = Iir_Kind_Interface_Type_Definition
+        or else (Get_Kind (Get_Base_Type (R))
+                   = Iir_Kind_Interface_Type_Definition)
+      then
+         --  A generic type of an enclosing unit denotes the subtype
+         --  associated with it, which is not known here.
+         return True;
+      end if;
+      if Get_Base_Type (L) /= Get_Base_Type (R) then
+         return False;
+      end if;
+
+      case Get_Kind (L) is
+         when Iir_Kinds_Array_Type_Definition
+           | Iir_Kind_Record_Type_Definition
+           | Iir_Kind_Record_Subtype_Definition =>
+            if Get_Kind (R) not in Iir_Kinds_Composite_Type_Definition then
+               return True;
+            end if;
+            if Get_Constraint_State (L) /= Get_Constraint_State (R) then
+               return False;
+            end if;
+         when others =>
+            null;
+      end case;
+
+      if Get_Type_Staticness (L) /= Locally
+        or else Get_Type_Staticness (R) /= Locally
+      then
+         return True;
+      end if;
+
+      case Get_Kind (L) is
+         when Iir_Kinds_Scalar_Type_And_Subtype_Definition =>
+            return Generic_Ranges_Match
+              (Get_Range_Constraint (L), Get_Range_Constraint (R));
+         when Iir_Kinds_Array_Type_Definition =>
+            if Get_Constraint_State (L) = Fully_Constrained then
+               for I in 1 .. Get_Nbr_Dimensions (L) loop
+                  if not Generic_Subtypes_Match
+                    (Get_Index_Type (L, I - 1), Get_Index_Type (R, I - 1))
+                  then
+                     return False;
+                  end if;
+               end loop;
+            end if;
+            return Generic_Subtypes_Match
+              (Get_Element_Subtype (L), Get_Element_Subtype (R));
+         when Iir_Kind_Record_Type_Definition
+           | Iir_Kind_Record_Subtype_Definition =>
+            declare
+               L_Els : constant Iir_Flist :=
+                 Get_Elements_Declaration_List (L);
+               R_Els : constant Iir_Flist :=
+                 Get_Elements_Declaration_List (R);
+            begin
+               for I in Flist_First .. Flist_Last (L_Els) loop
+                  if not Generic_Subtypes_Match
+                    (Get_Type (Get_Nth_Element (L_Els, I)),
+                     Get_Type (Get_Nth_Element (R_Els, I)))
+                  then
+                     return False;
+                  end if;
+               end loop;
+            end;
+            return True;
+         when others =>
+            return True;
+      end case;
+   end Generic_Subtypes_Match;
+
+   --  Return the subprogram or package denoted by ENT, through aliases.
+   function Strip_Generic_Match_Alias (Ent : Iir) return Iir
+   is
+      Res : Iir;
+   begin
+      Res := Ent;
+      while Res /= Null_Iir
+        and then Get_Kind (Res) = Iir_Kind_Non_Object_Alias_Declaration
+      loop
+         Res := Get_Named_Entity (Get_Name (Res));
+      end loop;
+      return Res;
+   end Strip_Generic_Match_Alias;
+
+   --  Return the actual, whether explicit or implicit, associated with
+   --  generic GEN by ASSOC (Null_Iir when GEN is unassociated): an
+   --  expression for a constant, a subtype for a type, a declaration for a
+   --  subprogram or a package.  Return Null_Iir when unknown.
+   function Get_Generic_Match_Actual (Assoc : Iir; Gen : Iir) return Iir
+   is
+      Def : Iir;
+   begin
+      if Assoc = Null_Iir
+        or else Get_Kind (Assoc) = Iir_Kind_Association_Element_Open
+      then
+         case Get_Kind (Gen) is
+            when Iir_Kind_Interface_Constant_Declaration =>
+               return Get_Default_Value (Gen);
+            when Iir_Kinds_Interface_Subprogram_Declaration =>
+               if Assoc /= Null_Iir then
+                  --  Set for any open association of a subprogram.
+                  return Strip_Generic_Match_Alias (Get_Open_Actual (Assoc));
+               end if;
+               Def := Get_Default_Subprogram (Gen);
+               if Def /= Null_Iir
+                 and then Get_Kind (Def) /= Iir_Kind_Box_Name
+               then
+                  return Strip_Generic_Match_Alias (Get_Named_Entity (Def));
+               end if;
+               return Null_Iir;
+            when others =>
+               return Null_Iir;
+         end case;
+      end if;
+
+      case Get_Kind (Assoc) is
+         when Iir_Kind_Association_Element_By_Expression =>
+            if Get_Kind (Gen) = Iir_Kind_Interface_Constant_Declaration then
+               return Get_Actual (Assoc);
+            end if;
+            return Null_Iir;
+         when Iir_Kind_Association_Element_Type =>
+            return Get_Actual_Type (Assoc);
+         when Iir_Kind_Association_Element_Subprogram
+           | Iir_Kind_Association_Element_Package =>
+            Def := Get_Actual (Assoc);
+            if Def = Null_Iir
+              or else Get_Kind (Def) not in Iir_Kinds_Denoting_Name
+            then
+               return Null_Iir;
+            end if;
+            return Strip_Generic_Match_Alias (Get_Named_Entity (Def));
+         when others =>
+            --  Individual association.
+            return Null_Iir;
+      end case;
+   end Get_Generic_Match_Actual;
+
+   --  Return True iff ENT, the actual of a generic subprogram or package,
+   --  denotes a known subprogram or package.  A generic subprogram or
+   --  package of an enclosing unit denotes the actual associated with it,
+   --  which is not known here; and an attribute is not a declaration.
+   function Is_Generic_Match_Entity (Ent : Iir) return Boolean is
+   begin
+      case Get_Kind (Ent) is
+         when Iir_Kinds_Subprogram_Declaration
+           | Iir_Kinds_Subprogram_Instantiation_Declaration
+           | Iir_Kind_Package_Instantiation_Declaration =>
+            return True;
+         when others =>
+            return False;
+      end case;
+   end Is_Generic_Match_Entity;
+
+   --  Return False iff the actuals L and R of a generic subprogram or
+   --  package are known to denote different entities.
+   function Generic_Entities_Match (L, R : Iir) return Boolean is
+   begin
+      if L = Null_Iir or else R = Null_Iir
+        or else Is_Error (L) or else Is_Error (R)
+      then
+         return True;
+      end if;
+      if L = R then
+         return True;
+      end if;
+      return not (Is_Generic_Match_Entity (L)
+                    and then Is_Generic_Match_Entity (R));
+   end Generic_Entities_Match;
+
+   --  Check that the generic map aspect of package instance ACTUAL matches
+   --  the generic map aspect of formal generic package INTER (associated
+   --  by ASSOC).  Return False (after reporting an error) if it does not.
+   function Check_Generic_Package_Match
+     (Assoc : Iir; Inter : Iir; Actual : Iir) return Boolean
+   is
+      --  The analysis of a generic map aspect redirects the formals to the
+      --  generics instantiated for the package (see Sem_Inst), so each chain
+      --  is searched with the generics of its own package.  These generics
+      --  correspond by position to those of the uninstantiated package,
+      --  which give the kinds and the defaults.
+      Formal_Chain : constant Iir := Get_Generic_Map_Aspect_Chain (Inter);
+      Formal_Gens : constant Iir := Get_Generic_Chain (Inter);
+      Actual_Chain : constant Iir := Get_Generic_Map_Aspect_Chain (Actual);
+      Actual_Gens : constant Iir := Get_Generic_Chain (Actual);
+      Gen : Iir;
+      Formal_Gen, Actual_Gen : Iir;
+      Formal_Assoc : Iir;
+      Formal_Act, Actual_Act : Iir;
+      Ok : Boolean;
+   begin
+      Gen := Get_Generic_Chain
+        (Get_Package_Header (Get_Uninstantiated_Package_Decl (Inter)));
+      Formal_Gen := Formal_Gens;
+      Actual_Gen := Actual_Gens;
+      while Gen /= Null_Iir loop
+         if Formal_Gen = Null_Iir or else Actual_Gen = Null_Iir then
+            --  Can happen after errors.
+            return True;
+         end if;
+         Formal_Assoc := Find_First_Association_For_Interface
+           (Formal_Chain, Formal_Gens, Formal_Gen);
+         Formal_Act := Get_Generic_Match_Actual (Formal_Assoc, Gen);
+         Actual_Act := Get_Generic_Match_Actual
+           (Find_First_Association_For_Interface
+              (Actual_Chain, Actual_Gens, Actual_Gen),
+            Gen);
+         if Formal_Act = Null_Iir or else Actual_Act = Null_Iir then
+            Ok := True;
+         else
+            case Get_Kind (Gen) is
+               when Iir_Kind_Interface_Constant_Declaration =>
+                  Ok := Generic_Constants_Match (Formal_Act, Actual_Act);
+               when Iir_Kind_Interface_Type_Declaration =>
+                  Ok := Generic_Subtypes_Match (Formal_Act, Actual_Act);
+               when Iir_Kinds_Interface_Subprogram_Declaration
+                 | Iir_Kind_Interface_Package_Declaration =>
+                  Ok := Generic_Entities_Match (Formal_Act, Actual_Act);
+               when others =>
+                  Ok := True;
+            end case;
+         end if;
+
+         if not Ok then
+            Report_Start_Group;
+            Error_Msg_Sem
+              (+Assoc,
+               "actual package %i does not match the generic map of "
+               & "formal %i", (+Actual, +Inter));
+            if Formal_Assoc /= Null_Iir
+              and then not (Get_Kind (Formal_Assoc)
+                              = Iir_Kind_Association_Element_Open
+                            and then Get_Artificial_Flag (Formal_Assoc))
+            then
+               Error_Msg_Sem
+                 (+Formal_Assoc, "(the actuals of generic %i differ)",
+                  +Gen);
+            else
+               Error_Msg_Sem
+                 (+Inter, "(the actuals of generic %i differ)", +Gen);
+            end if;
+            Report_End_Group;
+            return False;
+         end if;
+
+         Gen := Get_Chain (Gen);
+         Formal_Gen := Get_Chain (Formal_Gen);
+         Actual_Gen := Get_Chain (Actual_Gen);
+      end loop;
+      return True;
+   end Check_Generic_Package_Match;
+
    procedure Sem_Association_Package
      (Assoc : Iir;
       Inter : Iir;
@@ -1648,11 +2096,20 @@ package body Vhdl.Sem_Assocs is
       --     then the instantiated package denotes by the actual may be any
       --     instance of the uninstantiated package named in the formal
       --     generic package declaration.
-      if Get_Generic_Map_Aspect_Chain (Inter) = Null_Iir then
+      if Get_Generic_Map_Aspect_Chain (Inter) = Null_Iir
+        and then not Get_Generic_Map_Default_Flag (Inter)
+      then
          null;
       else
-         --  Other cases not yet handled.
-         raise Internal_Error;
+         --  LRM08 6.5.7.2 Generic map aspects
+         --  a) [...] the generic map aspect of the package instantiation
+         --     declaration that declares the instantiated package denoted
+         --     by the actual shall match the generic map aspect of the
+         --     formal generic package declaration.
+         --  c) Likewise for the implicit generic map aspect of DEFAULT.
+         if not Check_Generic_Package_Match (Assoc, Inter, Actual) then
+            return;
+         end if;
       end if;
 
       Match := Fully_Compatible;
@@ -3031,7 +3488,15 @@ package body Vhdl.Sem_Assocs is
                   null;
             end case;
          when Iir_Kind_Interface_Package_Declaration =>
-            if Get_Generic_Map_Aspect_Chain (Inter) = Null_Iir then
+            --  LRM08 6.5.6.2 Generic clauses
+            --  It is an error if no such actual is specified for a given
+            --  formal generic package (either because the formal generic is
+            --  unassociated or because the actual is OPEN).
+            --  GHDL: but a formal with an explicit generic map aspect is
+            --  allowed to be unassociated.
+            if Get_Generic_Map_Aspect_Chain (Inter) = Null_Iir
+              or else Get_Generic_Map_Default_Flag (Inter)
+            then
                Error_Msg_Sem (+Loc, "%n must be associated", +Inter);
                Err := True;
             end if;

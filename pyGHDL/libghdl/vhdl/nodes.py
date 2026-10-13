@@ -7357,3 +7357,16 @@ def Get_Suspend_State_Decl(obj: Iir) -> Iir:
 @BindToLibGHDL("vhdl__nodes__set_suspend_state_decl")
 def Set_Suspend_State_Decl(obj: Iir, value: Iir) -> None:
     """"""
+
+
+@export
+@BindToLibGHDL("vhdl__nodes__get_generic_map_default_flag")
+def Get_Generic_Map_Default_Flag(obj: Iir) -> Boolean:
+    """"""
+    return 0  # pragma: no cover
+
+
+@export
+@BindToLibGHDL("vhdl__nodes__set_generic_map_default_flag")
+def Set_Generic_Map_Default_Flag(obj: Iir, value: Boolean) -> None:
+    """"""

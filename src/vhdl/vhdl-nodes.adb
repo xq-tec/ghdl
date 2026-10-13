@@ -7766,4 +7766,20 @@ package body Vhdl.Nodes is
       Set_Field5 (N, Chain);
    end Set_Suspend_State_Decl;
 
+   function Get_Generic_Map_Default_Flag (Inter : Iir) return Boolean is
+   begin
+      pragma Assert (Inter /= Null_Iir);
+      pragma Assert (Has_Generic_Map_Default_Flag (Get_Kind (Inter)),
+                     "no field Generic_Map_Default_Flag");
+      return Get_Flag1 (Inter);
+   end Get_Generic_Map_Default_Flag;
+
+   procedure Set_Generic_Map_Default_Flag (Inter : Iir; Flag : Boolean) is
+   begin
+      pragma Assert (Inter /= Null_Iir);
+      pragma Assert (Has_Generic_Map_Default_Flag (Get_Kind (Inter)),
+                     "no field Generic_Map_Default_Flag");
+      Set_Flag1 (Inter, Flag);
+   end Set_Generic_Map_Default_Flag;
+
 end Vhdl.Nodes;

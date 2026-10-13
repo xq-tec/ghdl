@@ -2430,6 +2430,14 @@ package body Vhdl.Parse is
             Map := Null_Iir;
             --  Skip '<>'
             Scan;
+         when Tok_Default =>
+            --  LRM08 6.5.5 Interface package declarations
+            --  Represented by the flag; the implicit generic map aspect is
+            --  created by the analysis.
+            Map := Null_Iir;
+            Set_Generic_Map_Default_Flag (Inter, True);
+            --  Skip 'default'
+            Scan;
          when others =>
             Map := Parse_Association_List;
       end case;

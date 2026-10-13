@@ -1259,7 +1259,11 @@ package body Vhdl.Prints is
                   Assoc_Chain : constant Iir :=
                     Get_Generic_Map_Aspect_Chain (Inter);
                begin
-                  if Assoc_Chain = Null_Iir then
+                  if Get_Generic_Map_Default_Flag (Inter) then
+                     Disp_Token (Ctxt, Tok_Left_Paren);
+                     Disp_Token (Ctxt, Tok_Default);
+                     Disp_Token (Ctxt, Tok_Right_Paren);
+                  elsif Assoc_Chain = Null_Iir then
                      Disp_Token (Ctxt, Tok_Left_Paren);
                      Disp_Token (Ctxt, Tok_Box);
                      Disp_Token (Ctxt, Tok_Right_Paren);

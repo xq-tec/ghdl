@@ -454,7 +454,8 @@ package Vhdl.Nodes_Meta is
       Field_Suspend_State_Index,
       Field_Suspend_State_Chain,
       Field_Suspend_State_Last,
-      Field_Suspend_State_Decl
+      Field_Suspend_State_Decl,
+      Field_Generic_Map_Default_Flag
      );
    pragma Discard_Names (Fields_Enum);
 
@@ -1068,4 +1069,5 @@ package Vhdl.Nodes_Meta is
    function Has_Suspend_State_Chain (K : Iir_Kind) return Boolean;
    function Has_Suspend_State_Last (K : Iir_Kind) return Boolean;
    function Has_Suspend_State_Decl (K : Iir_Kind) return Boolean;
+   function Has_Generic_Map_Default_Flag (K : Iir_Kind) return Boolean;
 end Vhdl.Nodes_Meta;

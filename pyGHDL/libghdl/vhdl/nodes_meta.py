@@ -512,6 +512,7 @@ class fields(IntEnum):
     Suspend_State_Chain = 391
     Suspend_State_Last = 392
     Suspend_State_Decl = 393
+    Generic_Map_Default_Flag = 394
 
 
 def Get_Boolean(node, field):
@@ -3007,4 +3008,10 @@ def Has_Suspend_State_Last(kind: IirKind) -> bool:
 @export
 @BindToLibGHDL("vhdl__nodes_meta__has_suspend_state_decl")
 def Has_Suspend_State_Decl(kind: IirKind) -> bool:
+    """"""
+
+
+@export
+@BindToLibGHDL("vhdl__nodes_meta__has_generic_map_default_flag")
+def Has_Generic_Map_Default_Flag(kind: IirKind) -> bool:
     """"""

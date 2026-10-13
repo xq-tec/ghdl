@@ -1074,9 +1074,23 @@ package body Vhdl.Sem_Inst is
             pragma Assert
               (Get_Kind (Assoc) = Iir_Kind_Association_Element_Package);
             declare
-               Sub_Inst : constant Iir :=
-                 Get_Named_Entity (Get_Actual (Assoc));
+               Actual : constant Iir := Get_Actual (Assoc);
+               Sub_Inst : Iir;
             begin
+               --  In case of error (already reported), the actual may not
+               --  denote a package instance.
+               if Get_Kind (Actual) not in Iir_Kinds_Denoting_Name then
+                  return;
+               end if;
+               Sub_Inst := Get_Named_Entity (Actual);
+               if Sub_Inst = Null_Iir
+                 or else not Kind_In
+                   (Sub_Inst, Iir_Kind_Package_Instantiation_Declaration,
+                    Iir_Kind_Interface_Package_Declaration)
+               then
+                  return;
+               end if;
+
                --  Replace references of interface package to references
                --  to the actual package.
                Set_Instance (Orig_Inter, Sub_Inst);

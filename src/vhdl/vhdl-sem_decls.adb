@@ -603,6 +603,7 @@ package body Vhdl.Sem_Decls is
    procedure Sem_Interface_Package_Declaration (Inter : Iir)
    is
       Pkg : Iir;
+      Map_Ok : Boolean;
    begin
       --  LRM08 6.5.5 Interface package declarations
       --  the uninstantiated_package_name shall denote an uninstantiated
@@ -622,9 +623,68 @@ package body Vhdl.Sem_Decls is
          return;
       end if;
 
-      if Get_Generic_Map_Aspect_Chain (Inter) /= Null_Iir then
-         Sem_Generic_Association_Chain (Get_Package_Header (Pkg), Inter);
-         --  Not yet fully supported - need to check the instance.
+      if Get_Generic_Map_Default_Flag (Inter) then
+         --  LRM08 6.5.5 Interface package declarations
+         --  If the interface package generic map aspect is in the form that
+         --  includes the reserved word DEFAULT, then every generic of the
+         --  uninstantiated package shall be either a generic constant with a
+         --  default expression or a generic subprogram with an interface
+         --  subprogram default.
+         declare
+            Gen : Iir;
+            Ok : Boolean;
+         begin
+            Map_Ok := True;
+            Gen := Get_Generic_Chain (Get_Package_Header (Pkg));
+            while Gen /= Null_Iir loop
+               case Get_Kind (Gen) is
+                  when Iir_Kind_Interface_Constant_Declaration =>
+                     Ok := Get_Default_Value (Gen) /= Null_Iir;
+                  when Iir_Kinds_Interface_Subprogram_Declaration =>
+                     Ok := Get_Default_Subprogram (Gen) /= Null_Iir;
+                  when others =>
+                     Ok := False;
+               end case;
+               if not Ok then
+                  Error_Msg_Sem
+                    (+Inter,
+                     "%n has no default, so generic map (default) is not "
+                     & "allowed", +Gen);
+                  Map_Ok := False;
+               end if;
+               Gen := Get_Chain (Gen);
+            end loop;
+         end;
+
+         --  The interface package generic map aspect is equivalent to an
+         --  implicit interface package generic map aspect containing a
+         --  generic map aspect in which each generic of the uninstantiated
+         --  package is associated with the corresponding default expression
+         --  or subprogram name implied by the interface subprogram default.
+         --  The subprogram implied by an interface subprogram default in the
+         --  form of a box (<>) symbol is a subprogram directly visible at
+         --  the place of the formal generic package declaration.
+         --  GHDL: analyze an empty chain: the defaults are the implicit
+         --  actuals, and box defaults are resolved here.
+         if Map_Ok then
+            pragma Assert (Get_Generic_Map_Aspect_Chain (Inter) = Null_Iir);
+            Map_Ok := Sem_Generic_Association_Chain
+              (Get_Package_Header (Pkg), Inter);
+         end if;
+      elsif Get_Generic_Map_Aspect_Chain (Inter) /= Null_Iir then
+         --  The actual instance is checked against this generic map aspect
+         --  when it is associated (LRM08 6.5.7.2).
+         Map_Ok := Sem_Generic_Association_Chain
+           (Get_Package_Header (Pkg), Inter);
+      else
+         Map_Ok := True;
+      end if;
+
+      if not Map_Ok then
+         --  Avoid instantiating a partially analyzed generic map aspect,
+         --  and cascaded errors: handle the interface like the box form.
+         Set_Generic_Map_Aspect_Chain (Inter, Null_Iir);
+         Set_Generic_Map_Default_Flag (Inter, False);
       end if;
 
       --  Create generics and declarations for the interface package so that

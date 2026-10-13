@@ -39,6 +39,10 @@ package Vhdl.Sem is
    procedure Sem_Generic_Association_Chain
      (Inter_Parent : Iir; Assoc_Parent : Iir);
 
+   --  Likewise, but return False in case of error.
+   function Sem_Generic_Association_Chain
+     (Inter_Parent : Iir; Assoc_Parent : Iir) return Boolean;
+
    --  INTER_PARENT contains ports interfaces;
    --  ASSOC_PARENT constains ports map aspects.
    procedure Sem_Port_Association_Chain
