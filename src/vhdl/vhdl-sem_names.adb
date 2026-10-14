@@ -1128,6 +1128,74 @@ package body Vhdl.Sem_Names is
       Set_Prefix (Attr, Prefix);
    end Finish_Sem_Array_Attribute_Prefix;
 
+   --  Staticness of the constraints of the fully constrained subtype ATYPE,
+   --  for a prefix of an array attribute.
+   --
+   --  LRM08 9.4.2 Locally static primaries
+   --  A locally static array constraint is an array constraint with a
+   --  locally static index constraint and, if the array element constraint
+   --  is present, a locally static array element constraint.  A locally
+   --  static array subtype is a fully constrained array subtype formed by
+   --  imposing on an unconstrained array type a locally static array
+   --  constraint.
+   --
+   --  LRM93 7.4.1
+   --  A locally static array subtype is a constrained array subtype formed
+   --  by imposing on an unconstrained array type a locally static index
+   --  constraint.
+   --
+   --  So the index constraints count, and so do the constraints of a
+   --  composite element subtype, as they are an array element constraint
+   --  (LRM08 5.3.2.1).  This also covers an element constraint inherited
+   --  from the type mark or from the type definition.  But a scalar element
+   --  subtype is part of the array type, not of the constraint, so its
+   --  staticness doesn't count (e.g. TIME, which is globally static).
+   function Get_Constraint_Staticness (Atype : Iir) return Iir_Staticness
+   is
+      Indexes : Iir_Flist;
+      Index_Type : Iir;
+      Els : Iir_Flist;
+      Res : Iir_Staticness;
+   begin
+      case Get_Kind (Atype) is
+         when Iir_Kinds_Scalar_Type_And_Subtype_Definition =>
+            return Locally;
+
+         when Iir_Kind_Array_Subtype_Definition =>
+            if Get_Constraint_State (Atype) /= Fully_Constrained then
+               return Get_Type_Staticness (Atype);
+            end if;
+            Res := Locally;
+            Indexes := Get_Index_Subtype_List (Atype);
+            for I in Flist_First .. Flist_Last (Indexes) loop
+               Index_Type := Get_Index_Type (Indexes, I);
+               if Is_Error (Index_Type) then
+                  return Get_Type_Staticness (Atype);
+               end if;
+               Res := Min (Res, Get_Type_Staticness (Index_Type));
+            end loop;
+            return Min
+              (Res, Get_Constraint_Staticness (Get_Element_Subtype (Atype)));
+
+         when Iir_Kind_Record_Type_Definition
+           | Iir_Kind_Record_Subtype_Definition =>
+            if Get_Constraint_State (Atype) /= Fully_Constrained then
+               return Get_Type_Staticness (Atype);
+            end if;
+            Res := Locally;
+            Els := Get_Elements_Declaration_List (Atype);
+            for I in Flist_First .. Flist_Last (Els) loop
+               Res := Min
+                 (Res, Get_Constraint_Staticness
+                    (Get_Type (Get_Nth_Element (Els, I))));
+            end loop;
+            return Res;
+
+         when others =>
+            return Get_Type_Staticness (Atype);
+      end case;
+   end Get_Constraint_Staticness;
+
    procedure Finish_Sem_Array_Attribute
      (Attr_Name : Iir; Attr : Iir; Param : Iir)
    is
@@ -1260,6 +1328,12 @@ package body Vhdl.Sem_Names is
       if Is_Object_Name (Prefix) then
          Staticness := Iir_Staticness'Max
            (Staticness, Get_Object_Type_Staticness (Prefix));
+      elsif Get_Kind (Prefix) in Iir_Kinds_Denoting_Name
+        and then Get_Kind (Get_Named_Entity (Prefix))
+                   in Iir_Kind_Type_Declaration | Iir_Kind_Subtype_Declaration
+      then
+         --  The prefix is a type mark.
+         Staticness := Get_Constraint_Staticness (Prefix_Type);
       elsif Name_To_Value (Prefix) /= Null_Iir then
          --  The prefix is a value that is not an object (a function call,
          --  an attribute value, a name attribute...).  It is neither a
