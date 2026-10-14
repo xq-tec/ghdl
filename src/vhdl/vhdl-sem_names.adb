@@ -3711,6 +3711,16 @@ package body Vhdl.Sem_Names is
       case Get_Kind (Prefix) is
          when Iir_Kind_Range_Array_Attribute
            | Iir_Kind_Reverse_Range_Array_Attribute =>
+            --  For names such as pfx'Range'Left.
+            --
+            --  LRM08 16.2.2 Predefined attributes of types and objects
+            --  Prefix: Any scalar type or subtype T, or an alias thereof.
+            --
+            --  A range is not a type, so it is not a valid prefix.  It is
+            --  accepted with -frelaxed, as code relies on it.
+            Error_Msg_Sem_Relaxed
+              (Attr, Warnid_Attribute,
+               "prefix of %i attribute must not be a range", (1 => +Id));
             Prefix := Finish_Sem_Name (Prefix_Name, Prefix);
             Prefix_Type := Get_Type (Prefix);
             Set_Expr_Staticness (Res, Get_Expr_Staticness (Prefix));

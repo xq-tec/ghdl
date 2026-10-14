@@ -456,6 +456,10 @@ Options
     Because the constant ``state1`` and the enumeration literal ``state1`` are homographs, the enumeration literal is
     hidden in the immediate scope of the constant).
 
+  * Allow a range attribute as the prefix of the ``'LEFT``, ``'RIGHT``, ``'HIGH``, ``'LOW`` and ``'ASCENDING``
+    attributes, as in ``arr'range'left``. A range is not a type, so this is an error without this option, and a
+    warning (:option:`-Wattribute`) with it. The portable form is an array attribute, such as ``arr'left``.
+
   This option also relaxes the rules about pure functions.
   Violations result in warnings instead of errors.
 
